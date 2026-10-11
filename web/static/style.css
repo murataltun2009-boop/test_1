@@ -1,0 +1,307 @@
+:root{
+  --bg:#080d14;
+  --panel:#0f1826;
+  --panel2:#131f2e;
+  --border:#22303f;
+  --text:#c9d6e4;
+  --muted:#6f8298;
+  --up:#26a69a;
+  --down:#ef5350;
+  --buy:#00c853;
+  --sell:#ff5252;
+  --neutral:#8fa3b8;
+  --accent:#ffd54f;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--bg);color:var(--text);
+  font:13px/1.45 "Segoe UI",system-ui,sans-serif;
+  display:flex;flex-direction:column;overflow:hidden;
+}
+
+/* ---------------- ust bar ---------------- */
+.bar{
+  display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+  padding:8px 14px;background:#0c141e;border-bottom:1px solid var(--border);
+}
+.brand{display:flex;align-items:center;gap:10px}
+.brand #symbol{font-size:16px;font-weight:700;color:#e8eef6}
+.brand .tf{font-size:11px;color:var(--muted)}
+
+/* --- Zaman dilimi secici --- */
+.tfsel{display:flex;border:1px solid var(--border);border-radius:5px;overflow:hidden}
+.tfbtn{
+  padding:4px 13px;background:#16212e;color:var(--muted);cursor:pointer;
+  border:0;border-right:1px solid var(--border);font-size:12px;font-weight:600;
+}
+.tfbtn:last-child{border-right:0}
+.tfbtn:hover{background:#24374b;color:var(--text)}
+.tfbtn.aktif{background:#0d3b22;color:#4ade80}
+.tfbtn.bekliyor{opacity:.55;cursor:progress}
+.tfbtn:disabled{opacity:.4;cursor:not-allowed}
+
+.price-box{display:flex;align-items:center;gap:12px}
+#price{font-size:20px;font-weight:700;color:#e8eef6;font-variant-numeric:tabular-nums}
+.badge{
+  padding:3px 12px;border-radius:12px;font-weight:700;font-size:12px;
+  background:#1c2531;color:var(--neutral);
+}
+.badge.gal{background:#0d3b22;color:var(--buy)}
+.badge.al{background:#12291c;color:#66bb6a}
+.badge.notr{background:#1c2531;color:var(--neutral)}
+.badge.sat{background:#2e2312;color:#ffa726}
+.badge.gsat{background:#3b1417;color:#ff5252}
+.score{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.clock{font-size:14px;color:var(--accent);font-variant-numeric:tabular-nums}
+
+.controls{display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:wrap}
+.controls label{font-size:10px;color:var(--muted);display:flex;align-items:center;gap:4px}
+.controls input[type=number]{
+  width:58px;padding:3px 6px;background:#0f1826;color:var(--text);
+  border:1px solid var(--border);border-radius:4px;font-size:12px;
+}
+.controls .sep{width:1px;height:20px;background:var(--border)}
+.chk{gap:5px !important;cursor:pointer}
+.btn{
+  padding:5px 12px;background:#1b2836;color:var(--text);cursor:pointer;
+  border:1px solid var(--border);border-radius:5px;font-size:12px;
+}
+.btn:hover{background:#24374b}
+.btn.small{padding:2px 9px;font-size:11px}
+.btn.danger{background:#8b3a3f;border-color:#a4464c}
+.btn.danger:hover{background:#a4464c}
+.dbinfo{font-size:11px;color:var(--muted)}
+
+/* ---------------- ana alan ----------------
+   Sol sutun: grafik + log (ikisi de ayni genislikte)
+   Sag sutun: tablolar + cuzdan
+   Log, onceki tasarimda tam genislikteydi ve saginda bosluk birakiyordu;
+   artik grafikle ayni genislikte, saginda cuzdan paneli var.            */
+main{flex:1;display:flex;min-height:0}
+.left-col{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
+.chart-wrap{flex:1;position:relative;min-height:0}
+.chart{position:absolute;inset:0}
+.tooltip{
+  position:absolute;pointer-events:none;display:none;z-index:20;
+  background:#0a1017;border:1px solid #3d5570;border-radius:5px;
+  padding:8px 10px;font:12px/1.5 Consolas,monospace;white-space:pre;
+  color:#e8eef6;box-shadow:0 4px 18px rgba(0,0,0,.55);
+}
+
+/* ---------------- log ---------------- */
+.log-wrap{
+  height:170px;flex:none;border-top:1px solid var(--border);
+  border-right:1px solid var(--border);
+  background:#0a1017;display:flex;flex-direction:column;
+}
+
+.side{
+  width:430px;flex:none;display:flex;flex-direction:column;gap:8px;
+  padding:8px;border-left:1px solid var(--border);overflow-y:auto;
+}
+/* flex:none sart — aksi halde 11+15 satirlik tablolar sikinca
+   alt panel ust panelin uzerine binip satirlari kirpiyor */
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:6px;overflow:hidden;flex:none}
+.panel-title{
+  padding:6px 9px;font-weight:700;font-size:12px;color:#8fb3d9;
+  background:var(--panel2);display:flex;justify-content:space-between;
+}
+.counts{font-weight:400;font-size:11px;color:var(--muted)}
+.thead,.row{
+  display:grid;grid-template-columns:1fr 92px 56px;gap:4px;padding:2px 8px;
+}
+.thead{font-size:10px;color:#7f93a8;background:#18232f;font-weight:700}
+.row{font-size:11px;border-top:1px solid #16202c}
+.row .v{text-align:right;font-family:Consolas,monospace;font-size:11.5px}
+.d-buy{color:var(--buy);font-weight:700;text-align:center}
+.d-sell{color:var(--sell);font-weight:700;text-align:center}
+.d-neutral{color:var(--neutral);text-align:center}
+
+/* ---------------- log ---------------- */
+.log-head{
+  display:flex;align-items:center;gap:10px;padding:5px 12px;
+  border-bottom:1px solid #16202c;
+}
+.log-title{font-weight:700;font-size:12px;color:#8fb3d9}
+.conn{font-size:11px;color:var(--muted)}
+.conn.ok{color:var(--buy)}
+.conn.bad{color:var(--sell)}
+.spacer{flex:1}
+.tickinfo{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.log{flex:1;overflow-y:auto;padding:4px 12px;font:12px/1.6 Consolas,monospace}
+.log div{white-space:pre-wrap;word-break:break-word}
+.log .ts{color:#5c6b7c}
+.log .info{color:#8fa3b8}
+.log .ok{color:#26a69a}
+.log .warning{color:#ffb300}
+.log .error{color:#ff5252}
+.log .star{font-weight:700}
+
+@media (max-width:1100px){
+  .side{width:330px}
+}
+
+/* ===================================================================
+   TELEFON (PWA / Android)
+   -------------------------------------------------------------------
+   Yatay düzen telefonda calismaz: sag sutun 330-430px sabit, grafik
+   kalan 100-200px'e sikisir ve mumler okunmaz. Burada duzen tek
+   sutuna CÖNER (grafik → log → paneller) ve sayfa kendi kaydirma
+   alanini alir.
+
+   DIKKAT: body {overflow:hidden} masaustu icindi. Mobilde
+   kaldiriliyor; yoksa sayfa kaydirilamaz ve panellere erisilemez.
+   =================================================================== */
+@media (max-width:760px){
+  html,body{height:auto}
+  body{overflow:visible;min-height:100%}
+
+  /* Ust bar: iki satira sarar */
+  .bar{gap:8px;padding:6px 10px}
+  .controls{margin-left:0;width:100%;gap:6px}
+  .controls input[type=number]{width:50px}
+  #price{font-size:18px}
+  .price-box{gap:8px;flex-wrap:wrap}
+
+  /* Notr kesme: androidde dokununca mavi parlama olmasin */
+  .btn,.tfbtn,.coin{touch-action:manipulation}
+  .tfbtn{padding:6px 14px}
+
+  /* Tek sutun, sayfa kendi kaydirilsin */
+  main{flex-direction:column;height:auto}
+  .left-col{width:100%}
+  .chart-wrap{height:46vh;min-height:240px}
+  .log-wrap{height:auto;max-height:34vh;border-right:0}
+
+  .side{
+    width:100%;border-left:0;border-top:1px solid var(--border);
+    padding:8px;overflow:visible;
+  }
+
+  /* Panellerin ic boslugu daralsin */
+  .panel-title{padding:7px 10px}
+  .wbtns .btn{padding:9px 4px;font-size:12px}   /* parmak hedefi */
+  .wbtns2 .btn{padding:8px;font-size:11.5px}
+  .btn.live{padding:9px 4px}
+
+  /* Tablo satirlari okunakli olsun */
+  .ind-row,.trades-head,.trades-row{font-size:11.5px;padding:3px 2px}
+}
+
+/* Notch / kesikli ekranlarda ust bar altindaki icerik kesilmesin */
+@supports (padding:max(0px)){
+  .bar{padding-top:max(6px,env(safe-area-inset-top));
+       padding-left:max(10px,env(safe-area-inset-left));
+       padding-right:max(10px,env(safe-area-inset-right))}
+  .side{padding-bottom:max(8px,env(safe-area-inset-bottom))}
+}
+
+/* ---------------- coin secici ---------------- */
+select.coin{
+  background:#16212e;color:#e8eef6;border:1px solid var(--border);
+  border-radius:5px;padding:4px 8px;font-size:14px;font-weight:700;
+  cursor:pointer;outline:none;
+}
+select.coin:focus{border-color:#4fc3f7}
+select.coin:disabled{opacity:.5;cursor:progress}
+
+/* ---------------- sanal cuzdan / kaldirac ---------------- */
+.panel.wallet{border-color:#2b3f55}
+.panel.wallet .panel-title{background:#152030}
+#paperState.on{color:#4ade80;font-weight:700}
+#paperState.off{color:var(--muted)}
+.wbody{padding:7px 9px 9px}
+.wrow{display:flex;justify-content:space-between;align-items:baseline;
+  padding:2px 0;font-size:11.5px;border-bottom:1px solid #16202c}
+.wrow:last-of-type{border-bottom:0}
+.wrow.big .wv{font-size:14px;font-weight:700}
+.wl{color:var(--muted)}
+.wv{font-family:Consolas,monospace;font-variant-numeric:tabular-nums;
+  text-align:right}
+.wv.pos{color:var(--buy);font-weight:700}
+.wv.neg{color:var(--sell);font-weight:700}
+
+.posbox{margin:7px 0;padding:6px 8px;border-radius:5px;font-size:11.5px;
+  border:1px solid var(--border);background:#0d1620}
+.posbox.long{border-color:#1d5c3a;background:#0b1d15}
+.posbox.short{border-color:#5c1d22;background:#1d0e10}
+.postitle{font-weight:700;margin-bottom:3px}
+.postitle.long{color:#4ade80}
+.postitle.short{color:#ff5252}
+.posbody{font-family:Consolas,monospace;color:#9fb3c8;line-height:1.55}
+.posbody b{color:#e8eef6;font-weight:600}
+
+.wset{display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;margin:8px 0 6px}
+.wset label{font-size:10px;color:var(--muted);display:flex;
+  align-items:center;justify-content:space-between;gap:4px}
+.wset input{width:66px;padding:3px 5px;background:#0f1826;color:var(--text);
+  border:1px solid var(--border);border-radius:4px;font-size:11.5px}
+.wset label.wfull{grid-column:1 / -1}
+.wset select{background:#0f1826;color:var(--text);border:1px solid var(--border);
+  border-radius:4px;padding:3px 5px;font-size:11.5px;cursor:pointer}
+.note{font-size:10px;color:#6f8298;line-height:1.4;margin:0 0 6px;
+  padding:4px 6px;background:#101a25;border-left:2px solid #2b3f55;
+  border-radius:0 4px 4px 0}
+.wbtns{display:flex;gap:5px;margin-bottom:8px}
+.wbtns .btn{flex:1;padding:5px 4px;font-size:11.5px}
+.wchk{display:flex;gap:5px;align-items:flex-start;font-size:10px;
+  color:var(--muted);line-height:1.35;margin-bottom:6px;cursor:pointer}
+.wchk input{margin-top:1px}
+.btn.ok{background:#1d5c3a;color:#eaffef}
+.btn.ok:hover{background:#26734a}
+.wbtns2{margin:-3px 0 8px}
+.wbtns2 .btn{width:100%;padding:4px;font-size:11px}
+
+/* --- CANLI ISLEM paneli ------------------------------------------- */
+/* Gecmis test ile canli sonuclarin KARSITIRILAMAZ sekilde durmasi icin
+   ayri bir kutu. "Trade Basla" dedikten sonra burasi dolar. */
+.livebox{
+  margin:0 0 8px;padding:7px 8px;border-radius:6px;
+  background:#0e1a26;border:1px solid #1e3040;transition:border-color .2s}
+.livebox.on{border-color:#1f6b45;background:#0d1f19}
+.ltitle{font-size:10px;font-weight:800;letter-spacing:.6px;color:#6f8298;
+  margin-bottom:5px}
+.livebox.on .ltitle{color:#4ade80}
+.lrow{display:flex;justify-content:space-between;align-items:baseline;
+  font-size:11px;padding:1.5px 0}
+.lrow.big{font-size:13px;padding:3px 0 4px}
+.lk{color:var(--muted)}
+.lv{font-family:var(--mono);color:#dfe8f1;font-weight:600}
+.lv.pos{color:#4ade80}
+.lv.neg{color:#ff6b6b}
+.lstat{margin-top:5px;padding-top:4px;border-top:1px solid #16202c;
+  font-size:10px;color:#6f8298;font-style:italic}
+.lstat.on{color:#7dd3a0;font-style:normal}
+
+.btn.live{background:#a4471f;color:#fff3e8;font-weight:700}
+.btn.live:hover{background:#c85a28}
+
+.trades{border-top:1px solid var(--border);padding-top:5px}
+.trades-head,.trades-row{
+  display:grid;grid-template-columns:44px 1fr 1fr 1fr 54px;gap:3px;
+  font-size:10.5px;padding:2px 1px;align-items:center}
+.trades-head{color:var(--muted);font-weight:700;border-bottom:1px solid #16202c}
+.trades-body{max-height:132px;overflow-y:auto}
+.trades-row{border-bottom:1px solid #141d27;
+  font-family:Consolas,monospace;font-variant-numeric:tabular-nums}
+/* gecmis (backtest) islemler soluk: canli olanlar one cikar */
+.trades-row.past{opacity:.55}
+.trades-row.past:hover{opacity:1}
+.btbox{margin:7px 0;padding:6px 8px;border-radius:5px;font-size:11.5px;
+  border:1px solid #2b3f55;background:#0d1826}
+.btbox.none{display:none}
+.bttitle{font-weight:700;margin-bottom:3px;color:#8fb3d9}
+.bttitle span{font-weight:400;color:var(--muted);font-size:10px;
+  margin-left:4px}
+.btrow{display:flex;justify-content:space-between;align-items:baseline;
+  padding:1px 0;color:var(--muted);border-bottom:1px solid #16202c}
+.btrow:last-child{border-bottom:0}
+.btrow b{font-family:Consolas,monospace;color:#e8eef6}
+.btrow.big{padding-top:3px;font-size:12px}
+.btrow b.pos{color:var(--buy)}
+.btrow b.neg{color:var(--sell)}
+.trades-row .num{text-align:right}
+.trades-empty{color:#55697e;font-size:11px;padding:6px 1px}
+.side-long{color:#4ade80;font-weight:700}
+.side-short{color:#ff5252;font-weight:700}

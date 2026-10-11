@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<!-- viewport-fit=cover: notch/cizgili ekranlarda da tam ekran.
+     maximum-scale kilitlenmez: kullanici grafikte yakinlastirabilmeli. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BTCUSDT 4 Saat · Canlı Teknik Analiz</title>
+<link rel="stylesheet" href="/static/style.css">
+
+<!-- ---- PWA: "Ana ekrana ekle" icin gerekli etiketler ---------- -->
+<link rel="manifest" href="/static/manifest.webmanifest">
+<meta name="theme-color" content="#0b121c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TA Futures">
+<link rel="icon" href="/static/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+</head>
+<body>
+
+<header class="bar">
+  <div class="brand">
+    <select id="coinSel" class="coin" title="Coin seç"></select>
+    <div class="tfsel" id="tfSel">
+      <button class="tfbtn" data-tf="15m">15dk</button>
+      <button class="tfbtn" data-tf="1h">1sa</button>
+      <button class="tfbtn" data-tf="4h">4sa</button>
+    </div>
+    <span class="tf" id="tfLabel">—</span>
+  </div>
+
+  <div class="price-box">
+    <span id="price">—</span>
+    <span id="signalBadge" class="badge notr">NÖTR</span>
+    <span id="score" class="score">bileşik —</span>
+    <span id="clock" class="clock">--:--:--</span>
+  </div>
+
+  <div class="controls">
+    <label>1 GÜÇLÜ eşiği
+      <input id="thStrong" type="number" step="0.05" min="0.05" max="1" value="0.65">
+    </label>
+    <label>2 AL/SAT eşiği
+      <input id="thBase" type="number" step="0.05" min="0.05" max="1" value="0.40">
+    </label>
+    <button id="applyTh" class="btn">Uygula</button>
+    <span class="sep"></span>
+    <label class="chk"><input id="showMa" type="checkbox" checked> Ort. çizgileri</label>
+    <label class="chk"><input id="showStars" type="checkbox" checked> Sinyal yıldızları</label>
+    <span class="sep"></span>
+    <button id="btnFit" class="btn">Sığdır</button>
+    <button id="btnReset" class="btn danger">DB Sıfırla</button>
+    <span id="dbInfo" class="dbinfo">—</span>
+  </div>
+</header>
+
+<main>
+  <!-- Sol sutun: log yalnizca GRAFINK genisliginde, sagda yer acik kalir -->
+  <div class="left-col">
+    <section class="chart-wrap">
+      <div id="chart" class="chart"></div>
+      <div id="tooltip" class="tooltip"></div>
+    </section>
+
+    <section class="log-wrap">
+      <div class="log-head">
+        <span class="log-title">İşlem Değişim Logu</span>
+        <span id="connState" class="conn">bağlanıyor…</span>
+        <span class="spacer"></span>
+        <span id="tickInfo" class="tickinfo">—</span>
+        <button id="btnClearLog" class="btn small">Temizle</button>
+      </div>
+      <div id="log" class="log"></div>
+    </section>
+  </div>
+
+  <!-- Sag sutun: gosterge tablolari + sanal cuzdan / kaldirac simulasyonu -->
+  <aside class="side">
+    <div class="panel">
+      <div class="panel-title">Osilatörler <span id="oscCounts" class="counts"></span></div>
+      <div class="thead"><span>Adı</span><span>Değer</span><span>Detay</span></div>
+      <div id="oscTable" class="tbody"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Hareketli Ortalamalar <span id="maCounts" class="counts"></span></div>
+      <div class="thead"><span>Adı</span><span>Değer</span><span>Detay</span></div>
+      <div id="maTable" class="tbody"></div>
+    </div>
+
+    <!-- ============ KALDIRAC SIMULATORU / SANAL CUZDAN ============ -->
+    <div class="panel wallet">
+      <div class="panel-title">
+        Sanal Cüzdan &amp; Kaldıraç
+        <span id="paperState" class="counts">durduruldu</span>
+      </div>
+
+      <div class="wbody">
+        <div class="wrow big">
+          <span class="wl">Bakiye</span>
+          <span class="wv" id="wBalance">—</span>
+        </div>
+        <div class="wrow big">
+          <span class="wl">Toplam (equity)</span>
+          <span class="wv" id="wEquity">—</span>
+        </div>
+        <div class="wrow">
+          <span class="wl">Kâr / Zarar</span>
+          <span class="wv" id="wProfit">—</span>
+        </div>
+        <div class="wrow">
+          <span class="wl">Açık kâr/zarar</span>
+          <span class="wv" id="wUnreal">—</span>
+        </div>
+        <div class="wrow">
+          <span class="wl">Kaldıraç</span>
+          <span class="wv" id="wLev">—</span>
+        </div>
+        <div class="wrow">
+          <span class="wl">Komisyon (toplam)</span>
+          <span class="wv" id="wFee">—</span>
+        </div>
+        <div class="wrow">
+          <span class="wl">İşlem (kazanç/kayıp)</span>
+          <span class="wv" id="wTrades">—</span>
+        </div>
+        <div class="wrow">
+          <span class="wl">Son LONG fiyatı</span>
+          <span class="wv" id="wLastLong">—</span>
+        </div>
+        <div class="wrow">
+          <span class="wl">Zirve (SHORT referansı)</span>
+          <span class="wv" id="wPeak">—</span>
+        </div>
+
+        <div id="wPosBox" class="posbox none">
+          <div class="postitle" id="wPosTitle">Pozisyon yok</div>
+          <div id="wPosBody" class="posbody"></div>
+        </div>
+
+        <div id="btBox" class="btbox none">
+          <div class="bttitle">Geriye dönük test <span id="btRange"></span></div>
+          <div id="btBody" class="btbody"></div>
+        </div>
+
+        <div class="wset">
+          <label>Cüzdan
+            <input id="pBalance" type="number" step="100" min="10" value="1000">
+          </label>
+          <label>Kaldıraç
+            <input id="pLev" type="number" step="1" min="1" max="125" value="10">
+          </label>
+          <label>Teminat %
+            <input id="pFrac" type="number" step="5" min="5" max="100" value="80">
+          </label>
+          <label>Komisyon %
+            <input id="pFee" type="number" step="0.005" min="0" max="1" value="0.05">
+          </label>
+          <label>Pencere (bar)
+            <input id="pLook" type="number" step="1" min="3" max="200" value="20">
+          </label>
+          <label>Min. bekleme
+            <input id="pHold" type="number" step="1" min="0" max="200" value="0">
+          </label>
+          <label class="wfull">Karar mekanizması
+            <select id="pMode">
+              <option value="range">Aralık — pencerenin tabanı (onaylı, +%121)</option>
+              <option value="signal_long">Sadece LONG — AL girer, SAT çıkar</option>
+              <option value="signal_exit">Aralık girer, SAT ile çıkar</option>
+              <option value="signal">Sinyal — AL/SAT dönüşümlü (deneysel)</option>
+            </select>
+          </label>
+          <label class="wfull">SHORT kuralı
+            <select id="pRule">
+              <option value="entry">Son LONG'un altında (onaylı, +%120)</option>
+              <option value="pullback">Tepeden geri çekilme — deneysel</option>
+            </select>
+          </label>
+        </div>
+        <div class="note">Varsayılan onaylı sürümü verir (4h'de %120). Diğerleri
+          deneyseldir; açılır listeden seçerek karşılaştırabilirsiniz.</div>
+
+        <div class="livebox" id="liveBox">
+          <div class="ltitle">CANLI İŞLEM</div>
+          <div class="lrow big">
+            <span class="lk">Canlı kâr/zarar</span>
+            <span class="lv" id="lProfit">—</span>
+          </div>
+          <div class="lrow">
+            <span class="lk">Kapanan işlem</span>
+            <span class="lv" id="lTrades">—</span>
+          </div>
+          <div class="lrow">
+            <span class="lk">Komisyon</span>
+            <span class="lv" id="lFee">—</span>
+          </div>
+          <div class="lrow">
+            <span class="lk">Başlangıç</span>
+            <span class="lv" id="lStart">—</span>
+          </div>
+          <div class="lstat" id="lStatus">canlı işlem kapalı</div>
+        </div>
+
+        <div class="wbtns">
+          <button id="pLive" class="btn live">● Trade Başla</button>
+          <button id="pStop" class="btn">⏸ Duraklat</button>
+          <button id="pReset" class="btn danger">Sıfırla</button>
+        </div>
+        <div class="wbtns2">
+          <button id="pStart" class="btn ok">Geriye dönük test + canlı</button>
+        </div>
+
+        <label class="chk wchk">
+          <input id="pConfirm" type="checkbox">
+          Dönüş teyidi iste (yeşil/kırmızı mum) — seçilmezse çok seyrek sinyal verir
+        </label>
+        <label class="chk wchk">
+          <input id="pBacktest" type="checkbox" checked>
+          Grafiğin başından başlat — “bugüne kadar ne kazandı?”, sonra canlı devam eder
+        </label>
+
+        <div class="trades">
+          <div class="trades-head">
+            <span>Yön</span><span>Giriş</span><span>Çıkış</span>
+            <span>Kâr/Zarar</span><span>Kom.</span>
+          </div>
+          <div id="wTradeList" class="trades-body">
+            <div class="trades-empty">Henüz işlem yok</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<script src="/static/vendor/echarts.min.js"></script>
+<script>
+// Görünür hata yakalayıcı: JS hatası olursa ekranın altında kırmızı şerit.
+// Sessiz hatalar bu sayfada "hiç veri gelmiyor" gibi görünüyordu.
+window.__errors = [];
+window.addEventListener("error", function (e) {
+  var msg = (e.message || "bilinmeyen hata") + "  @ " +
+            (e.filename || "").split("/").pop() + ":" + (e.lineno || "?");
+  var stack = (e.error && e.error.stack) ? String(e.error.stack).split("\\n").slice(0, 4).join(" | ") : "";
+  window.__errors.push(msg + " >> " + stack);
+  var box = document.getElementById("errbox");
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "errbox";
+    box.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:99;" +
+      "background:#7f1d1d;color:#fff;padding:6px 12px;font:12px Consolas,monospace";
+    document.body.appendChild(box);
+  }
+  box.textContent = "JS HATA: " + msg;
+});
+</script>
+<script src="/static/app.js"></script>
+</body>
+</html>

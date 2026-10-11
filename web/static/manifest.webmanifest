@@ -1,0 +1,44 @@
+{
+  "name": "Binance Futures · Canlı Teknik Analiz",
+  "short_name": "TA Futures",
+  "description": "Binance Futures için canlı teknik analiz, sinyal yıldızları ve kaldıraçlı sanal cüzdan simülatörü.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "fullscreen", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#0b121c",
+  "theme_color": "#0b121c",
+  "lang": "tr",
+  "dir": "ltr",
+  "categories": ["finance", "productivity"],
+  "icons": [
+    {
+      "src": "/static/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Canlı Kâr",
+      "short_name": "Kâr",
+      "url": "/?panel=live",
+      "description": "Simülatör canlı kâr paneline odaklanır"
+    }
+  ]
+}

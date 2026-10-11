@@ -1,0 +1,31 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ---- RUNTIME VERISI (telefonda yeniden olusur) ----
+# Veritabani: sinyal + log kayitlari. Kisya degil, her cihazda
+# kendi gecerliligini olusturur. Git'e atilirsa binlerce "commit"
+# dosyasi olusur ve telefon tarafinda gereksiz yer kaplar.
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# ---- Loglar ----
+logs/
+*.log
+
+# ---- Masaustu arayuzu artik varsayilan degil (ana modul web) ----
+# main_desktop.py ve ui/ klasoru kod tabaninda durur; sadece
+# calisma ciktilari (*.pyc) yukarida zaten yasakli.
+
+# ---- VS Code / editor ----
+.vscode/
+.idea/
+
+# ---- OS ----
+Thumbs.db
+.DS_Store
