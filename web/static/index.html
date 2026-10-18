@@ -190,9 +190,10 @@
         <div class="note" id="modeNote2" style="display:none">
           <b>Tek kaynak kuralı:</b> karar yalnızca seçilen gruptan gelir —
           LONG + SHORT birlikte o grup belirler, ayrı SHORT kuralı gerekmez.
-          <b>NÖTR bu modlarda ters yön sinyalidir</b>: açık LONG'yi kapatıp
-          SHORT açar, açık SHORT'u kapatıp LONG açar. Art arda aynı yönde
-          sinyal gelirse işlem yapılmaz.<br><br>
+          <b>NÖTR bu modlarda bekleme sinyalidir</b>: açık pozisyonu kapatır
+          ama karşı tarafta yeni pozisyon AÇMAZ — nakitte bekler.
+          Sonraki AL veya SAT gelene kadar işlem yapılmaz. Art arda
+          aynı yönde sinyal gelirse de işlem yapılmaz.<br><br>
           <b>Eşikler:</b> <span id="modeThr">hareketli ortalamalar için
           0,40 / 0,65 (bileşik)</span>. Osilatör skoru 11 osilatörün
           ortalaması olduğundan bileşik eşikler neredeyse hiç aşılmaz;

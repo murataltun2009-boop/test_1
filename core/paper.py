@@ -409,20 +409,24 @@ class PaperTrader:
 
             # 2b) YALNIZCA MA / YALNIZCA OSILATÖR modlari.
             #
-            # KULLANICI KURALI:
+            # KULLANICI KURALI (guncel):
             #   "Sadece hareketli ortalamalara göre SHORT LONG yap."
             #   "Sadece osilatörlere göre SHORT LONG yap."
+            #   "LONG'dan NÖTR geçtiğinde veya SHORT'tan NÖTR geldiğinde
+            #    karşı pozisyona GECMESIN, pozisyonu kapatsın. Beklesin.
+            #    NÖTR'de ne SHORT ne de LONG yapsın."
             #
-            # DÖNGÜ (kullanıcıdan gelen tarif):
+            # DÖNGÜ:
             #   * Art arda LONG  → LONG zaten açık, İŞLEM YAPILMAZ
-            #   * SHORT geldi    → LONG kapanır, SHORT açılır
-            #   * NÖTR geldi     → LONG kapanır, SHORT açılır   (ters yön)
+            #   * SAT geldi      → LONG kapanır, SHORT açılır
+            #   * NÖTR geldi     → pozisyon KAPANIR, ters yön AÇILMAZ
+            #                      (nakitte bekleme)
             #   * Art arda SHORT → SHORT zaten açık, İŞLEM YAPILMAZ
-            #   * NÖTR geldi     → SHORT kapanır, LONG açılır   (ters yön)
-            #   * LONG geldi     → SHORT kapanır, LONG açılır
+            #   * AL geldi       → SHORT kapanır, LONG açılır
+            #   * NÖTR geldi     → pozisyon KAPANIR, ters yön AÇILMAZ
             #
-            # YANİ NÖTR BU MODLARDA "BEKLE" DEĞİL, TERS YÖN SİNYALİDİR.
-            # (Bilesik "signal" modunda NÖTR birsey yapmaz; fark burada.)
+            # NÖTR SONRASI: yeni sinyal gelene kadar beklenir. AL gelirse
+            # LONG, SAT gelirse SHORT acilir (pozisyon yoksa giris blogu).
             #
             # Bu blok POZISYON ACIKKEN calisir — aksi halde asagidaki
             # sinyal bloguna hic ulasilamaz (proje tarihinde yasanmis hata).
@@ -440,11 +444,19 @@ class PaperTrader:
 
                 dusus = signal in ("SAT", "GÜÇLÜ SAT")
                 yukselis = signal in ("AL", "GÜÇLÜ AL")
+                nötr = signal == "NÖTR"
                 kaynak = ("hareketli ortalamalar" if self.mode == "ma_only"
                           else "osilatörler")
 
+                # ---- NÖTR: KAPAT VE BEKLE, TERS YÖN ACMA ----
+                if nötr:
+                    # Kullanici kurali: ne LONG ne SHORT acilir.
+                    self._close(price, f"{signal} ({kaynak})", timeframe)
+                    return (f"{p.side} kapandı — {signal} · {kaynak} "
+                            f"(nakitte bekleniyor)")
+
                 if p.side == LONG and not yukselis:
-                    # SAT ya da NÖTR: LONG kapanir, yerine SHORT acilir.
+                    # SAT: LONG kapanir, yerine SHORT acilir.
                     self._close(price, f"{signal} ({kaynak})", timeframe)
                     self._open(SHORT, price, f"{signal} ({kaynak})",
                                timeframe, candles)
@@ -452,7 +464,7 @@ class PaperTrader:
                             f"(LONG kapandı)")
 
                 if p.side == SHORT and not dusus:
-                    # LONG ya da NÖTR: SHORT kapanir, yerine LONG acilir.
+                    # AL: SHORT kapanir, yerine LONG acilir.
                     self._close(price, f"{signal} ({kaynak})", timeframe)
                     self._open(LONG, price, f"{signal} ({kaynak})",
                                timeframe, candles)

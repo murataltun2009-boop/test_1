@@ -1019,58 +1019,60 @@ ok.append(test("TEK KAYNAK: art arda aynı yönde işlem yapmaz",
 
 
 def t_ma_only_dongusu():
-    """Kullanicinin tarif ettigi TAM DONGU:
+    """Kullanicinin GUNCEL tarifine gore tam dongu:
 
-    LONG + art arda LONG  -> islem yok
-    LONG + SAT            -> LONG kapanir, SHORT acilir
-    LONG + NÖTR           -> LONG kapanir, SHORT acilir  (TERS YON)
-    SHORT + art arda SHORT-> islem yok
-    SHORT + NÖTR          -> SHORT kapanir, LONG acilir  (TERS YON)
-    SHORT + LONG          -> SHORT kapanir, LONG acilir
+    LONG  + art arda LONG  -> islem yok
+    LONG  + SAT            -> LONG kapanir, SHORT acilir
+    LONG  + NÖTR           -> pozisyon KAPANIR, HICBIR SEY ACILMAZ
+    SHORT + art arda SHORT -> islem yok
+    SHORT + NÖTR           -> pozisyon KAPANIR, HICBIR SEY ACILMAZ
+    SHORT + AL             -> SHORT kapanir, LONG acilir
     """
-    for mod in ("ma_only", "osc_only"):
+    for mod in ('ma_only', 'osc_only'):
         p, m = _tek_kaynak(mod)
 
-        # --- 1) LONG ac ---
-        p.on_price(100.0, m(), "4h", "AL")
-        assert p.position.side == "LONG", f"{mod}: 1. adim"
+        p.on_price(100.0, m(), '4h', 'AL')
+        assert p.position and p.position.side == 'LONG', mod + ': 1'
 
-        # --- 2) Art arda LONG: dokunma ---
         for _ in range(3):
-            p.on_price(101.0, m(), "4h", "AL")
-        assert p.position.side == "LONG", f"{mod}: 2. adim (LONG korunmali)"
+            p.on_price(101.0, m(), '4h', 'AL')
+        assert p.position.side == 'LONG', mod + ': 2 (LONG korunmali)'
 
-        # --- 3) SAT: LONG kapanir, SHORT acilir ---
-        p.on_price(99.0, m(), "4h", "SAT")
-        assert p.position.side == "SHORT", \
-            f"{mod}: 3. adim SAT ile SHORT acmadi"
+        p.on_price(99.0, m(), '4h', 'SAT')
+        assert p.position.side == 'SHORT', mod + ': 3 SAT->SHORT'
 
-        # --- 4) Art arda SHORT: dokunma ---
         g = p.position.entry
         for _ in range(3):
-            p.on_price(98.0, m(), "4h", "SAT")
-        assert p.position.side == "SHORT" and p.position.entry == g, \
-            f"{mod}: 4. adim SHORT korunmali"
+            p.on_price(98.0, m(), '4h', 'SAT')
+        assert p.position.side == 'SHORT' and p.position.entry == g, mod + ': 4'
 
-        # --- 5) NÖTR: SHORT kapanir, LONG acilir (TERS YON) ---
-        p.on_price(98.0, m(), "4h", "NÖTR")
-        assert p.position.side == "LONG", \
-            f"{mod}: 5. adim NÖTR ters yon calismadi"
+        # NÖTR: kapanir, HICBIR SEY ACILMAZ
+        p.on_price(98.0, m(), '4h', 'NÖTR')
+        assert p.position is None, mod + ': 5 NOTR sonrasi pozisyon kalmali'
 
-        # --- 6) LONG + NÖTR: LONG kapanir, SHORT acilir (TERS YON) ---
-        p.on_price(100.0, m(), "4h", "AL")
-        assert p.position.side == "LONG", f"{mod}: 6a"
-        p.on_price(100.0, m(), "4h", "NÖTR")
-        assert p.position.side == "SHORT", \
-            f"{mod}: 6. adim NÖTR LONG'u SHORT'a cevirmedi"
+        # Pozisyon yokken NOTR: hicbir sey acilmaz
+        p.on_price(98.0, m(), '4h', 'NÖTR')
+        p.on_price(98.0, m(), '4h', 'NÖTR')
+        assert p.position is None, mod + ': 6 bosta NOTR acmamali'
 
-        # --- 7) SHORT + LONG: LONG'a doner ---
-        p.on_price(101.0, m(), "4h", "AL")
-        assert p.position.side == "LONG", \
-            f"{mod}: 7. adim LONG'a donmedi"
+        # NOTR sonrasi AL: LONG acilir
+        p.on_price(100.0, m(), '4h', 'AL')
+        assert p.position and p.position.side == 'LONG', mod + ': 7'
+
+        # LONG + NOTR: kapanir, SHORT ACILMAZ
+        p.on_price(100.0, m(), '4h', 'NÖTR')
+        assert p.position is None, mod + ': 8 LONG+NOTR ters yon acmamali'
+
+        # Bosta SAT: SHORT acilir
+        p.on_price(99.0, m(), '4h', 'SAT')
+        assert p.position and p.position.side == 'SHORT', mod + ': 9'
+
+        # SHORT + NOTR: kapanir, LONG ACILMAZ
+        p.on_price(99.0, m(), '4h', 'NÖTR')
+        assert p.position is None, mod + ': 10 SHORT+NOTR ters yon acmamali'
 
 
-ok.append(test("TEK KAYNAK: AL↔SAT↔NÖTR tam döngüsü (kullanıcı tarifine göre)",
+ok.append(test('TEK KAYNAK: NÖTR pozisyonu kapatır, ters yön açmaz',
                t_ma_only_dongusu))
 
 
