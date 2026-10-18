@@ -476,12 +476,20 @@ class PaperTrader:
             #    SAT geldiyse LONG kapanır + SHORT açılır.
             #    (Bu kontrol POZISYON ACIKKEN yapilir; aksi halde sinyal
             #     bloguna hic ulasilamaz ve hicbir sinyal islenmez.)
+            #
+            # NOTR KURALI (kullanıcı, tüm sinyal modlarına):
+            #   "LONG'dan NÖTR geçtiğinde veya SHORT'tan NÖTR geldiğinde
+            #    karşı pozisyona GECMESIN, pozisyonu kapatsın. Beklesin."
+            #
+            #   signal_exit HARIC: girisi araliktan gelir; sadece SAT
+            #   sinyali kapatir (asili zararda kalmasin diye).
             if self.mode in ("signal", "signal_long", "signal_exit") and signal:
                 if signal == self.last_signal:
                     return None
                 self.last_signal = signal
                 dusus = signal in ("SAT", "GÜÇLÜ SAT")
                 yukselis = signal in ("AL", "GÜÇLÜ AL")
+                nötr = signal == "NÖTR"
 
                 # GIRIS aralık kuralindan, CIKIS sinyalden:
                 # acik LONG, SAT sinyalinde kapanir (asili zararda kalmasin).
@@ -490,6 +498,12 @@ class PaperTrader:
                         self._close(price, f"{signal} sinyali", timeframe)
                         return f"LONG kapandı — {signal} sinyali (nötrde beklendi)"
                     return None
+
+                # ---- NÖTR: KAPAT VE BEKLE, TERS YÖN ACMA ----
+                if nötr:
+                    self._close(price, f"{signal} sinyali", timeframe)
+                    return (f"{p.side} kapandı — {signal} sinyali "
+                            f"(nakitte bekleniyor)")
 
                 if p.side == LONG and dusus:
                     # Sinyal_LONG modunda sadece KAPATIR; SHORT acmaz.

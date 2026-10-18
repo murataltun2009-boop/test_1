@@ -607,18 +607,33 @@ ok.append(test("Sinyal modu: aynı sinyalde yeni işlem açılmaz",
                t_sinyal_ayni_sinyalde_islem_yok))
 
 
-def t_sinyal_notr_islem_yapmaz():
-    """NÖTR sinyali pozisyon degistirmez."""
+def t_sinyal_notr_kapatir_bekler():
+    """NÖTR sinyali pozisyonu KAPATIR, ters yön açmaz.
+
+    KULLANICI KURALI: "LONG'dan NÖTR geçtiğinde karşı pozisyona
+    geçmesin, pozisyonu kapatsın. Beklesin."
+
+    ONCEDEN: NÖTR hicbir sey yapmiyordu, pozisyon acik kaliyordu.
+    Artık kapanir ve nakitte beklenir.
+    """
     tr = sinyal_trader()
     cs, px = v_shape()
     tr.on_price(px, cs, "1h", "AL")
+    assert tr.position and tr.position.side == LONG
+
     ev = tr.on_price(px * 1.001, cs, "1h", "NÖTR")
-    assert ev is None, ev
-    assert tr.position and tr.position.side == LONG, tr.position
+    assert tr.position is None, \
+        f"NÖTR pozisyonu kapatmaliydi, acik kaldi: {tr.position}"
+    assert ev and "kapandı" in ev, ev
+    assert "bekleniyor" in ev, ev
+
+    # NÖTR'de TERS YON ACILMAMALI
+    assert all(t.side == LONG for t in tr.trades), \
+        "NÖTR sonrasi SHORT acilmamaliydi"
 
 
-ok.append(test("Sinyal modu: NÖTR işlem yapmaz",
-               t_sinyal_notr_islem_yapmaz))
+ok.append(test("Sinyal modu: NÖTR kapatır, ters yön açmaz (nakitte bekler)",
+               t_sinyal_notr_kapatir_bekler))
 
 
 def t_sinyal_guclu_sinyaller():
@@ -1158,6 +1173,55 @@ def t_osc_esikleri_ayri():
 
 ok.append(test("TEK KAYNAK: osc_only ölçülmüş kendi eşiklerini kullanır",
                t_osc_esikleri_ayri))
+
+
+def t_signal_modu_notr_kapatir():
+    """signal ve signal_long modlarinda da NÖTR kurali gecerli.
+
+    KULLANICI KURALI: "LONG'dan NÖTR geçtiğinde veya SHORT'tan NÖTR
+    geldiğinde karşı pozisyona geçmesin, pozisyonu kapatsın. Beklesin."
+    """
+    # --- signal modu: LONG + NÖTR -> kapanir, SHORT ACILMAZ ---
+    p, m = _tek_kaynak("signal")
+    p.on_price(100.0, m(), "4h", "AL")
+    assert p.position.side == "LONG", "signal: LONG acilmadi"
+    p.on_price(100.0, m(), "4h", "NÖTR")
+    assert p.position is None, \
+        "signal: LONG + NÖTR -> pozisyon kapandi, ters yon acmamali"
+
+    # --- signal modu: SHORT + NÖTR -> kapanir, LONG ACILMAZ ---
+    p, m = _tek_kaynak("signal")
+    p.on_price(100.0, m(), "4h", "SAT")
+    assert p.position.side == "SHORT", "signal: SHORT acilmadi"
+    p.on_price(100.0, m(), "4h", "NÖTR")
+    assert p.position is None, \
+        "signal: SHORT + NÖTR -> pozisyon kapandi, ters yon acmamali"
+
+    # --- signal_long modu ---
+    p, m = _tek_kaynak("signal_long")
+    p.on_price(100.0, m(), "4h", "AL")
+    assert p.position.side == "LONG"
+    p.on_price(100.0, m(), "4h", "NÖTR")
+    assert p.position is None, \
+        "signal_long: LONG + NÖTR -> pozisyon kapandi, yeni acmamali"
+
+    # --- Pozisyon yokken NÖTR: hicbir sey acilmaz (tum modlar) ---
+    for mod in ("signal", "signal_long"):
+        p, m = _tek_kaynak(mod)
+        for _ in range(3):
+            p.on_price(100.0, m(), "4h", "NÖTR")
+        assert p.position is None, f"{mod}: bosta NÖTR acmamali"
+
+    # --- SAT hala ters yon acar (davranis bozulmadi) ---
+    p, m = _tek_kaynak("signal")
+    p.on_price(100.0, m(), "4h", "AL")
+    p.on_price(99.0, m(), "4h", "SAT")
+    assert p.position.side == "SHORT", \
+        "signal: SAT hala LONG'u kapatip SHORT acmali"
+
+
+ok.append(test("SİNYAL: NÖTR pozisyonu kapatır, ters yön açmaz",
+               t_signal_modu_notr_kapatir))
 
 
 print("-" * 62)
