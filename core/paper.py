@@ -69,6 +69,17 @@ class Trade:
     mode: str = "live"          # "backtest" | "live"
 
 
+def _px(value: float) -> str:
+    """Fiyat bicimi — ondalik adedi degerin buyuklugune gore degisir.
+
+    Coin listesi genisletildiginde (1000PEPE = 0,0038) sabit 4 ondalik
+    yetersiz kaldi ve 2 ondalik fiyati TAMAMEN sifirliyordu ("0,00").
+    Simdi core.analysis.format_number ile ayni kurali kullanir.
+    """
+    from core.analysis import format_number
+    return format_number(value, digits=None)
+
+
 class PaperTrader:
     """
     Sanal cuzdan + kaldirac + komisyon.
@@ -186,7 +197,8 @@ class PaperTrader:
             self.confirm = bool(confirm)
         if short_rule in ("pullback", "entry"):
             self.short_rule = short_rule
-        if mode in ("range", "signal", "signal_long", "signal_exit"):
+        if mode in ("range", "signal", "signal_long", "signal_exit",
+                    "ma_only", "osc_only"):
             self.mode = mode
         if min_hold is not None and 0 <= int(min_hold) <= 500:
             self.min_hold_bars = int(min_hold)
@@ -395,6 +407,59 @@ class PaperTrader:
                                 timeframe)
                     return "Hedefe ulaşıldı"
 
+            # 2b) YALNIZCA MA / YALNIZCA OSILATÖR modlari.
+            #
+            # KULLANICI KURALI:
+            #   "Sadece hareketli ortalamalara göre SHORT LONG yap."
+            #   "Sadece osilatörlere göre SHORT LONG yap."
+            #
+            # DÖNGÜ (kullanıcıdan gelen tarif):
+            #   * Art arda LONG  → LONG zaten açık, İŞLEM YAPILMAZ
+            #   * SHORT geldi    → LONG kapanır, SHORT açılır
+            #   * NÖTR geldi     → LONG kapanır, SHORT açılır   (ters yön)
+            #   * Art arda SHORT → SHORT zaten açık, İŞLEM YAPILMAZ
+            #   * NÖTR geldi     → SHORT kapanır, LONG açılır   (ters yön)
+            #   * LONG geldi     → SHORT kapanır, LONG açılır
+            #
+            # YANİ NÖTR BU MODLARDA "BEKLE" DEĞİL, TERS YÖN SİNYALİDİR.
+            # (Bilesik "signal" modunda NÖTR birsey yapmaz; fark burada.)
+            #
+            # Bu blok POZISYON ACIKKEN calisir — aksi halde asagidaki
+            # sinyal bloguna hic ulasilamaz (proje tarihinde yasanmis hata).
+            if self.mode in ("ma_only", "osc_only") and signal:
+                if signal == self.last_signal:
+                    return None                 # ayni yon: dokunma
+                if self._bars_held < self.min_hold_bars:
+                    # Bekleme suresi dolmadi. SIKICI: last_signal BURADA
+                    # guncellenmez; yoksa ayni sinyal gelmeye devam ettigi
+                    # icin "sinyal degisti" kontrolu bir sonraki tick'te
+                    # True olur ve pozisyon SONSUZA kadar bekler.
+                    # (Testte yakalandi: min_hold=5 iken kapanma hic olmadi.)
+                    return None
+                self.last_signal = signal       # bekleme gecti, simdi kaydet
+
+                dusus = signal in ("SAT", "GÜÇLÜ SAT")
+                yukselis = signal in ("AL", "GÜÇLÜ AL")
+                kaynak = ("hareketli ortalamalar" if self.mode == "ma_only"
+                          else "osilatörler")
+
+                if p.side == LONG and not yukselis:
+                    # SAT ya da NÖTR: LONG kapanir, yerine SHORT acilir.
+                    self._close(price, f"{signal} ({kaynak})", timeframe)
+                    self._open(SHORT, price, f"{signal} ({kaynak})",
+                               timeframe, candles)
+                    return (f"SHORT açıldı — {signal} · {kaynak} "
+                            f"(LONG kapandı)")
+
+                if p.side == SHORT and not dusus:
+                    # LONG ya da NÖTR: SHORT kapanir, yerine LONG acilir.
+                    self._close(price, f"{signal} ({kaynak})", timeframe)
+                    self._open(LONG, price, f"{signal} ({kaynak})",
+                               timeframe, candles)
+                    return (f"LONG açıldı — {signal} · {kaynak} "
+                            f"(SHORT kapandı)")
+                return None
+
             # 3) SİNYAL TERS YÖN: pozisyon kapatılır ve tersi açılır.
             #    SAT geldiyse LONG kapanır + SHORT açılır.
             #    (Bu kontrol POZISYON ACIKKEN yapilir; aksi halde sinyal
@@ -438,6 +503,30 @@ class PaperTrader:
                                 f"(SHORT kapandı)")
                     return f"SHORT kapandı — {signal} sinyali"
             return None
+
+        # ------------------------------------------------------------------
+        # 2b) YALNIZCA MA / OSILATÖR — pozisyon YOKKEN giris
+        #
+        # NÖTR geldiğinde pozisyon açılmaz (bekle). Sıralı sinyal
+        # (LONG → SAT → LONG) ilk pozisyonu zaten yukarıdaki açık
+        # pozisyon bloğu açıyor.
+        # ------------------------------------------------------------------
+        if self.mode in ("ma_only", "osc_only") and signal:
+            if signal == self.last_signal:
+                return None
+            self.last_signal = signal
+            kaynak = ("hareketli ortalamalar" if self.mode == "ma_only"
+                      else "osilatörler")
+
+            if signal in ("SAT", "GÜÇLÜ SAT"):
+                self._open(SHORT, price, f"{signal} ({kaynak})", timeframe,
+                           candles)
+                return f"SHORT açıldı — {signal} · {kaynak}"
+            if signal in ("AL", "GÜÇLÜ AL"):
+                self._open(LONG, price, f"{signal} ({kaynak})", timeframe,
+                           candles)
+                return f"LONG açıldı — {signal} · {kaynak}"
+            return None                      # NÖTR: giris yok
 
         # ------------------------------------------------------------------
         # 3) SİNYAL MODU: gösterge analizi karar verir
@@ -502,6 +591,90 @@ class PaperTrader:
             self._live_started_at = time.time()
 
     # ------------------------------------------------------------------
+    def _build_signal_series(self, candles: list,
+                             timeframe: str) -> list:
+        """
+        Geriye donuk test icin bar basina sinyal dizisi uretir.
+
+        Kural moduna gore KAYNAK degisir (bkz. service._signal_for_mode):
+          signal / signal_long / signal_exit : bilesik skor
+          ma_only     : 15 hareketli ortalamanin skoru
+          osc_only    : 11 osilatorun skoru
+
+        Osilator modunda daha kucuk esikler kullanilir; bilesik esikler
+        11 osilatorun ortalamasi icin neredeyse hic asilmaz.
+        """
+        from core.analysis import analyze
+        import config as cfg
+
+        strong = self.thresholds()[1]
+        base = self.thresholds()[0]
+
+        # ONCE TEK SEFERDE TUM GECMISI ANALIZ ET.
+        #
+        # analyze() TEK CAGRIDA tum gecmisin bar basina skoru uretiyor
+        # VE NEDENSELDIR: signals[i] yalnizca i'ye kadar olan mumlara bakar
+        # (150/150 kesme testiyle dogrulanmis). Bu yuzden "her bar icin
+        # ayri analyze()" yerine TEK cagri yeterlidir.
+        #
+        # PERFORMANS: bar basina yeniden hesap 500 bar x ~55 ms = ~26 sn
+        # suruyordu; tek cagri ~50 ms.
+        try:
+            res = analyze(
+                symbol=self.symbol, timeframe=timeframe,
+                open_times=[c.open_time for c in candles],
+                o=[c.open for c in candles], h=[c.high for c in candles],
+                l=[c.low for c in candles], c=[c.close for c in candles],
+                v=[c.volume for c in candles],
+                close_times=[c.close_time for c in candles])
+        except Exception:      # noqa: BLE001
+            return [None] * len(candles)
+
+        if self.mode == "ma_only":
+            seriler = res.ma_scores
+        elif self.mode == "osc_only":
+            seriler = res.oscillator_scores
+        else:
+            # ONEMLI: res.signals bir LISTE DE Signal ENUM'U dondurur
+            # (Signal.SELL), metin DEGIL. _on_price string karsilastirmasi
+            # yaptigi icin enum liste donulurse HICBIR sinyal islenmez
+            # (olcum: signal/signal_long 0 islem veriyordu).
+            return [s.value if hasattr(s, "value") else s
+                    for s in res.signals]
+
+        if self.mode == "osc_only":
+            s2 = cfg.PAPER_OSC_STRONG_THRESHOLD
+            b2 = cfg.PAPER_OSC_BASE_THRESHOLD
+        else:
+            s2, b2 = strong, base
+
+        out: list = []
+        for i in range(len(candles)):
+            x = seriler[i] if i < len(seriler) else None
+            if x is None or x != x:            # None / NaN
+                out.append(None)
+            elif x >= s2:
+                out.append("GÜÇLÜ AL")
+            elif x >= b2:
+                out.append("AL")
+            elif x <= -s2:
+                out.append("GÜÇLÜ SAT")
+            elif x <= -b2:
+                out.append("SAT")
+            else:
+                out.append("NÖTR")
+        return out
+
+    # ------------------------------------------------------------------
+    def thresholds(self) -> tuple[float, float]:
+        """(AL/SAT esigi, GÜÇLÜ esigi) — arayuz ayarlari. Varsayilan
+        config'den gelir."""
+        return (float(getattr(self, "_base_threshold",
+                              config.PAPER_BASE_THRESHOLD)),
+                float(getattr(self, "_strong_threshold",
+                              config.PAPER_STRONG_THRESHOLD)))
+
+    # ------------------------------------------------------------------
     def backtest(self, candles: list, timeframe: str,
                    signals: Optional[list] = None) -> dict[str, Any]:
         """
@@ -536,6 +709,17 @@ class PaperTrader:
 
             t0 = time.monotonic()
             try:
+                if signals is None and self.mode in ("signal", "signal_long",
+                                                     "signal_exit",
+                                                     "ma_only", "osc_only"):
+                    # Sinyal listesi YOKSA ve karar modu sinyal tabanliysa
+                    # burada analiz yapip signal listesini kendimiz uretiriz.
+                    #
+                    # ONCEDEN: signals=None dogrudan geciliyordu ve
+                    # _on_price signal=None aliyordu -> sinyal bloklari
+                    # hic calismiyor, TUM MODLAR AYNI SONUCU VERIYORDU
+                    # (olcum: range/signal/ma_only/osc_only hepsi 981,50).
+                    signals = self._build_signal_series(candles, timeframe)
                 for i in range(start, n):
                     window = candles[i - start + 1:i + 1]
                     sig = signals[i] if signals and i < len(signals) else None
@@ -596,11 +780,35 @@ class PaperTrader:
         else:
             win_low = win_high = price
         target = win_high if side == LONG else win_low
-        # Hedef giris fiyatinin yaninda kalmiyorsa kullanma (anlamsiz).
-        if side == LONG and target <= price:
-            target = price
-        if side == SHORT and target >= price:
-            target = price
+
+        # Hedefin anlamsiz oldugu iki durum var:
+        #
+        #  a) Giriş fiyatinin YANINDA kalmasi (pencere dar, zirve girişin
+        #     altinda kalmis).
+        #  b) Giriş fiyatina EŞİT olmasi.
+        #
+        # (b) KESINLIKLE Düzeltilmeliydi: hedef = giriş yapilirsa
+        # kapanma kontrolü `fiyat <= target` (LONG) / `fiyat >= target`
+        # (SHORT) POZISYONUN ACILDIKI ANDA doğru olur ve simule
+        # oluşmadan kapanirdi. Testte yakalandi: "SAT → SHORT açıldı"
+        # sonrası bir sonraki fiyatta "Hedefe ulaşıldı" ile kapaniyordu.
+        #
+        # Düzeltme: hedef girişle aynıysa HEDEF YOK say (0) — kapanma
+        # yalnizca likidasyon veya sinyal ile olur.
+        if (side == LONG and target <= price) or \
+           (side == SHORT and target >= price):
+            # Pencere, giris fiyatinin tamamen disinda kalmis (fiyat
+            # pencerenin disina cikmis). Hedef burada anlamsiz.
+            #
+            # ONCEDEN: target = price yapiliyordu. Bu, kapanma kontrolunu
+            # (`fiyat >= target` SHORT icin) POZISYONUN ACILDIKI ANDA
+            # dogru yapiyordu -> "SAT ile SHORT açıldı" sonrasi ilk
+            # fiyatta "Hedefe ulaşıldı" ile kapaniyor, sinyal dongusu
+            # hic calismiyordu. Testte yakalandi.
+            #
+            # SIMDI: hedef yok sayilir (0). Kapanma yalnizca likidasyon
+            # veya sinyal ile olur.
+            target = 0.0
 
         self.position = Position(
             side=side, entry=price, qty=qty, margin=margin, notional=notional,
@@ -617,9 +825,9 @@ class PaperTrader:
                 self.long_peak = price
 
         self._emit("trade",
-                   f"{side} açıldı @ {price:,.4f} · "
+                   f"{side} açıldı @ {_px(price)} · "
                    f"{self.leverage:g}x · teminat {margin:,.2f} · "
-                   f"komisyon {fee_open:,.4f} · hedef {target:,.4f} · "
+                   f"komisyon {fee_open:,.4f} · hedef {_px(target)} · "
                    f"{reason}")
 
     def _close(self, price: float, reason: str, timeframe: str) -> None:
@@ -649,7 +857,7 @@ class PaperTrader:
         ))
         self.position = None
         self._emit("trade",
-                   f"{p.side} kapandı @ {price:,.4f} · net {net:+,.2f} "
+                   f"{p.side} kapandı @ {_px(price)} · net {net:+,.2f} "
                    f"(brüt {gross:+,.2f}, komisyon {p.fee_open + fee_close:,.4f})"
                    f" · {reason}")
 

@@ -166,21 +166,39 @@
           </label>
           <label class="wfull">Karar mekanizması
             <select id="pMode">
-              <option value="range">Aralık — pencerenin tabanı (onaylı, +%121)</option>
-              <option value="signal_long">Sadece LONG — AL girer, SAT çıkar</option>
-              <option value="signal_exit">Aralık girer, SAT ile çıkar</option>
-              <option value="signal">Sinyal — AL/SAT dönüşümlü (deneysel)</option>
+              <optgroup label="— Bileşik (osilatör + MA) —">
+                <option value="range">Aralık — pencerenin tabanı (onaylı, +%121)</option>
+                <option value="signal_long">Sadece LONG — AL girer, SAT çıkar</option>
+                <option value="signal_exit">Aralık girer, SAT ile çıkar</option>
+                <option value="signal">Sinyal — AL/SAT dönüşümlü (deneysel)</option>
+              </optgroup>
+              <optgroup label="— Tek kaynak —">
+                <option value="ma_only">Sadece hareketli ortalamalar</option>
+                <option value="osc_only">Sadece osilatörler</option>
+              </optgroup>
             </select>
           </label>
-          <label class="wfull">SHORT kuralı
+          <label class="wfull" id="ruleWrap">SHORT kuralı
             <select id="pRule">
               <option value="entry">Son LONG'un altında (onaylı, +%120)</option>
               <option value="pullback">Tepeden geri çekilme — deneysel</option>
             </select>
           </label>
         </div>
-        <div class="note">Varsayılan onaylı sürümü verir (4h'de %120). Diğerleri
-          deneyseldir; açılır listeden seçerek karşılaştırabilirsiniz.</div>
+        <div class="note" id="modeNote">Varsayılan onaylı sürümü verir (4h'de %120).
+          Diğerleri deneyseldir; açılır listeden seçerek karşılaştırabilirsiniz.</div>
+        <div class="note" id="modeNote2" style="display:none">
+          <b>Tek kaynak kuralı:</b> karar yalnızca seçilen gruptan gelir —
+          LONG + SHORT birlikte o grup belirler, ayrı SHORT kuralı gerekmez.
+          <b>NÖTR bu modlarda ters yön sinyalidir</b>: açık LONG'yi kapatıp
+          SHORT açar, açık SHORT'u kapatıp LONG açar. Art arda aynı yönde
+          sinyal gelirse işlem yapılmaz.<br><br>
+          <b>Eşikler:</b> <span id="modeThr">hareketli ortalamalar için
+          0,40 / 0,65 (bileşik)</span>. Osilatör skoru 11 osilatörün
+          ortalaması olduğundan bileşik eşikler neredeyse hiç aşılmaz;
+          bu yüzden <b>osc_only</b> modunda ölçülmüş daha düşük eşikler
+          (0,25 / 0,40) kullanılır — ortalama pozisyon 4,5 bar sürer.
+        </div>
 
         <div class="livebox" id="liveBox">
           <div class="ltitle">CANLI İŞLEM</div>

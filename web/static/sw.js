@@ -14,7 +14,11 @@
  * sayfa yarida guncellenip mum/gosterge durumu kaybolur. Yeni surum
  * bir sonraki acilista devreye girer.
  */
-const VERSION = "ta-v1";
+// VERSION degistirildiginde tarayici yeni surumu yukler.
+// app.js'teki fiyat bicimlendirme duzeltmesi icin yukseltildi.
+// VERSION degistirildiginde tarayici yeni surumu yukler.
+// v3: ma_only / osc_only modlari + osc esik bilgisi
+const VERSION = "ta-v3";
 const SHELL = "shell-" + VERSION;
 
 const PRECACHE = [

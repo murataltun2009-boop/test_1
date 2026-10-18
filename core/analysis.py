@@ -231,9 +231,28 @@ def format_number(value: Optional[float], digits: int = 2) -> str:
 
     TradingView teknik sayfasinda da ayni bicim kullanilir
     (orn. 81.555,21).
+
+    ONDALIK ADEDI: FIYATIN BUYUKLUGUNE GORE OTOMATIK. Sabit 2 ondalik
+    kullanmak 0,0038 fiyatlı coinleri "0,00" yapıyordu (orn. 1000PEPE).
+    Bkz. digits=None ile cagrilirsa otomatik secilir.
     """
     if value is None or not np.isfinite(value):
         return "—"
+    if digits is None:
+        # Ondalik sayisi = fiyatin basamak DERECESI.
+        # Araliklar yuksekten dusuk siniflanir ve ust sinir KAPSAMAYDIR:
+        #   0,4238 -> 4 ondalik (2 ondaliga yuvarlanirsa 0,42 olur ve
+        #              %0,38'lik gercek deger kaybolur)
+        a = abs(float(value))
+        digits = 2
+        if a and a < 0.000001:
+            digits = 10
+        elif a and a < 0.01:
+            digits = 8
+        elif a and a < 0.1:
+            digits = 6
+        elif a and a < 1.0:
+            digits = 4
     return f"{value:,.{digits}f}".replace(",", "\x00").replace(".", ",").replace("\x00", ".")
 
 
@@ -248,7 +267,7 @@ class IndicatorValue:
 
     @property
     def value_text(self) -> str:
-        return format_number(self.value)
+        return format_number(self.value, digits=None)
 
 
 @dataclass

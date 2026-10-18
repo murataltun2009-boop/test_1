@@ -922,6 +922,242 @@ ok.append(test("CANLI: özet yalnız 'live' işlemleri sayar",
                t_canli_ozet_backtesti_saymaz))
 
 
+# ----------------------------------------------------------------------
+# REGRESYON: kucuk fiyatli coinler "0,00" olarak gorunuyordu
+# ----------------------------------------------------------------------
+def t_kucuk_fiyat_bicimi():
+    """1000PEPE = 0,0038677 -> sabit 2 ondalikta "0,00" oluyordu.
+
+    Coin listesi genisletildiginde (1000PEPE, 1000SHIB vb.) ortaya
+    cikti: hem arayuz hem sinyal logu fiyati 0,00 gosteriyordu.
+    """
+    from core.analysis import format_number
+
+    # Sunucu tarafi. Ondalik sayisi fiyatin BUYUKLUGUNE gore secilir:
+    # deger 0,0038677 < 0,01 -> 8 ondalik -> "0,00386770"
+    # (KAYIP YOK: degerin tum anlamli haneleri gorunur)
+    assert format_number(0.0038677, digits=None) == "0,00386770", \
+        f"1000PEPE yanlis: {format_number(0.0038677, digits=None)}"
+    assert format_number(0.0777, digits=None) == "0,077700", \
+        f"DOGE yanlis: {format_number(0.0777, digits=None)}"
+    assert format_number(0.4238, digits=None) == "0,4238", \
+        f"FET yanlis: {format_number(0.4238, digits=None)}"
+    assert format_number(2366.33, digits=None) == "2.366,33", \
+        f"ETH yanlis: {format_number(2366.33, digits=None)}"
+    assert format_number(83706.60, digits=None) == "83.706,60", \
+        f"BTC yanlis: {format_number(83706.60, digits=None)}"
+
+    # ASLA "0,00" olmamali (sifir disi degerler icin)
+    for v in (0.0038677, 0.00001, 0.0777, 1.0, 83000.0):
+        out = format_number(v, digits=None)
+        assert out != "0,00", f"{v} -> '0,00' oldu!"
+
+
+ok.append(test("REGRESYON: küçük fiyatlar 0,00 olarak görünmez",
+               t_kucuk_fiyat_bicimi))
+
+
+# ----------------------------------------------------------------------
+# TEK KAYNAK KURALLARI: ma_only / osc_only
+# ----------------------------------------------------------------------
+def _tek_kaynak(mod):
+    """Test icin: verilen modda bir PaperTrader + sahte mum uretir."""
+    from core.paper import PaperTrader
+    import config as cfg
+
+    p = PaperTrader(cfg.Settings())
+    p.configure(balance=1000.0, leverage=10, fee_rate=0.0005,
+                wallet_fraction=0.8, mode=mod)
+    p.running = True
+    p.start_balance = 1000.0
+    p.balance = 1000.0
+
+    from core.binance_client import Candle
+
+    def mumlar(n=30, base=100.0, t0=0):
+        out = []
+        for i in range(n):
+            p0 = base + i * 0.5
+            bar = (i + t0) * 14400000
+            out.append(Candle(open_time=bar, open=p0, high=p0 + 0.4,
+                              low=p0 - 0.4, close=p0 + 0.2, volume=10.0,
+                              close_time=bar + 1, closed=True))
+        return out
+
+    return p, mumlar
+
+
+def t_ma_only_girisi():
+    """ma_only: AL sinyaliyle LONG, SAT sinyaliyle SHORT acar."""
+    for mod in ("ma_only", "osc_only"):
+        p, mumlar = _tek_kaynak(mod)
+        # Pozisyon yokken AL -> LONG
+        p.on_price(100.0, mumlar(), "4h", "AL")
+        assert p.position and p.position.side == "LONG", \
+            f"{mod}: AL sinyaliyle LONG acilmadi"
+
+
+ok.append(test("TEK KAYNAK: AL sinyaliyle LONG açar", t_ma_only_girisi))
+
+
+def t_ma_only_art_arda_islem_yapmaz():
+    """Art arda ayni yon gelirse ISLEM YAPILMAZ (pozisyon durur)."""
+    for mod in ("ma_only", "osc_only"):
+        p, mumlar = _tek_kaynak(mod)
+        p.on_price(100.0, mumlar(), "4h", "AL")
+        ilk_giris = p.position.entry
+        # Art arda AL, AL, GÜÇLÜ AL -> hicbiri dokunmamali
+        for sig in ("AL", "GÜÇLÜ AL", "AL"):
+            p.on_price(101.0, mumlar(), "4h", sig)
+        assert p.position.side == "LONG", f"{mod}: LONG kapandi, olmamaliydi"
+        assert p.position.entry == ilk_giris, \
+            f"{mod}: pozisyon yeniden acildi, olmamaliydi"
+
+
+ok.append(test("TEK KAYNAK: art arda aynı yönde işlem yapmaz",
+               t_ma_only_art_arda_islem_yapmaz))
+
+
+def t_ma_only_dongusu():
+    """Kullanicinin tarif ettigi TAM DONGU:
+
+    LONG + art arda LONG  -> islem yok
+    LONG + SAT            -> LONG kapanir, SHORT acilir
+    LONG + NÖTR           -> LONG kapanir, SHORT acilir  (TERS YON)
+    SHORT + art arda SHORT-> islem yok
+    SHORT + NÖTR          -> SHORT kapanir, LONG acilir  (TERS YON)
+    SHORT + LONG          -> SHORT kapanir, LONG acilir
+    """
+    for mod in ("ma_only", "osc_only"):
+        p, m = _tek_kaynak(mod)
+
+        # --- 1) LONG ac ---
+        p.on_price(100.0, m(), "4h", "AL")
+        assert p.position.side == "LONG", f"{mod}: 1. adim"
+
+        # --- 2) Art arda LONG: dokunma ---
+        for _ in range(3):
+            p.on_price(101.0, m(), "4h", "AL")
+        assert p.position.side == "LONG", f"{mod}: 2. adim (LONG korunmali)"
+
+        # --- 3) SAT: LONG kapanir, SHORT acilir ---
+        p.on_price(99.0, m(), "4h", "SAT")
+        assert p.position.side == "SHORT", \
+            f"{mod}: 3. adim SAT ile SHORT acmadi"
+
+        # --- 4) Art arda SHORT: dokunma ---
+        g = p.position.entry
+        for _ in range(3):
+            p.on_price(98.0, m(), "4h", "SAT")
+        assert p.position.side == "SHORT" and p.position.entry == g, \
+            f"{mod}: 4. adim SHORT korunmali"
+
+        # --- 5) NÖTR: SHORT kapanir, LONG acilir (TERS YON) ---
+        p.on_price(98.0, m(), "4h", "NÖTR")
+        assert p.position.side == "LONG", \
+            f"{mod}: 5. adim NÖTR ters yon calismadi"
+
+        # --- 6) LONG + NÖTR: LONG kapanir, SHORT acilir (TERS YON) ---
+        p.on_price(100.0, m(), "4h", "AL")
+        assert p.position.side == "LONG", f"{mod}: 6a"
+        p.on_price(100.0, m(), "4h", "NÖTR")
+        assert p.position.side == "SHORT", \
+            f"{mod}: 6. adim NÖTR LONG'u SHORT'a cevirmedi"
+
+        # --- 7) SHORT + LONG: LONG'a doner ---
+        p.on_price(101.0, m(), "4h", "AL")
+        assert p.position.side == "LONG", \
+            f"{mod}: 7. adim LONG'a donmedi"
+
+
+ok.append(test("TEK KAYNAK: AL↔SAT↔NÖTR tam döngüsü (kullanıcı tarifine göre)",
+               t_ma_only_dongusu))
+
+
+def t_tek_kaynak_min_bekleme():
+    """Min. bekleme suresi dolmadan kapatma yapilmaz."""
+    p, m = _tek_kaynak("ma_only")
+    p.configure(min_hold=5)
+    p.on_price(100.0, m(), "4h", "AL")
+    assert p.position.side == "LONG"
+    # Ayni barda hemen SAT: bekleme suresi dolmadi
+    p.on_price(99.0, m(), "4h", "SAT")
+    assert p.position.side == "LONG", \
+        "min. bekleme dolmadan pozisyon kapanmamali"
+    # Her adimda YENI bir bar olmali: on_price sayaci yalnizca
+    # mumlarin son barinin open_time'i degistiginde artirir.
+    for i in range(8):
+        p.on_price(99.0, m(t0=(i + 1) * 30), "4h", "SAT")
+        if p.position and p.position.side == "SHORT":
+            break
+    assert p.position and p.position.side == "SHORT", \
+        "bekleme suresi dolduktan sonra kapanmaliydi"
+
+
+ok.append(test("TEK KAYNAK: minimum bekleme süresi uygulanır",
+               t_tek_kaynak_min_bekleme))
+
+
+# ----------------------------------------------------------------------
+# TEK KAYNAK ESIKLERI
+# ----------------------------------------------------------------------
+def t_osc_esikleri_ayri():
+    """osc_only kendi esiklerini kullanir, bilesik esikleri degil.
+
+    OLCUM (tools/pick_osc_threshold.py, 15 coin x 3 dilim):
+      esik          4h AL   4h SAT   islem   ort.bar
+      0,40/0,65        15       18      66      43,4   (bilesik - calismiyor)
+      0,25/0,40       222      283     920       4,5   (secilen)
+    """
+    import config as cfg
+    from core.service import MarketService
+    from core.analysis import Signal
+
+    # Ayri esikler tanimli ve bilesik esiklerden DUSUK olmali
+    assert cfg.PAPER_OSC_BASE_THRESHOLD < cfg.BASE_THRESHOLD, \
+        "osilatör AL/SAT esigi bilesik esikten kucuk olmali"
+    assert cfg.PAPER_OSC_STRONG_THRESHOLD < cfg.STRONG_THRESHOLD, \
+        "osilatör GÜÇLÜ esigi bilesik esikten kucuk olmali"
+
+    # Sahte analiz: skoru elle verip karari sor
+    class FakeRes:
+        def __init__(self, osc, ma, comp):
+            self.oscillator_scores = [0.0, osc]
+            self.ma_scores = [0.0, ma]
+            self.composite = [0.0, comp]
+            self.composite_value = comp
+            self.signal = Signal.NEUTRAL
+
+    svc = MarketService(cfg.Settings(), store=None)
+    svc.paper = None
+
+    # osc_only: MA skoru -1 olsa bile OSILATÖR skoru belirleyici
+    svc.paper = type("P", (), {"mode": "osc_only"})()
+    r = FakeRes(osc=0.30, ma=-1.0, comp=-0.35)
+    assert svc._signal_for_mode(r) == "AL", \
+        f"osc=+0,30 AL vermeliydi, {svc._signal_for_mode(r)} geldi"
+
+    # Bilesik esiklerle ayni skor NÖTR kalirdi
+    assert 0.30 < cfg.BASE_THRESHOLD, "bu test bilesik esik varsayiyor"
+
+    # Negatif yon
+    r = FakeRes(osc=-0.30, ma=1.0, comp=0.35)
+    assert svc._signal_for_mode(r) == "SAT", "osc=-0,30 SAT vermeliydi"
+    r = FakeRes(osc=0.50, ma=1.0, comp=0.6)
+    assert svc._signal_for_mode(r) == "GÜÇLÜ AL", "osc=+0,50 GÜÇLÜ AL olmalı"
+    r = FakeRes(osc=0.05, ma=-1.0, comp=-0.4)
+    assert svc._signal_for_mode(r) == "NÖTR", "osc=+0,05 NÖTR olmalı"
+
+    # ma_only: bilesik esikler gecerli, MA skoru belirleyici
+    svc.paper = type("P", (), {"mode": "ma_only"})()
+    r = FakeRes(osc=0.9, ma=-0.5, comp=0.2)
+    assert svc._signal_for_mode(r) == "SAT", "ma=-0,50 SAT vermeliydi"
+
+
+ok.append(test("TEK KAYNAK: osc_only ölçülmüş kendi eşiklerini kullanır",
+               t_osc_esikleri_ayri))
+
+
 print("-" * 62)
 print(f"{sum(ok)}/{len(ok)} test gecti")
 sys.exit(0 if all(ok) else 1)

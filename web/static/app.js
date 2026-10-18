@@ -104,6 +104,7 @@ if ("serviceWorker" in navigator) {
    "wFee", "wTrades", "wLastLong", "wPeak", "wPosBox", "wPosTitle", "wPosBody",
    "pBalance", "pLev", "pFrac", "pFee", "pLook", "pHold", "pConfirm",
    "pBacktest", "pRule", "pMode", "pStart", "pLive", "pStop", "pReset",
+   "ruleWrap", "modeNote", "modeNote2", "modeThr",
    "wTradeList", "btBox", "btRange", "btBody",
    "liveBox", "lProfit", "lTrades", "lFee", "lStart", "lStatus"
   ].forEach(function (id) { el[id] = document.getElementById(id); });
@@ -111,10 +112,31 @@ if ("serviceWorker" in navigator) {
   // ==================================================================
   // Bicimlendirme
   // ==================================================================
+  // Fiyat bicimlendirme — ondalik ADEDI fiyata gore degisir.
+  //
+  // SORUN: sabit 2 ondalik kullanmak 0,0038 fiyatlı coinleri "0,00"
+  // olarak gosteriyordu (1000PEPE = 0,0038677 -> "0,00"). Bu hem
+  // anlamsiz hem de bazi piyasalarda mum grafigini de yassilastiriyor.
+  //
+  // KURAL: fiyat ne kadar kucukse o kadar cok ondalik gosterilir.
+  //   83.706,60      -> 2 ondalik
+  //   2.504,19       -> 2 ondalik
+  //   0,4238        -> 4 ondalik  (2 ondalik olsaydi 0,42 olurdu:
+  //                                  %0,38'lik gercek deger kaybolur)
+  //   0,0777        -> 6 ondalik
+  //   0,003867      -> 8 ondalik
   function fmt(n) {
     if (n === null || n === undefined) return "—";
-    return Number(n).toLocaleString("tr-TR", { minimumFractionDigits: 2,
-                                                maximumFractionDigits: 2 });
+    var v = Number(n);
+    if (!isFinite(v)) return "—";
+    var a = Math.abs(v);
+    var digits = 2;
+    if (a > 0 && a < 0.000001) digits = 10;
+    else if (a > 0 && a < 0.01) digits = 8;
+    else if (a > 0 && a < 0.1) digits = 6;
+    else if (a > 0 && a < 1.0) digits = 4;
+    return v.toLocaleString("tr-TR", { minimumFractionDigits: digits,
+                                        maximumFractionDigits: digits });
   }
   function fmtVol(n) {
     if (!n) return "—";
@@ -658,7 +680,10 @@ if ("serviceWorker" in navigator) {
       if (document.activeElement !== el.pLook) el.pLook.value = d.lookback;
       if (document.activeElement !== el.pHold) el.pHold.value = d.min_hold_bars;
       if (document.activeElement !== el.pRule) el.pRule.value = d.short_rule;
-      if (document.activeElement !== el.pMode) el.pMode.value = d.mode;
+      if (document.activeElement !== el.pMode) {
+        el.pMode.value = d.mode;
+        syncModeUI();          // sunucudan gelen moda gore kilidi guncelle
+      }
     }
 
     el.wBalance.textContent = fmtUsd(d.balance);
@@ -820,6 +845,33 @@ if ("serviceWorker" in navigator) {
   ["pConfirm", "pBacktest", "pRule", "pMode"].forEach(function (id) {
     el[id].addEventListener("change", function () { state.userTouched = true; });
   });
+
+  // ---- Tek kaynak modlari: SHORT kuralini devre disi birak ----------
+  //
+  // Kullanicinin gerekcesi: "bu iki kuraldan biri secilirse short
+  // kuralini secmeye gerek yok, cunku long ve short kuralini kendi
+  // olusturuyor zaten."
+  //
+  // ma_only / osc_only modlarinda karar tek gruptan gelir; ayri bir
+  // "son LONG'un altinda" kurali zaten uygulanmaz. Kullanici secimi
+  // yaniltmamak icin seciciyi deaktif edip aciklamayi gosteriyoruz.
+  var TEK_KAYNAK = ["ma_only", "osc_only"];
+  function syncModeUI() {
+    var tek = TEK_KAYNAK.indexOf(el.pMode.value) >= 0;
+    el.ruleWrap.style.display = tek ? "none" : "";
+    el.modeNote.style.display = tek ? "none" : "";
+    el.modeNote2.style.display = tek ? "" : "none";
+    el.pRule.disabled = tek;
+    // Kullanilan esikleri yaz: osilator modunda bilesik esikler
+    // degil, olculmus daha kucuk esikler gecerli.
+    if (el.modeThr) {
+      el.modeThr.textContent = el.pMode.value === "osc_only"
+        ? "osilatörler için 0,25 / 0,40 (ölçülmüş, bileşik eşik değil)"
+        : "hareketli ortalamalar için 0,40 / 0,65 (bileşik eşikler)";
+    }
+  }
+  el.pMode.addEventListener("change", syncModeUI);
+  syncModeUI();
   ["pBalance", "pLev", "pFrac", "pFee", "pLook", "pHold"].forEach(function (id) {
     el[id].addEventListener("input", function () { state.userTouched = true; });
   });

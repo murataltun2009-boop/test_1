@@ -20,7 +20,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 import config
-from core.analysis import Signal, TimeframeAnalysis, analyze
+from core.analysis import Signal, TimeframeAnalysis, analyze, format_number
 from core.binance_client import BinanceFuturesClient, Candle, Trade
 
 logger = logging.getLogger("ta.service")
@@ -433,7 +433,8 @@ class MarketService:
             self._emit_log(
                 "info", tf,
                 f"Başlangıç durumu: {res.signal.value} "
-                f"(skor {res.composite_value:+.3f}, fiyat {res.price:,.2f})",
+                f"(skor {res.composite_value:+.3f}, "
+                f"fiyat {format_number(res.price, digits=None)})",
             )
             return
 
@@ -492,11 +493,59 @@ class MarketService:
             price = self._live_price
         if price != price or price <= 0:      # NaN veya gecersiz
             price = candles[-1].close
-        signal = res.signal.value if res is not None else None
+        signal = self._signal_for_mode(res)
         try:
             self.paper.on_price(price, candles, tf, signal)
         except Exception as exc:      # noqa: BLE001
             self._emit_log("error", "simulator", f"Simülatör hatası: {exc}")
+
+    # ------------------------------------------------------------------
+    def _signal_for_mode(self, res: "TimeframeAnalysis | None") -> str | None:
+        """
+        Karar mekanizmasina göre SINYAL kaynagini secer.
+
+        Varsayilan: bilesik skor (11 osilator + 15 MA birlikte).
+        ma_only : SADECE 15 hareketli ortalamanin skoru
+        osc_only: SADECE 11 osilatorun skoru
+
+        ONEMLI: alt skorlar da -1..+1 olcegindedir (ortalama alindiği
+        icin), bu yuzden AYNI esikler (GÜÇLÜ / AL-SAT) kullanilabilir.
+        Bilesik skor 0,50*osilator + 0,50*MA oldugu icik bilesik deger
+        ile alt degerler farkli olabilir; yanlislikla bilesik kullanilirsa
+        kural "sadece MA" olmaktan cikar.
+        """
+        if res is None:
+            return None
+
+        mode = self.paper.mode if self.paper is not None else "range"
+        if mode not in ("ma_only", "osc_only"):
+            return res.signal.value
+
+        score = (res.ma_scores[-1] if mode == "ma_only"
+                 else res.oscillator_scores[-1])
+
+        # ESIKLER MODE GORE DEGISIR — OLCULE GEREKCEYLE (bkz. config.py)
+        #   MA  : bilesik esikler (0,40 / 0,65). 15 MA'nin ortalamasi
+        #         oldugu icin yeterince hareket ediyor.
+        #   OSC : daha kucuk esikler (0,25 / 0,40). 11 osilatorun
+        #         ortalamasi oldugu icin bilesik esikler neredeyse hic
+        #         asilmaz; olcum: 4h/280 barda 33 sinyal.
+        if mode == "osc_only":
+            base = config.PAPER_OSC_BASE_THRESHOLD
+            strong = config.PAPER_OSC_STRONG_THRESHOLD
+        else:
+            base = self.settings.base_threshold
+            strong = self.settings.strong_threshold
+
+        if score >= strong:
+            return "GÜÇLÜ AL"
+        if score >= base:
+            return "AL"
+        if score <= -strong:
+            return "GÜÇLÜ SAT"
+        if score <= -base:
+            return "SAT"
+        return "NÖTR"
 
     # ------------------------------------------------------------------
     def switch_symbol(self, symbol: str) -> tuple[bool, str]:
@@ -523,6 +572,11 @@ class MarketService:
         # Yeni coinin fiyati eskisinden tamamen farkli; bozuk-veri filtresi
         # referansini sifirlamazsak butun ilk islemleri reddederdi.
         self._last_good_price = 0.0
+        # Anlik fiyat da sifirlanmali. Aksi halde ilk analiz turunde
+        # ESKI coinin fiyatiyle calisiyor ve yeni coinin mumlari
+        # o fiyatla etiketleniyordu (log'da "fiyat 0.00" gorunmesinin
+        # nedeni buydu: 0,0038 fiyatli bir coinde onceki 0.00 kaliyordu).
+        self._live_price = float("nan")
         with self._lock:
             self._buffers.clear()
             self._analyses.clear()
@@ -669,7 +723,8 @@ class MarketService:
     def _emit_log_signal(self, tf: str, stamp: str, sig: Signal,
                          previous: Signal, res: TimeframeAnalysis) -> None:
         text = (f"[{tf}] {previous.value} → {sig.value}  |  "
-                f"skor {res.composite_value:+.3f}  |  fiyat {res.price:,.2f}")
+                f"skor {res.composite_value:+.3f}  |  fiyat "
+                f"{format_number(res.price, digits=None)}")
         self.events.put(("signal_log", stamp, sig, tf, text))
         try:
             self.store.log("signal", tf, text)

@@ -138,15 +138,71 @@ MAX_TIME_DRIFT_MS = 5000      # bu esigi asarsa uyari verilir
 
 
 # --------------------------------------------------------------------------
-# Sembol secimi
+# Sembol secimi — 36 coin, HACIM OLÇUMUYLE secildi
 #
-# Kullanicinin istegi: "baska coinler uzerinde de islem yapabilelim".
-# Liste Binance Futures USDT vadeli paritelerinden; sembol degisince
-# servis yeniden kurulur (mum gecmisi ~1 sn/dilim).
+# Liste tahminle degil, Binance Futures'un canli verisiyle olusturuldu.
+#   python tools/update_symbols.py --write
+#
+# OLCUTLER (hepsi olculebilir):
+#   1. USDT perpetual + durum TRADING
+#   2. 24 saatlik islem hacmi >= 45.000.000 USD   (likidite -> kayma yok)
+#   3. Listelenme yasi >= 6 ay                    (4h x 500 bar = ~83 gun)
+#   4. 30 günlük medyan |günlük değişim| <= %6
+#   5. 30 günlük en büyük günlük değişim <= %35
+#   6. Kaldıraçlı token'ler ve stabil para çiftleri hariç
+#
+# 4 ve 5 NEDEN VAR: karar mekanizmasi ARALIKTAN yararlanıyor ("fiyat
+# pencerenin tabanında" / "zirve"). 30 günde bir %50 zıplayan coin'de
+# aralık oluşmuyor; mumlar aralığı parçalıyor ve taban/zirve testi
+# anlamsızlaşıyor. Tek günlük %3 zıplama sorun değil (BTC'de olur).
+#
+# OLCUM 2026-10-18: 522 USDT perpetual tarandi -> 47 aday -> 36 secildi.
+# Elenenler: AGT, Q, QNT, ZEREBRO, GTC, SAND, STRK, ARIA, ICNT, APR, BR
+#   (hepsi tek günde %36–114 zıpladı).
+#
+# NOT — 1000PEPEUSDT: Binance PEPE'yi fiyatının 1000 katıyla bu
+# sözleşme adıyla fiyatlıyor; ayrı bir varlık değil.
+#
+# Sembol degisince servis yeniden kurulur (mum gecmisi ~1 sn/dilim),
+# tamponlar temizlenir, simulator sifirlanir.
 # --------------------------------------------------------------------------
 SYMBOLS: list[str] = [
-    "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
-    "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "LINKUSDT", "DOTUSDT",
+    "BTCUSDT",
+    "ETHUSDT",
+    "ZECUSDT",
+    "SOLUSDT",
+    "NEARUSDT",
+    "XRPUSDT",
+    "HYPEUSDT",
+    "DOGEUSDT",
+    "BNBUSDT",
+    "WLDUSDT",
+    "AVAUSDT",
+    "SUIUSDT",
+    "PUMPUSDT",
+    "TIAUSDT",
+    "ENAUSDT",
+    "1000PEPEUSDT",
+    "FILUSDT",
+    "UNIUSDT",
+    "ERAUSDT",
+    "ADAUSDT",
+    "HBARUSDT",
+    "XMRUSDT",
+    "AVAXUSDT",
+    "INJUSDT",
+    "TAOUSDT",
+    "LINKUSDT",
+    "LTCUSDT",
+    "ARBUSDT",
+    "TRUMPUSDT",
+    "BCHUSDT",
+    "AAVEUSDT",
+    "FETUSDT",
+    "ONDOUSDT",
+    "APTUSDT",
+    "ZROUSDT",
+    "DOTUSDT",
 ]
 
 # --------------------------------------------------------------------------
@@ -193,7 +249,41 @@ PAPER_PULLBACK = 0.005           # zirveden en az %0,5 geri cekilme
 #   "signal"      : gosterge analizinin sinyali karar verir (AL<->SHORT).
 #   "signal_long" : SADECE LONG. AL sinyaliyle girilir, SAT sinyaliyle
 #                   kapanir, arada beklenir; hicbir zaman SHORT acilmaz.
+#   "ma_only"     : SADECE 15 hareketli ortalamanin skoru karar verir.
+#   "osc_only"    : SADECE 11 osilatorun skoru karar verir.
+#                   Bu ikisinde NÖTR "bekle" DEGIL, TERS YÖN sinyalidir:
+#                   acik LONG'yi kapatip SHORT acar, acik SHORT'u kapatip
+#                   LONG acar. Art arda ayni yon gelirse islem yapilmaz.
 PAPER_MODE = "range"
+
+# ---- Tek kaynak modlarinin esikleri --------------------------------
+#
+# OLCUM (tools/pick_osc_threshold.py, 15 coin x 3 dilim, 280 bar):
+#
+#   Esik            4h AL     4h SAT   islem   ort.bar
+#   0,40 / 0,65        15        18       66      43,4   <- bilesik esik
+#   0,30 / 0,45        70        91      320      12,5
+#   0,25 / 0,40       222       283      920       4,5   <- SECILDI
+#   0,15 / 0,25       917      1023     2089       2,0   <- asiri gurultulu
+#
+# NEDEN AYRI ESIK?
+#   osilator skoru = 11 osilatorun ORTALAMASI. Tek bir osilatorun en
+#   buyuk katkisi 1/11 = 0,091. Bilesik skor icin kullanilan 0,40 esigi
+#   bu yuzden neredeyse hic asilmaz (4h/280 barda yalniz 33 sinyal).
+#
+# MA skoru ise 15 MA'nin ortalamasi oldugu icin ayni esiklerle
+# yeterince hareket ediyor (olcum: 4h/280 barda 9.604 AL/SAT bar).
+# O yuzden MA modunda bilesik esikler kullanilir, osilator modunda
+# daha kucuk esikler.
+#
+# 0,15/0,25 secilmedi: 4h'te bar basina 2 islem -> her pozisyon 2
+# barda kapanir; cift tarafli komisyon kari tamamen yer.
+PAPER_OSC_BASE_THRESHOLD = 0.25    # AL/SAT esigi (osc_only)
+PAPER_OSC_STRONG_THRESHOLD = 0.40  # GÜÇLÜ AL/SAT esigi (osc_only)
+
+# Geriye donuk testte varsayilan esikler (arayuzden degistirilebilir).
+PAPER_BASE_THRESHOLD = BASE_THRESHOLD
+PAPER_STRONG_THRESHOLD = STRONG_THRESHOLD
 
 # Sinyal modunda minimum tutma suresi (bar).
 PAPER_MIN_HOLD_BARS = 0          # 0 = kisit yok
