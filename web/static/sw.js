@@ -17,8 +17,8 @@
 // VERSION degistirildiginde tarayici yeni surumu yukler.
 // app.js'teki fiyat bicimlendirme duzeltmesi icin yukseltildi.
 // VERSION degistirildiginde tarayici yeni surumu yukler.
-// v3: ma_only / osc_only modlari + osc esik bilgisi
-const VERSION = "ta-v3";
+// v4: PWA geri donusunde otomatik yenilenme (visibilitychange/pageshow)
+const VERSION = "ta-v4";
 const SHELL = "shell-" + VERSION;
 
 const PRECACHE = [

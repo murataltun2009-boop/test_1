@@ -1224,6 +1224,71 @@ ok.append(test("SİNYAL: NÖTR pozisyonu kapatır, ters yön açmaz",
                t_signal_modu_notr_kapatir))
 
 
+# ----------------------------------------------------------------------
+# REGRESYON: kapanıştan sonra AYNI sinyal yeni işlem açmıyordu
+# ----------------------------------------------------------------------
+def t_kapanistan_sonra_ayni_sinyal():
+    """
+    KULLANICI BUGÜNÜ BUNU RAPORLADI:
+      "NÖTR durumuna geçtikten sonra otomatik olarak hareketli
+       ortalamalar AL emri verdiyse long, SAT emri verdiyse shorta
+       girmesi lazım. Ama mevcut uygulamada NÖTR'den sonra yeni
+       SAT yani short sinyali gelmesine rağmen hiçbir işlem yapmadı."
+
+    KÖK NEDEN: karar "sinyal DEĞİŞTİ" mantığıyla veriliyordu
+    (`signal == last_signal` → dokunma). Pozisyon hedef/ likidasyon /
+    NÖTR ile kapandığında `last_signal` eski sinyalde kalıyordu. Aynı
+    yönde yeni sinyal geldiğinde "değişiklik yok" sanılıp yok sayılıyor
+    ve sistem sessizce işlem açmıyordu.
+
+    DÜZELTME: `_close()` son sinyali temizler.
+    """
+    for mod in ("ma_only", "osc_only"):
+        # --- 1) Likidasyonla kapandı, aynı yönde yeni sinyal geldi ---
+        p, m = _tek_kaynak(mod)
+        p.on_price(100.0, m(), "4h", "SAT")
+        liq = p.position.liq_price
+        p.on_price(liq + 0.01, m(), "4h", "SAT")
+        assert p.position is None, f"{mod}: likidasyonda kapanmaliydi"
+        p.on_price(liq + 0.02, m(), "4h", "SAT")
+        assert p.position and p.position.side == "SHORT", \
+            f"{mod}: kapanıştan sonra aynı SAT yeni SHORT açmalıydı"
+
+        # --- 2) Hedefe ulaşarak kapandı, aynı yönde yeni sinyal ---
+        p, m = _tek_kaynak(mod)
+        p.on_price(100.0, m(), "4h", "AL")
+        hedef = p.position.target
+        assert hedef > 0, f"{mod}: hedef 0 olmamalı (bu test için)"
+        p.on_price(hedef + 0.01, m(), "4h", "AL")
+        assert p.position is None, f"{mod}: hedefte kapanmaliydi"
+        p.on_price(hedef + 0.02, m(), "4h", "AL")
+        assert p.position and p.position.side == "LONG", \
+            f"{mod}: kapanıştan sonra aynı AL yeni LONG açmalıydı"
+
+        # --- 3) NÖTR kapattı, sonra SAT geldi (kullanıcı senaryosu) ---
+        p, m = _tek_kaynak(mod)
+        p.on_price(100.0, m(), "4h", "SAT")
+        p.on_price(100.0, m(), "4h", "NÖTR")
+        assert p.position is None, f"{mod}: NÖTR'de kapanmaliydi"
+        p.on_price(99.0, m(), "4h", "SAT")
+        assert p.position and p.position.side == "SHORT", \
+            f"{mod}: NÖTR sonrası SAT geldi, SHORT açılmalıydı"
+
+        # --- 4) Pozisyon AÇIKKEN art arda aynı sinyal dokunmamalı ---
+        p, m = _tek_kaynak(mod)
+        p.on_price(100.0, m(), "4h", "AL")
+        giris = p.position.entry
+        for _ in range(5):
+            p.on_price(101.0, m(), "4h", "AL")
+        assert p.position.side == "LONG", f"{mod}: pozisyon korunmali"
+        assert p.position.entry == giris, \
+            f"{mod}: pozisyon yeniden açılmamalı (art arda aynı sinyal)"
+
+
+ok.append(test("REGRESYON: kapanıştan sonra aynı yönde sinyal yeniden işlem açar",
+               t_kapanistan_sonra_ayni_sinyal))
+
+
 print("-" * 62)
 print(f"{sum(ok)}/{len(ok)} test gecti")
 sys.exit(0 if all(ok) else 1)

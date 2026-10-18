@@ -882,6 +882,24 @@ class PaperTrader:
             symbol=self.symbol,
         ))
         self.position = None
+
+        # SONRAKI SİNYALİN AYNI OLABİLMESİ İÇİN SIFIRLA.
+        #
+        # KULLANICI BUGÜN BUNU RAPORLADI:
+        #   "NÖTR durumuna geçtikten sonra hareketli ortalamalar SAT
+        #    emri verdiyse shorta girmesi lazım, ama hiçbir işlem
+        #    yapmadı."
+        #
+        # KÖK NEDEN: sinyal değişimine göre işlem açılıyor
+        # (`signal == self.last_signal` → dokunma). Pozisyon hedef/
+        # likidasyon ile kapandığında last_signal ESKI sinyalde kalıyordu.
+        # Aynı yönde yeni bir sinyal geldiğinde "değişiklik yok" sanılıp
+        # yok sayılıyordu → sistem sessizce işlem açmıyordu.
+        #
+        # Kapatma her seferinde son sinyali temizler: aynı yönde yeni bir
+        # sinyal geldiğinde yeniden pozisyon açılabilir.
+        self.last_signal = None
+
         self._emit("trade",
                    f"{p.side} kapandı @ {_px(price)} · net {net:+,.2f} "
                    f"(brüt {gross:+,.2f}, komisyon {p.fee_open + fee_close:,.4f})"

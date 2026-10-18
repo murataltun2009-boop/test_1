@@ -527,14 +527,18 @@ if ("serviceWorker" in navigator) {
   // ==================================================================
   // WebSocket
   // ==================================================================
-  var ws = null, retry = 0;
+  var ws = null, retry = 0, lastMsgAt = 0;
 
   function connect() {
     var proto = location.protocol === "https:" ? "wss:" : "ws:";
     ws = new WebSocket(proto + "//" + location.host + "/ws");
+    lastMsgAt = Date.now();
+    el.connState.textContent = "bağlanıyor…";
+    el.connState.className = "conn bad";
 
     ws.onopen = function () {
       retry = 0;
+      lastMsgAt = Date.now();
       el.connState.textContent = "bağlı";
       el.connState.className = "conn ok";
     };
@@ -546,6 +550,7 @@ if ("serviceWorker" in navigator) {
     };
     ws.onerror = function () { try { ws.close(); } catch (e) {} };
     ws.onmessage = function (ev) {
+      lastMsgAt = Date.now();
       var d;
       try { d = JSON.parse(ev.data); } catch (e) { return; }
 
@@ -585,6 +590,80 @@ if ("serviceWorker" in navigator) {
       }
     };
   }
+
+  // ==================================================================
+  //  SAYFA GERI GELDIGINDE OTOMATIK YENILE  (PWA / Android)
+  // ==================================================================
+  //
+  //  KULLANICI BUGÜN ŞUNU RAPORLADI:
+  //    "PWA'yı açtığımda sayfayı otomatik yenilemiyor. Başka bir
+  //     uygulamaya geçip arayüzü tekrar açtığımda grafik dahil seçilen
+  //     coin fiyatları yenilenmiyor. Aşağı doğru çekip yenilersem
+  //     düzeliyor."
+  //
+  //  KÖK NEDEN: Android arka plana alınınca WebSocket'i KAPATMAZ —
+  //  TCP bağlantısı sağlam görünür, bu yüzden `onclose` HİÇ tetiklenmez.
+  //  Kullanıcı geri döndüğünde elindeki bağlantı ÖLÜDÜR ama JavaScript
+  //  bunu bilmez. Ağ trafiği de durduğu için "bağlı" yazmaya devam eder.
+  //
+  //  ÇÖZÜM (üç katmanlı):
+  //   1) visibilitychange → sayfa tekrar görünür olunca bağlantıyı KENDİ
+  //      yenile (ölüyse ya da veri akmıyorsa)
+  //   2) pageshow → bfcache'den dönüşte de aynı kontrol
+  //   3) Düzenli canlılık denetimi → veri akmıyorsa zorla yeniden bağlan
+  //
+  //  Not: yeniden bağlanınca sunucu snapshot + cüzdan + son log
+  //  satırlarını otomatik gönderir; grafik kendini tamamen toparlar.
+  // ==================================================================
+  function socketAlive() {
+    return ws && ws.readyState === WebSocket.OPEN;
+  }
+
+  function ensureLive() {
+    // 12 saniyedir mesaj gelmediyse bağlantı ölmüş demektir.
+    // (Sunucu saniyede bir cüzdan + tick gönderir; 12 sn sessizlik anormal)
+    //
+    // ONEMLI: ws.close() BURADA CAGRILMAZ. Cagrilirsa onclose tetiklenir
+    // ve o da kendi setTimeout(connect) planini yapar; ayni anda biz de
+    // connect() cagirinca ÇIFT baglanti olusur ve durum yazisi
+    // surekli "baglanti kesildi"de kalir (gercekten yasandi, olculdu).
+    // Bunun yerine eski socket'in onclose/onmessage'ini susturup
+    // dogrudan yeniden baglaniyoruz.
+    var sessiz = Date.now() - lastMsgAt;
+    if (!socketAlive() || sessiz > 12000) {
+      if (ws) {
+        ws.onclose = null;
+        ws.onmessage = null;
+        ws.onerror = null;
+        try { ws.close(); } catch (e) {}
+      }
+      retry = 0;
+      connect();
+      return true;
+    }
+    return false;
+  }
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") {
+      ensureLive();
+      // Grafik yeniden çizilsin (canvas boyutu değişmiş olabilir)
+      try { if (chart) chart.resize(); } catch (e) {}
+    }
+  });
+
+  // bfcache: geri tuşuyla dönüldüğünde sayfa yeniden yüklenmez ama
+  // sayfa nesnesi canlanır. pageshow bunu bildirir.
+  window.addEventListener("pageshow", function (ev) {
+    if (ev.persisted) ensureLive();
+  });
+
+  window.addEventListener("focus", function () { ensureLive(); });
+
+  // Periyodik canlılık denetimi — sessizlik tespiti.
+  setInterval(function () {
+    if (document.visibilityState === "visible") ensureLive();
+  }, 5000);
 
   // ==================================================================
   // Zaman dilimi secimi
