@@ -289,3 +289,74 @@ def ichimoku_base_line(high, low, kijun: int = 26) -> np.ndarray:
     hh = rolling_max(high, kijun)
     ll = rolling_min(low, kijun)
     return (hh + ll) / 2.0
+
+
+def atr(high, low, close, n: int = 14) -> np.ndarray:
+    """Ortalama Gercek Aralik (Average True Range, Wilder)."""
+    h = _f(high)
+    l = _f(low)
+    c = _f(close)
+    # ILK BAR: onceki kapanis yok. np.roll + prev[0]=c[0] kullanilir;
+    # shift() ilk degeri NaN birakir ve rma() ilk n ortalamasini NaN
+    # yaptigi icin ATR SONSUZA KADAR NaN kalirdi.
+    prev = np.empty_like(c)
+    if c.size:
+        prev[0] = c[0]
+        prev[1:] = c[:-1]
+    tr = np.maximum.reduce([h - l, np.abs(h - prev), np.abs(l - prev)])
+    return rma(tr, n)
+
+
+def supertrend(high, low, close, period: int = 10,
+               multiplier: float = 3.0) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Supertrend gostergesi.
+
+    Donus: (cizgi, yon)
+      cizgi : trend cizgisi (yon +1 ise alt bant, -1 ise ust bant)
+      yon   : +1 yukselis, -1 dusus, 0 isinma barlari
+
+    NEDEN BU GOSTERGE
+    -----------------
+    Yeni algoritma arastirmasinda (bkz. ALGORITMA_ARASTIRMASI.md)
+    4h ve 1d veride, 25 coin ve iki bagimsiz kume uzerinde test edilen
+    ~70 kural arasinda komisyon/kayma/funding sonrasi IKI KUMEDE DE
+    pozitif kalan en dengeli aile buydu. ATR tabanli oldugu icin
+    giris/stop mesafesi dogal olarak volatiliteye uyum saglar.
+    """
+    h = _f(high)
+    l = _f(low)
+    c = _f(close)
+    n = c.size
+    line = np.full(n, np.nan)
+    direction = np.zeros(n, dtype=np.int8)
+    if n == 0:
+        return line, direction
+
+    a = atr(h, l, c, period)
+    hl2 = (h + l) / 2.0
+    upper = hl2 + multiplier * a
+    lower = hl2 - multiplier * a
+
+    final_upper = np.full(n, np.nan)
+    final_lower = np.full(n, np.nan)
+    trend = 1
+    for i in range(1, n):
+        if not np.isfinite(a[i]):
+            continue
+        if np.isfinite(final_upper[i - 1]) and c[i - 1] <= final_upper[i - 1]:
+            final_upper[i] = min(upper[i], final_upper[i - 1])
+        else:
+            final_upper[i] = upper[i]
+        if np.isfinite(final_lower[i - 1]) and c[i - 1] >= final_lower[i - 1]:
+            final_lower[i] = max(lower[i], final_lower[i - 1])
+        else:
+            final_lower[i] = lower[i]
+
+        if trend == 1 and c[i] < final_lower[i]:
+            trend = -1
+        elif trend == -1 and c[i] > final_upper[i]:
+            trend = 1
+        direction[i] = trend
+        line[i] = final_lower[i] if trend == 1 else final_upper[i]
+    return line, direction

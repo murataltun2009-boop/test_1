@@ -18,7 +18,8 @@
 // app.js'teki fiyat bicimlendirme duzeltmesi icin yukseltildi.
 // VERSION degistirildiginde tarayici yeni surumu yukler.
 // v4: PWA geri donusunde otomatik yenilenme (visibilitychange/pageshow)
-const VERSION = "ta-v4";
+// v5: MURO modu + 1g dilimi + yeni kaldirac paneli ayarlari
+const VERSION = "ta-v5";
 const SHELL = "shell-" + VERSION;
 
 const PRECACHE = [

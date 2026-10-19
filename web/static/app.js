@@ -104,7 +104,9 @@ if ("serviceWorker" in navigator) {
    "wFee", "wTrades", "wLastLong", "wPeak", "wPosBox", "wPosTitle", "wPosBody",
    "pBalance", "pLev", "pFrac", "pFee", "pLook", "pHold", "pConfirm",
    "pBacktest", "pRule", "pMode", "pStart", "pLive", "pStop", "pReset",
-   "ruleWrap", "modeNote", "modeNote2", "modeThr",
+   "pRisk", "riskWrap", "pLock", "lockWrap",
+   "ruleWrap", "modeNote", "modeNote2", "modeNote3", "modeNote4",
+   "modeThr",
    "wTradeList", "btBox", "btRange", "btBody",
    "liveBox", "lProfit", "lTrades", "lFee", "lStart", "lStatus"
   ].forEach(function (id) { el[id] = document.getElementById(id); });
@@ -758,6 +760,12 @@ if ("serviceWorker" in navigator) {
       }
       if (document.activeElement !== el.pLook) el.pLook.value = d.lookback;
       if (document.activeElement !== el.pHold) el.pHold.value = d.min_hold_bars;
+      if (document.activeElement !== el.pRisk && d.trend_risk_pct) {
+        el.pRisk.value = Math.round(d.trend_risk_pct * 100);
+      }
+      if (document.activeElement !== el.pLock && d.muro_lock_pct) {
+        el.pLock.value = d.muro_lock_pct * 100;
+      }
       if (document.activeElement !== el.pRule) el.pRule.value = d.short_rule;
       if (document.activeElement !== el.pMode) {
         el.pMode.value = d.mode;
@@ -799,11 +807,21 @@ if ("serviceWorker" in navigator) {
         "Miktar  " + p.qty.toLocaleString("tr-TR",
           { maximumFractionDigits: 6 }) + "<br>" +
         "Teminat " + fmtUsd(p.margin) + "  ·  " +
-        "poz. " + fmtUsd(p.notional) + "<br>" +
+        "poz. " + fmtUsd(p.notional) +
+        (p.eff_leverage ? "  ·  " + p.eff_leverage.toFixed(2) + "x" : "") +
+        "<br>" +
         "Kâr/zarar <b>" + signed(p.unrealized) + "</b><br>" +
-        "Hedef <b style='color:#4ade80'>" + fmt(p.target) + "</b><br>" +
+        (p.stop_price > 0
+          ? "Stop <b style='color:#ff6b6b'>" + fmt(p.stop_price) + "</b><br>"
+          : "") +
+        (p.target > 0
+          ? "Hedef <b style='color:#4ade80'>" + fmt(p.target) + "</b><br>"
+          : "") +
         "Likidasyon <b style='color:#ffb300'>" + fmt(p.liq_price) + "</b><br>" +
-        "Pencere " + fmt(p.window_low) + " – " + fmt(p.window_high) + "<br>" +
+        (p.stop_price > 0
+          ? ""
+          : "Pencere " + fmt(p.window_low) + " – " + fmt(p.window_high) +
+            "<br>") +
         "<span style='color:#6f8298'>" + p.reason + "</span>";
     } else {
       box.className = "posbox none";
@@ -898,6 +916,11 @@ if ("serviceWorker" in navigator) {
       backtest: el.pBacktest.checked,
       short_rule: el.pRule.value,
       mode: el.pMode.value,
+      // Trend/MURO modu: islem basina sermaye riski (%). Sunucu 0..0,5
+      // araligini kabul eder; burada %1-50 arasi girilir.
+      risk_pct: (parseFloat(el.pRisk.value) || 2) / 100,
+      // MURO: kâr kilitleme eşiği (fiyat %).
+      muro_lock: (parseFloat(el.pLock.value) || 1) / 100,
       // Dilimi sunucuya ACIKCA bildir: sunucudaki aktif dilim WS mesajiyla
       // guncelleniyor ve iki istek araya girince yanlis dilim test edilebiliyor.
       timeframe: state.tf
@@ -936,24 +959,36 @@ if ("serviceWorker" in navigator) {
   // yaniltmamak icin seciciyi deaktif edip aciklamayi gosteriyoruz.
   var TEK_KAYNAK = ["ma_only", "osc_only"];
   function syncModeUI() {
-    var tek = TEK_KAYNAK.indexOf(el.pMode.value) >= 0;
-    el.ruleWrap.style.display = tek ? "none" : "";
+    var mode = el.pMode.value;
+    var tek = TEK_KAYNAK.indexOf(mode) >= 0;
+    // Trend/MURO modu da SHORT kuralini kullanmaz: yon tamamen
+    // gostergeden gelir. Bu yuzden secici kapatilir.
+    var trend = (mode === "trend" || mode === "muro");
+    var muro = (mode === "muro");
+    var kilit = tek || trend;
+    el.ruleWrap.style.display = kilit ? "none" : "";
     el.modeNote.style.display = tek ? "none" : "";
     el.modeNote2.style.display = tek ? "" : "none";
-    el.pRule.disabled = tek;
+    if (el.modeNote3) el.modeNote3.style.display = (mode === "trend") ? "" : "none";
+    if (el.modeNote4) el.modeNote4.style.display = muro ? "" : "none";
+    // Risk (trend + MURO) ve kâr kilitleme (MURO) ayarlari.
+    if (el.riskWrap) el.riskWrap.style.display = trend ? "" : "none";
+    if (el.lockWrap) el.lockWrap.style.display = muro ? "" : "none";
+    el.pRule.disabled = kilit;
     // Kullanilan esikleri yaz: osilator modunda bilesik esikler
     // degil, olculmus daha kucuk esikler gecerli.
     if (el.modeThr) {
-      el.modeThr.textContent = el.pMode.value === "osc_only"
+      el.modeThr.textContent = mode === "osc_only"
         ? "osilatörler için 0,25 / 0,40 (ölçülmüş, bileşik eşik değil)"
         : "hareketli ortalamalar için 0,40 / 0,65 (bileşik eşikler)";
     }
   }
   el.pMode.addEventListener("change", syncModeUI);
   syncModeUI();
-  ["pBalance", "pLev", "pFrac", "pFee", "pLook", "pHold"].forEach(function (id) {
-    el[id].addEventListener("input", function () { state.userTouched = true; });
-  });
+  ["pBalance", "pLev", "pFrac", "pFee", "pLook", "pHold", "pRisk", "pLock"]
+    .forEach(function (id) {
+      el[id].addEventListener("input", function () { state.userTouched = true; });
+    });
 
   // "Trade Basla": gecmis test OYNATILMAZ. Cuzdan verilen USDT ile
   // sifirlanir ve yalnizca o andan sonraki hareketler sayilir. Kullanicinin

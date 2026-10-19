@@ -65,6 +65,10 @@ class MarketService:
         # Her analiz yeniden hesaplandiginda artan surum. Arayuz sadece
         # surumu degisen paneli yeniler; boylece gereksiz cizim olmaz.
         self._versions: dict[str, int] = {}
+        # MURO: islenen son aksiyonun bar indeksi (ayni aksiyonun
+        # tekrar tekrar uygulanmasini onler).
+        self._muro_action_idx: int = -1
+        self._muro_mode: Optional[str] = None
         self._pushed_versions: dict[str, int] = {}
 
         self.events: queue.Queue = queue.Queue()
@@ -500,6 +504,38 @@ class MarketService:
             self._emit_log("error", "simulator", f"Simülatör hatası: {exc}")
 
     # ------------------------------------------------------------------
+    def _muro_action(self, res: "TimeframeAnalysis") -> str:
+        """
+        MURO aksiyonu (AL / SAT / LONG_KAPAT / SHORT_KAPAT).
+
+        ONEMLI: aksiyon serisi bar bazlidir ve ayni son bar icin her
+        analiz dongusunde TEKRAR hesaplanir. Canli akista ayni eski
+        aksiyonun tekrar tekrar uygulanmamasi icin "islenen bar"
+        numarasi tutulur: sadece YENI bir aksiyon varsa dondurulur.
+        """
+        from core import muro as muro_mod
+        if self.paper is None:
+            return ""
+        # Mod degistiyse aksiyon sayaci sifirlanir (yeni modun ilk
+        # aksiyonu uygulanabilsin).
+        if self._muro_mode != self.paper.mode:
+            self._muro_mode = self.paper.mode
+            self._muro_action_idx = -1
+        acts = muro_mod.actions(res.o, res.h, res.l, res.c,
+                                self.paper.muro_cfg)
+        idx = -1
+        for i in range(len(acts) - 1, -1, -1):
+            if acts[i]:
+                idx = i
+                break
+        if idx < 0:
+            return ""
+        if idx <= self._muro_action_idx:
+            return ""                    # yeni aksiyon yok
+        self._muro_action_idx = idx
+        return acts[idx]
+
+    # ------------------------------------------------------------------
     def _signal_for_mode(self, res: "TimeframeAnalysis | None") -> str | None:
         """
         Karar mekanizmasina göre SINYAL kaynagini secer.
@@ -507,6 +543,7 @@ class MarketService:
         Varsayilan: bilesik skor (11 osilator + 15 MA birlikte).
         ma_only : SADECE 15 hareketli ortalamanin skoru
         osc_only: SADECE 11 osilatorun skoru
+        trend   : Supertrend(10,3) yonu (yeni algoritma)
 
         ONEMLI: alt skorlar da -1..+1 olcegindedir (ortalama alindiği
         icin), bu yuzden AYNI esikler (GÜÇLÜ / AL-SAT) kullanilabilir.
@@ -518,6 +555,12 @@ class MarketService:
             return None
 
         mode = self.paper.mode if self.paper is not None else "range"
+        if mode == "trend":
+            # Supertrend: +1 -> AL, -1 -> SAT, 0 -> NOTR.
+            from core import trend as trend_mod
+            return trend_mod.last_signal(res.h, res.l, res.c)
+        if mode == "muro":
+            return self._muro_action(res)
         if mode not in ("ma_only", "osc_only"):
             return res.signal.value
 

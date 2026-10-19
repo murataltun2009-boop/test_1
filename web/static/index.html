@@ -164,6 +164,12 @@
           <label>Min. bekleme
             <input id="pHold" type="number" step="1" min="0" max="200" value="0">
           </label>
+          <label class="wfull" id="riskWrap" style="display:none">İşlem başına risk %
+            <input id="pRisk" type="number" step="1" min="1" max="50" value="2">
+          </label>
+          <label class="wfull" id="lockWrap" style="display:none">Kâr kilitleme (%)
+            <input id="pLock" type="number" step="0.5" min="0.5" max="10" value="1">
+          </label>
           <label class="wfull">Karar mekanizması
             <select id="pMode">
               <optgroup label="— Bileşik (osilatör + MA) —">
@@ -175,6 +181,10 @@
               <optgroup label="— Tek kaynak —">
                 <option value="ma_only">Sadece hareketli ortalamalar</option>
                 <option value="osc_only">Sadece osilatörler</option>
+              </optgroup>
+              <optgroup label="— Trend (yeni algoritma) —">
+                <option value="trend">Supertrend — 1 gün önerilir</option>
+                <option value="muro">MURO — kâr kilitlemeli (1 gün)</option>
               </optgroup>
             </select>
           </label>
@@ -199,6 +209,26 @@
           ortalaması olduğundan bileşik eşikler neredeyse hiç aşılmaz;
           bu yüzden <b>osc_only</b> modunda ölçülmüş daha düşük eşikler
           (0,25 / 0,40) kullanılır — ortalama pozisyon 4,5 bar sürer.
+        </div>
+        <div class="note" id="modeNote3" style="display:none">
+          <b>Trend (Supertrend 10,3):</b> yön değişiminde girer; giriş stopu
+          4×ATR, takip stopu 6×ATR. <b>NÖTR'de pozisyon kapanır, ters yön
+          AÇILMAZ.</b> Pozisyon <b>risk bazlı</b> boyutlandırılır: kaldıraç
+          yalnızca üst sınırdır, gerçekte ~0,1–0,6x kullanılır. En iyi
+          sonuç <b>1 gün</b> diliminde ölçüldü (25 coin, komisyon + kayma +
+          funding dahil). Yine de deneyseldir; geçmiş performans geleceği
+          garanti etmez.
+        </div>
+        <div class="note" id="modeNote4" style="display:none">
+          <b>MURO:</b> yön Supertrend(10,3) ile belirlenir, giriş
+          <b>geri çekilmede</b> yapılır (long en dipten, short en tepeden).
+          Fiyat <b>kâr kilitleme eşiğini</b> (%1) aşınca pozisyon kapanır,
+          kâr <b>cüzdana yazılır</b> ve <b>aynı yönde yeniden</b> pozisyon
+          açılır — böylece kâr geri verilmez. Yön değişiminde mevcut
+          pozisyon kapanır, karşı yön kendi geri çekilmesinde açılır.
+          Pozisyon <b>risk bazlı</b> boyutlandırılır (varsayılan %2);
+          kaldıraç yalnızca üst sınırdır. <b>1 gün</b> diliminde
+          ölçüldü: 25 coin, komisyon + kayma + funding dahil. Deneyseldir.
         </div>
 
         <div class="livebox" id="liveBox">

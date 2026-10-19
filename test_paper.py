@@ -14,6 +14,8 @@ import json
 import os
 import sys
 
+import numpy as np
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
@@ -1287,6 +1289,252 @@ def t_kapanistan_sonra_ayni_sinyal():
 
 ok.append(test("REGRESYON: kapanıştan sonra aynı yönde sinyal yeniden işlem açar",
                t_kapanistan_sonra_ayni_sinyal))
+
+
+
+# ----------------------------------------------------------------------
+# MURO — yeni algoritma
+#
+# Kullanici istegi:
+#   "Long en dipten tespit etsin, short en tepeden; long'da elde edilen
+#    kazanci kaybetmeden short'a gecsin (mesela %3 kazanc sagladikca
+#    cuzdana atsin, yeniden long'a girsin)."
+#
+# Test edilenler:
+#   1) AL/SAT aksiyonlari pozisyon acar
+#   2) KAR KILIDI: pozisyon kapanir, kar cuzdana yazilir, AYNI YONDE
+#      yeniden pozisyon acilir
+#   3) YAPI KIRILIMI: long kapanir, karsi yon HEMEN acilmaz
+#   4) TERS YON: long kapanir, short acilir
+#   5) Ayni aksiyon iki kez uygulanmaz
+#   6) Risk bazli boyutlandirma: kaldirac ust sinirdir
+#   7) Likidasyon stop'tan SONRA gelir
+#   8) Aksiyon serisi (core.muro) yon degisiminde kapatma uretir
+# ----------------------------------------------------------------------
+def _muro_trader(**kw):
+    from core.paper import PaperTrader
+    import config as cfg
+
+    p = PaperTrader(cfg.Settings())
+    p.configure(balance=1000.0, leverage=10, fee_rate=0.0005,
+                wallet_fraction=0.8, mode="muro")
+    p.running = True
+    p.start_balance = 1000.0
+    p.balance = 1000.0
+    for k, v in kw.items():
+        setattr(p, k, v)
+    return p
+
+
+def _mum(n=40, base=100.0, step=0.0, t0=0, wick=0.3):
+    from core.binance_client import Candle
+    out = []
+    for i in range(n):
+        c = base + i * step
+        bar = (i + t0) * 86400000
+        out.append(Candle(open_time=bar, open=c, high=c + wick,
+                          low=c - wick, close=c, volume=10.0,
+                          close_time=bar + 1, closed=True))
+    return out
+
+
+def t_muro_al_sat_acar():
+    """AL -> LONG, SAT -> SHORT."""
+    p = _muro_trader()
+    p.on_price(100.0, _mum(), "1d", "AL")
+    assert p.position and p.position.side == "LONG", "AL ile LONG acilmadi"
+    p.on_price(99.0, _mum(t0=100), "1d", "SAT")
+    assert p.position and p.position.side == "SHORT", "SAT ile SHORT acilmadi"
+
+
+ok.append(test("MURO: AL/SAT aksiyonları pozisyon açar", t_muro_al_sat_acar))
+
+
+def t_muro_kar_kilidi():
+    """Kâr kilitleme: pozisyon kapanır, kâr cüzdana yazılır, aynı yönde
+    yeniden pozisyon açılır."""
+    p = _muro_trader()
+    m = _mum()
+    p.on_price(100.0, m, "1d", "AL")
+    assert p.position.side == "LONG"
+    ilk_giris = p.position.entry
+    bakiye_once = p.balance
+
+    lock = p.muro_cfg.lock_pct
+    lock_fiyat = ilk_giris * (1 + lock)
+    ev = p.on_price(lock_fiyat, m, "1d", None,
+                    bar_high=lock_fiyat * 1.001)
+    assert ev and "Kâr kilidi" in ev, f"kilit tetiklenmedi: {ev}"
+    assert p.position is not None, "kilitten sonra pozisyon kalmamali"
+    assert p.position.side == "LONG", "ayni yonde yeniden acilmali"
+    assert abs(p.position.entry - lock_fiyat) < 1e-6, \
+        f"yeniden giriş kilit fiyatinda olmali: {p.position.entry}"
+    assert p.balance > bakiye_once, \
+        f"kâr cüzdana yazilmali: {p.balance} <= {bakiye_once}"
+    assert len(p.trades) == 1, f"bir bacak kapanmali: {len(p.trades)}"
+    assert p.trades[0].net_pnl > 0, "kilit kârı pozitif olmali"
+
+
+ok.append(test("MURO: kâr kilidi — kâr cüzdana yazılır, aynı yönde yeniden "
+               "açılır", t_muro_kar_kilidi))
+
+
+def t_muro_yapi_kirilimi_karsi_yon_acmaz():
+    """Yapı kırıldı: long kapanır, karşı yön HEMEN açılmaz."""
+    p = _muro_trader()
+    p.on_price(100.0, _mum(), "1d", "AL")
+    assert p.position.side == "LONG"
+    ev = p.on_price(99.0, _mum(t0=100), "1d", "LONG_KAPAT")
+    assert ev and "LONG kapandı" in ev, ev
+    assert p.position is None, "yapı kırılınca pozisyon kalmamali"
+
+
+ok.append(test("MURO: yapı kırılımı kapatır, karşı yön hemen açılmaz",
+               t_muro_yapi_kirilimi_karsi_yon_acmaz))
+
+
+def t_muro_ters_yon_kapatir_acar():
+    """Ters yön sinyali: mevcut pozisyon kapanır, karşı yön açılır."""
+    p = _muro_trader()
+    p.on_price(100.0, _mum(), "1d", "AL")
+    ev = p.on_price(99.0, _mum(t0=100), "1d", "SAT")
+    assert ev and "SHORT açıldı" in ev, ev
+    assert p.position.side == "SHORT"
+
+
+ok.append(test("MURO: ters yön sinyali kapatır ve açar",
+               t_muro_ters_yon_kapatir_acar))
+
+
+def t_muro_ayni_aksiyon_tekrar_uygulanmaz():
+    """Aynı aksiyon iki kez gönderilirse pozisyon yeniden açılmaz."""
+    p = _muro_trader()
+    p.on_price(100.0, _mum(), "1d", "AL")
+    giris = p.position.entry
+    # 100,5: kilit seviyesinin (100 * 1,01 = 101) ALTINDA — kâr kilidi
+    # tetiklenmemeli, sadece aynı aksiyon gelmiş olmalı.
+    p.on_price(100.5, _mum(t0=100), "1d", "AL")
+    assert p.position.entry == giris, "ayni aksiyon tekrar islem yaptirdi"
+
+
+ok.append(test("MURO: aynı aksiyon tekrar uygulanmaz",
+               t_muro_ayni_aksiyon_tekrar_uygulanmaz))
+
+
+def t_muro_risk_bazli_boyutlandirma():
+    """Kaldıraç üst sınırdır; pozisyon risk ile boyutlandırılır."""
+    p = _muro_trader()
+    p.configure(leverage=20, risk_pct=0.02)
+    p.on_price(100.0, _mum(), "1d", "AL")
+    pos = p.position
+    assert pos is not None
+    # Tam kullanimda notional = equity*0.8*20 = 16000 olurdu.
+    assert pos.notional < 1000 * 0.8 * 20 * 0.5, \
+        f"risk bazli olmali: {pos.notional}"
+    assert pos.eff_leverage <= 20, pos.eff_leverage
+
+
+ok.append(test("MURO: risk bazlı boyutlandırma (kaldıraç üst sınırdır)",
+               t_muro_risk_bazli_boyutlandirma))
+
+
+def t_muro_likidasyon_stop_sonra():
+    """Likidasyon stop'tan SONRA gelmeli (long: liq < stop)."""
+    p = _muro_trader()
+    p.on_price(100.0, _mum(), "1d", "AL")
+    pos = p.position
+    assert pos.stop_price > 0, "stop atanmali"
+    assert pos.liq_price < pos.stop_price, \
+        f"likidasyon stop'tan once gelmemeli: liq={pos.liq_price} "\
+        f"stop={pos.stop_price}"
+
+
+ok.append(test("MURO: likidasyon stop'tan sonra gelir",
+               t_muro_likidasyon_stop_sonra))
+
+
+def t_muro_aksiyon_serisi():
+    """core.muro: geri çekilmede giriş, yön değişiminde kapatma.
+
+    Seri 1: duz yukselis -> "peşine düşme" yok (hic giris yok).
+    Seri 2: testere (yuksek/dusuk) -> geri cekilmede AL, yon degisiminde
+            kapatma aksiyonlari uretilir.
+    Seri 3: AL aksiyonu YALNIZCA supertrend yonu yukarida iken cikar.
+    """
+    from core import muro as M
+    from core import indicators as ind
+
+    def testere(n=120):
+        out = []
+        p = 100.0
+        for i in range(n):
+            p += 0.8 if (i % 6) < 4 else -0.7
+            out.append(p)
+        return out
+
+    def seriler(fiyat):
+        h = [f + 0.3 for f in fiyat]
+        l = [f - 0.3 for f in fiyat]
+        return M.actions(fiyat, h, l, fiyat, M.MuroConfig()), h, l
+
+    # 1) Duz yukselis: hicbir giris olmamali (geri cekilme yok).
+    duz = [100.0 + i * 0.5 for i in range(80)]
+    acts, _, _ = seriler(duz)
+    assert not any(a in (M.AL, M.SAT) for a in acts), \
+        "duz yukseliste giris olmamali (peşine düşme)"
+    assert not any(a == M.LONG_KAPAT for a in acts), \
+        "duz yukseliste LONG_KAPAT olmamali"
+
+    # 2) Testere: geri cekilmede AL, yon degisiminde kapatma.
+    fiyat = testere()
+    acts, h, l = seriler(fiyat)
+    assert any(a == M.AL for a in acts), "testere serisinde AL olmali"
+    assert any(a in (M.LONG_KAPAT, M.SHORT_KAPAT) for a in acts), \
+        "yon degisiminde kapatma aksiyonu olmali"
+
+    # 3) AL yalnizca supertrend yukarida iken cikar.
+    _, dirn = ind.supertrend(np.asarray(h), np.asarray(l), np.asarray(fiyat),
+                             M.MuroConfig().st_period,
+                             M.MuroConfig().st_mult)
+    for i, a in enumerate(acts):
+        if a == M.AL:
+            assert dirn[i] > 0, f"AL, supertrend yukarida degil (bar {i})"
+        if a == M.SAT:
+            assert dirn[i] < 0, f"SAT, supertrend asagida degil (bar {i})"
+
+
+ok.append(test("MURO: aksiyon serisi yön değişiminde kapatma üretir",
+               t_muro_aksiyon_serisi))
+
+
+def t_muro_backtest_calisir():
+    """MURO modunda geriye dönük test hatasız çalışır."""
+    p = _muro_trader()
+    mum = _mum(n=120, step=0.4)
+    st = p.backtest(mum, "1d")
+    assert "error" not in st, st.get("error")
+    assert st["mode"] == "muro"
+    assert st["bars"] > 0
+
+
+ok.append(test("MURO: geriye dönük test çalışır", t_muro_backtest_calisir))
+
+
+def t_muro_yapilandirma_gecerli():
+    """Mod, risk ve kilit yüzdeleri yapılandırılabilir."""
+    p = _muro_trader()
+    p.configure(mode="muro", risk_pct=0.03, muro_lock=0.02)
+    assert p.mode == "muro"
+    assert abs(p.muro_risk_pct - 0.03) < 1e-9
+    assert abs(p.muro_cfg.lock_pct - 0.02) < 1e-9
+    # Gecersiz degerler reddedilir
+    p.configure(risk_pct=0.9, muro_lock=0.5)
+    assert abs(p.muro_risk_pct - 0.03) < 1e-9
+    assert abs(p.muro_cfg.lock_pct - 0.02) < 1e-9
+
+
+ok.append(test("MURO: yapılandırma (risk, kâr kilitleme) çalışır",
+               t_muro_yapilandirma_gecerli))
 
 
 print("-" * 62)

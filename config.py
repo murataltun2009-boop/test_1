@@ -40,7 +40,7 @@ SYMBOL = "BTCUSDT"
 # ACTIVE_TIMEFRAME yalnizca acilista secili gelen dilimdir; arayuzden
 # degistirilebilir.
 ACTIVE_TIMEFRAME = "4h"
-TIMEFRAMES: list[str] = ["15m", "1h", "4h"]
+TIMEFRAMES: list[str] = ["15m", "1h", "4h", "1d"]
 
 # Odak disi dilimler bu kadar daha seyrek yeniden hesaplanir. analyze()
 # 500 bar icin ~55 ms surer; uc dilimi de 0,5 sn'de bir calistirmak
@@ -251,10 +251,80 @@ PAPER_PULLBACK = 0.005           # zirveden en az %0,5 geri cekilme
 #                   kapanir, arada beklenir; hicbir zaman SHORT acilmaz.
 #   "ma_only"     : SADECE 15 hareketli ortalamanin skoru karar verir.
 #   "osc_only"    : SADECE 11 osilatorun skoru karar verir.
-#                   Bu ikisinde NÖTR "bekle" DEGIL, TERS YÖN sinyalidir:
-#                   acik LONG'yi kapatip SHORT acar, acik SHORT'u kapatip
-#                   LONG acar. Art arda ayni yon gelirse islem yapilmaz.
+#   "trend"       : Supertrend(10, 3) + ATR stop (4x) / takip stopu (6x).
+#                   YENI ALGORITMA — asagidaki olcume dayanir.
+#                   NÖTR: pozisyon kapatilir, ters yon ACILMAZ.
+#
+# Bu modlarda NÖTR "bekle" demektir: acik pozisyon kapatilir, ters
+# yone gecilmez (kullanici kurali).
 PAPER_MODE = "range"
+
+# ---- Trend (Supertrend) modu ---------------------------------------
+#
+# OLCUM — neden bu parametreler?
+# ---------------------------------
+# 25 coin (10 secim + 15 holdout), Binance Futures, komisyon %0,05,
+# kayma %0,02, funding %0,01/8h, risk bazli boyutlandirma.
+# Ayrintili tablo: ALGORITMA_ARASTIRMASI.md
+#
+#   SUPERTREND(10,3) · stop 4xATR · trail 6xATR
+#   kume       medyan/fold   kazanan hücre   PF
+#   secim          +%5,0           %62        1,29
+#   holdout        +%5,3           %65        1,54
+#
+# Ayni ayar uygulamanin 500 mumluk penceresinde:
+#   secim (10 buyuk coin)  +%6,6 medyan · %90 pozitif · PF 1,94
+#   holdout (14 coin)      +%1,9 medyan · %57 pozitif · PF 1,18
+#
+# NOT: "10x/20x kaldirac" bu stratejide UST SINIRDIR. Risk bazli
+# boyutlandirma kullanilir: pozisyon, stop mesafesi x risk kadarlik
+# kayip verecek sekilde acilir. Gercekte kullanilan kaldirac ~0,1-0,6x
+# cikar. 10x'i gercekten kullanmak islem basina %100+ risk demektir ve
+# testlerde hesap sifirlanir (bkz. rapor).
+PAPER_TREND_PERIOD = 10
+PAPER_TREND_MULT = 3.0
+PAPER_TREND_STOP_ATR = 4.0       # giris stopu = 4 x ATR
+PAPER_TREND_TRAIL_ATR = 6.0      # takip stopu = 6 x ATR (kapanista)
+PAPER_TREND_RISK_PCT = 0.05      # islem basina sermayenin %5'i
+PAPER_TREND_MAX_LEV = 20.0       # kaldıraç ust siniri (arayuz degeri ile min)
+
+# ---- MURO (yeni algoritma) -------------------------------------------
+#
+# Yapı + kâr kilitleme + geri çekilme girişi. Ayrıntı: ALGORITMA_ARASTIRMASI.md
+#   * YÖN: Supertrend(10, 3) — günlük dilimde ölçüldü.
+#   * GİRİŞ: yön uyumluyken fiyat EMA'ya geri çekilip geri alınır
+#     ("long en dipten", "short en tepeden").
+#   * KÂR KİLİDİ: fiyat %1 (ölçülen optimum) ilerleyince pozisyon
+#     kapanır, kâr CÜZDANA yazılır ve AYNI YÖNDE yeniden pozisyon
+#     açılır (stop aynı risk mesafesinde, kâr seviyesinin altında).
+#   * STOP: yapısal (giriş sonrası dip/tepe), %1,5-%5 aralığında.
+#   * Boyutlandırma: risk bazlı (varsayılan %2). Kaldıraç üst sınırdır.
+#
+# ÖLÇÜM (25 coin, 1g, komisyon+kayma+funding dahil, 4 zaman dilimi):
+#   risk %2 : seçim +%47,6 (PF 1,52) · holdout +%118,6 (PF 2,18)
+#             500 bar: seçim +%14,5 · holdout +%4,7
+#   NOT: kâr kilitleme %3 yapılırsa sonuç NEGATİFE döner (ölçüldü):
+#        kâr kilidi mesafesi küçük olmalı.
+PAPER_MURO_MODE = "trend"         # "trend" (Supertrend+geri çekilme)
+PAPER_MURO_K = 3                  # swing pivot kolları (yapı varyantı)
+PAPER_MURO_STOP_PCT = 0.025       # giriş stopu (fiyat %2,5)
+PAPER_MURO_MAX_STOP_PCT = 0.05    # risk kapısı (stop en fazla %5)
+PAPER_MURO_MIN_STOP_PCT = 0.015   # gürültü kapısı (stop en az %1,5)
+PAPER_MURO_LOCK_PCT = 0.01        # kâr kilitleme (fiyat %1) — ÖLÇÜLEN OPTİMUM
+PAPER_MURO_TRAIL_PCT = 0.02       # kilitleme sonrası trailing stop
+PAPER_MURO_RETEST_ATR = 0.6       # kırılan seviyeye dönüş bandı (x ATR)
+PAPER_MURO_MAX_RETEST = 24        # retest bekleme süresi (bar)
+PAPER_MURO_TREND_EMA = 50         # yön filtresi (0 = filtre yok)
+PAPER_MURO_ST_PERIOD = 10         # Supertrend periyodu
+PAPER_MURO_ST_MULT = 3.0          # Supertrend çarpanı
+PAPER_MURO_PULL_EMA = 50          # geri çekilme EMA'sı
+PAPER_MURO_PULL_ATR = 1.5         # geri çekilme bandı (x ATR)
+PAPER_MURO_COOLDOWN = 20          # iki giriş arası minimum bar
+PAPER_MURO_RISK_PCT = 0.02        # işlem başına sermaye riski (%2)
+PAPER_MURO_TRAIL_ALWAYS = False   # trailing stop yalnız kâr kilidinden
+                                  # sonra devreye girer (ölçülen ayar)
+PAPER_MURO_MAX_LOSSES = 0         # aynı yönde art arda N kayıptan sonra
+                                  # dur (0 = kapalı; ölçümde fayda vermedi)
 
 # ---- Tek kaynak modlarinin esikleri --------------------------------
 #

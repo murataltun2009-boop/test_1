@@ -155,7 +155,7 @@ ağ gecikmesinden gelir, piksel işleminden değil. Sonuç:
 
 ## Zaman dilimleri
 
-**`15m` · `1h` · `4h`** — üstteki düğmelerden seçilir. Seçim değiştiğinde:
+**`15m` · `1h` · `4h` · `1d`** — üstteki düğmelerden seçilir. Seçim değiştiğinde:
 
 1. Grafik anında boşaltılır (eski dilimin mumları yanlış bilgi vermesin).
 2. Sunucuya `set_timeframe` gönderilir; istemci o dilimin anlık görüntüsünü
@@ -275,6 +275,42 @@ Süre: **1–9 ms**. Aynı veri iki kez koşturulunca aynı sonucu verir
 | **Sadece LONG** | AL sinyaliyle girer, SAT sinyaliyle **kapanır**, arada nakitte bekler. **SHORT açılmaz.** | +677,61 (+%68) — açık pozisyon yok |
 | Aralık + sinyal çıkış | giriş aralık kuralı, çıkış SAT sinyali | −252,18 (−%25) |
 | Sinyal | AL ↔ SHORT dönüşümlü | −46,13 (−%5) |
+
+### MURO algoritması — yeni (deneysel, ölçülmüş)
+
+> Kullanıcı isteği: *"En iyi long ve short noktalarını yakalayan algoritma;
+> long en dipten tespit etsin; long'daki kazancı kaybetmeden short'a geçsin
+> (%3 kazanç sağladıkça cüzdana atsın, yeniden long'a girsin); short'a zarar
+> ederek girmesin."*
+
+MURO modu bunu üç parçayla yapar (tamamı `core/muro.py`):
+
+| Parça | Ne yapar |
+|---|---|
+| **Yön** | Supertrend(10, 3) — 1 günlük dilimde ölçüldü |
+| **Giriş** | Yön uyumluyken fiyat **EMA50'ye geri çekilip geri alınır** → long dibte, short tepede açılır. Kırılım barında girilmez (en kötü fiyat). 20 barlık bekleme ile tekrarlar engellenir. |
+| **Kâr kilitleme** | Fiyat **%1** kâra ulaşınca pozisyon kapanır, kâr **cüzdana yazılır** ve **aynı yönde yeniden** pozisyon açılır (stop = kilit seviyesi). Kâr trend dönse bile cüzdanda kalır. |
+
+Ölçüm (25 coin, 1 gün, komisyon + kayma + funding dahil, 3,3 yıl):
+
+| Set | medyan | kazanan coin | med. DD | PF |
+|---|---|---|---|---|
+| Seçim (10 coin) | **+%47,6** | %90 | %29,2 | 1,52 |
+| Holdout (15 coin) | **+%118,6** | %93 | %25,4 | 2,18 |
+| Seçim — son 500 bar | +%14,5 | %90 | %11,9 | 1,98 |
+| Holdout — son 500 bar | +%4,7 | %60 | %13,7 | 1,39 |
+
+**Kaldıraç gerçeği:** MURO **risk bazlı** boyutlandırma kullanır (varsayılan
+işlem başına %2). Ekranda "efektif kaldıraç" ~1,3x görünür. Sabit 20x
+kaldıraçla test: **hesap −%99,9** (likidasyon). 10x/20x burada **üst
+sınırdır**, kullanılan değil.
+
+**Kâr kilitleme mesafesi kritik:** ölçüldü — %0,8 → +%94, **%1 → +%75**,
+%1,5 → +%40, %2 → +%6, **%3 → −%5 (negatif)**, %5 → −%15. Kullanıcının
+örneği olan %3 bu stratejide işe yaramıyor; varsayılan **%1**'dir.
+
+Ayrıntılı ölçüm, duyarlılık analizi ve sınırlar:
+**[ALGORITMA_ARASTIRMASI.md](ALGORITMA_ARASTIRMASI.md)**
 
 ### "Sadece LONG" modu — kullanıcı isteği
 
@@ -611,6 +647,8 @@ core/
   service.py                arka plan servisi: veri → analiz → log/DB
   store.py                  SQLite kayıt + sıfırlama + son loglar
   paper.py                  kaldıraç simülatörü (sanal cüzdan, komisyon, PnL)
+  trend.py                  Supertrend tabanlı trend modu (1g önerilir)
+  muro.py                   MURO algoritması (kâr kilitleme + geri çekilme)
 web/
   server.py                 Starlette uygulaması, WebSocket yayını, REST uçları
   static/
@@ -626,6 +664,10 @@ ui/                         masaüstü sürümünün Tkinter arayüzü (opsiyone
 tools/
   make_icons.py            PWA ikonlarını Pillow ile üretir
   check_sh.py              Termux betiklerinin yapısal kontrolü
+  research_algo.py         algoritma araştırması (indirme, fold, holdout)
+  research_muro.py         MURO araştırması (araması, holdout, duyarlılık)
+ALGORITMA_ARASTIRMASI.md    MURO ölçüm raporu (yöntem, sonuçlar, sınırlar)
+GOSTERGE_ARASTIRMASI.md    gösterge seçimi araştırması (IC, yöntem)
 setup-termux.sh            Android kurulum betiği (pkg/pip otomatik)
 start.sh                   sunucuyu tmux'ta başlatır/durdurur
 selftest.py                 grafiksiz çekirdek doğrulama (canlı veriyle)
@@ -636,7 +678,7 @@ smoke_test.py               masaüstü arayüz testleri
 
 ```bash
 python selftest.py       # 4h canlı veri, gösterge tabloları, DB yaz/sıfırla
-python test_paper.py     # kaldıraç simülatörü + canlı mod (45 test, ağ bağımsız)
+python test_paper.py     # kaldıraç simülatörü + MURO (63 test, ağ bağımsız)
 python tools/check_sh.py # Termux betikleri (shebang/CRLF/blok dengesi)
 ```
 
