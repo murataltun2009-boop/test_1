@@ -1339,12 +1339,16 @@ def _mum(n=40, base=100.0, step=0.0, t0=0, wick=0.3):
 
 
 def t_muro_al_sat_acar():
-    """AL -> LONG, SAT -> SHORT."""
+    """AL -> LONG. Karsi yon (SAT) once bekler, sonra SHORT acilir."""
     p = _muro_trader()
     p.on_price(100.0, _mum(), "1d", "AL")
     assert p.position and p.position.side == "LONG", "AL ile LONG acilmadi"
     p.on_price(99.0, _mum(t0=100), "1d", "SAT")
-    assert p.position and p.position.side == "SHORT", "SAT ile SHORT acilmadi"
+    assert p.position is None, "karsi yon beklemeden acilmamali"
+    p._no_entry_until = 0.0
+    p.on_price(99.0, _mum(t0=200), "1d", "SAT")
+    assert p.position and p.position.side == "SHORT", \
+        "bekleme sonrasi SAT ile SHORT acilmali"
 
 
 ok.append(test("MURO: AL/SAT aksiyonları pozisyon açar", t_muro_al_sat_acar))
@@ -1394,12 +1398,18 @@ ok.append(test("MURO: yapı kırılımı kapatır, karşı yön hemen açılmaz"
 
 
 def t_muro_ters_yon_kapatir_acar():
-    """Ters yön sinyali: mevcut pozisyon kapanır, karşı yön açılır."""
+    """Ters yön sinyali: mevcut pozisyon kapanır, karşı yön BEKLEME
+    sonrası açılır (pozisyon dalgalanması olmasın)."""
     p = _muro_trader()
     p.on_price(100.0, _mum(), "1d", "AL")
     ev = p.on_price(99.0, _mum(t0=100), "1d", "SAT")
-    assert ev and "SHORT açıldı" in ev, ev
-    assert p.position.side == "SHORT"
+    assert ev and "LONG kapandı" in ev, ev
+    assert p.position is None, "karsi yon bekleme suresi dolmadan acilmamali"
+    # Bekleme dolduktan sonra karsi yon acilir.
+    p._no_entry_until = 0.0
+    p.on_price(99.0, _mum(t0=200), "1d", "SAT")
+    assert p.position is not None and p.position.side == "SHORT", \
+        "bekleme sonrasi karsi yon acilmali"
 
 
 ok.append(test("MURO: ters yön sinyali kapatır ve açar",
@@ -1523,18 +1533,217 @@ ok.append(test("MURO: geriye dönük test çalışır", t_muro_backtest_calisir)
 def t_muro_yapilandirma_gecerli():
     """Mod, risk ve kilit yüzdeleri yapılandırılabilir."""
     p = _muro_trader()
-    p.configure(mode="muro", risk_pct=0.03, muro_lock=0.02)
+    p.configure(mode="muro", risk_pct=0.03, lock_pct=0.02)
     assert p.mode == "muro"
     assert abs(p.muro_risk_pct - 0.03) < 1e-9
     assert abs(p.muro_cfg.lock_pct - 0.02) < 1e-9
     # Gecersiz degerler reddedilir
-    p.configure(risk_pct=0.9, muro_lock=0.5)
+    p.configure(risk_pct=0.9, lock_pct=0.5)
     assert abs(p.muro_risk_pct - 0.03) < 1e-9
     assert abs(p.muro_cfg.lock_pct - 0.02) < 1e-9
 
 
 ok.append(test("MURO: yapılandırma (risk, kâr kilitleme) çalışır",
                t_muro_yapilandirma_gecerli))
+
+
+
+# ----------------------------------------------------------------------
+# POZISYON DALGALANMASI (kullanici sorunu) + KAR KILIDI (trend modu)
+#
+# Kullanicinin HYPE/USDT logundaki sikayeti:
+#   "long short veya short long gecislerinde defalarca islem yapiyor"
+#   "hangi pozisyonda olurda olsun %3 kazanc sagladiginda pozisyonu
+#    durdur, kazanci cuzdana aktar, sonra tekrar degerlendir"
+#
+# Cozum (3 parca):
+#   1) Sinyal yalnizca KAPANMIS barlardan uretilir
+#      (core/paper.py::_kapali_mumlar) — olusan bar icinde Supertrend
+#      yonu tik tik degisiyordu.
+#   2) Yon degisiminden sonra 5 DK bekleme: yeni pozisyon acilmaz.
+#   3) Trend modunda %3 kar kilidi: pozisyon kapanir, kar cuzdana
+#      yazilir, 1-2 dk beklenir, sonra pozisyon TEKRAR degerlendirilir.
+# ----------------------------------------------------------------------
+def _trend_trader(**kw):
+    from core.paper import PaperTrader
+    import config as cfg
+
+    p = PaperTrader(cfg.Settings())
+    p.configure(balance=1000.0, leverage=10, fee_rate=0.0005,
+                wallet_fraction=0.8, mode="trend", risk_pct=0.05)
+    p.running = True
+    p.start_balance = 1000.0
+    p.balance = 1000.0
+    for k, v in kw.items():
+        setattr(p, k, v)
+    return p
+
+
+def t_trend_yon_degisiminde_bekleme():
+    """LONG -> SAT: LONG kapanir, SHORT ANINDA acilmaz (5 dk bekleme)."""
+    p = _trend_trader()
+    p.on_price(100.0, _mum(), "4h", "AL")
+    assert p.position.side == "LONG"
+    ev = p.on_price(99.0, _mum(t0=100), "4h", "SAT")
+    assert ev and "kapandı" in ev, ev
+    assert p.position is None, "karsi yon bekleme dolmadan acilmamali"
+    assert p._bekleme_kaldi_ms(_mum()) > 0, "bekleme baslamaliydi"
+    # Ayni sinyal tekrar gelirse acilmaz (bekleme suresi dolmadi).
+    p.on_price(99.0, _mum(t0=200), "4h", "SAT")
+    assert p.position is None, "bekleme suresi icinde acilmamali"
+    # Bekleme dolduktan sonra SHORT acilir.
+    p._no_entry_until = 0.0
+    p.on_price(99.0, _mum(t0=300), "4h", "SAT")
+    assert p.position is not None and p.position.side == "SHORT", \
+        "bekleme sonrasi SHORT acilmali"
+
+
+ok.append(test("TREND: yön değişiminde 5 dk bekleme (dalgalanma yok)",
+               t_trend_yon_degisiminde_bekleme))
+
+
+def t_trend_kar_kilidi():
+    """%3 kazanc: pozisyon kapanir, kar cuzdana yazilir, beklenir."""
+    p = _trend_trader()
+    m = _mum()
+    p.on_price(100.0, m, "4h", "AL")
+    assert p.position.side == "LONG"
+    bakiye_once = p.balance
+
+    lock = p.trend_lock_pct
+    lock_fiyat = p.position.entry * (1 + lock)
+    ev = p.on_price(lock_fiyat, m, "4h", None, bar_high=lock_fiyat * 1.001)
+    assert ev and "Kâr kilidi" in ev, f"kilit tetiklenmedi: {ev}"
+    assert p.position is None, "kilit sonrasi pozisyon kalmamali"
+    assert p.balance > bakiye_once, \
+        f"kar cuzdana yazilmali: {p.balance} <= {bakiye_once}"
+    assert p.trades[-1].net_pnl > 0, "kilit kari pozitif olmali"
+    # Kilit sonrasi bekleme baslar; ayni sinyal acmaz.
+    p.on_price(lock_fiyat, m, "4h", "AL")
+    assert p.position is None, "bekleme suresi icinde acilmamali"
+
+
+ok.append(test("TREND: %3 kâr kilidi — kâr cüzdana yazılır, bekleme başlar",
+               t_trend_kar_kilidi))
+
+
+def t_trend_kilit_sonrasi_yeniden_degerlendirilir():
+    """Kilit sonrasi bekleme bitince pozisyon TEKRAR acilir."""
+    p = _trend_trader()
+    m = _mum()
+    p.on_price(100.0, m, "4h", "AL")
+    lock_fiyat = p.position.entry * (1 + p.trend_lock_pct)
+    p.on_price(lock_fiyat, m, "4h", None, bar_high=lock_fiyat * 1.001)
+    assert p.position is None
+    # Bekleme suresi doldu -> pozisyon yeniden acilir.
+    p._no_entry_until = 0.0
+    p.on_price(lock_fiyat, _mum(t0=300), "4h", "AL")
+    assert p.position is not None and p.position.side == "LONG", \
+        "bekleme sonrasi pozisyon yeniden acilmali"
+
+
+ok.append(test("TREND: kâr kilidi sonrası pozisyon yeniden değerlendirilir",
+               t_trend_kilit_sonrasi_yeniden_degerlendirilir))
+
+
+def t_kapali_mumlar_helpers():
+    """Sinyal yalnizca kapanmis barlardan: olusan bar haric."""
+    from core.paper import _kapali_mumlar
+    from core.binance_client import Candle
+
+    def bar(i, closed=True):
+        return Candle(open_time=i * 3600000, open=100.0, high=101.0,
+                      low=99.0, close=100.5, volume=1.0,
+                      close_time=i * 3600000 + 1, closed=closed)
+
+    hepsi = [bar(0), bar(1), bar(2, closed=False)]
+    assert len(_kapali_mumlar(hepsi)) == 2, "olusAN bar haric tutulmali"
+    hepsi[-1].closed = True
+    assert len(_kapali_mumlar(hepsi)) == 3, "hepsi kapanmissa tamami"
+
+
+ok.append(test("SİNYAL: yalnızca kapanmış barlar kullanılır",
+               t_kapali_mumlar_helpers))
+
+
+
+# ----------------------------------------------------------------------
+# CANLI TITREME REGRESYONU (kullanicinin HYPE/USDT logu)
+#
+# Sorun: "long short veya short long gecislerinde defalarca islem
+# yapiyor... tum kazanc ve fazlasi komisyona gitti".
+#
+# Kok neden: Supertrend yonu OLUSAN (kapanmamis) bar icinden hesaplaniyordu;
+# fiyat bar icinde oynadikca yon tik tik degisiyor, analiz 0,5 sn'de bir
+# calistigi icin simulator her degisimde pozisyon degistiriyordu.
+#
+# Bu test canli dongusunu taklit eder ve ISLEM SAYISINI olcer.
+# ----------------------------------------------------------------------
+def t_canli_titreme_yok():
+    """Olusan bar + yon titremesi -> islem sayisi patlamamali."""
+    from core.binance_client import Candle
+    from core.paper import PaperTrader, _kapali_mumlar
+    from core import trend as trend_mod
+    import numpy as np
+
+    def senaryo(kapali_barlar):
+        rng = np.random.default_rng(5)
+        fiyat = 79.68 + rng.normal(0, 0.002, 200)
+        cs = []
+        for i, f in enumerate(fiyat[:60]):
+            cs.append(Candle(open_time=i * 60000, open=f, high=f + 0.004,
+                              low=f - 0.004, close=f, volume=1.0,
+                              close_time=(i + 1) * 60000 - 1, closed=True))
+        cs[-1].closed = False
+        p = PaperTrader(symbol="HYPEUSDT", balance=1000.0, leverage=10.0,
+                        fee_rate=0.0005, wallet_fraction=0.8)
+        p.configure(mode="trend", risk_pct=0.05)
+        p.running = True
+        p.start_balance = 1000.0
+        p.balance = 1000.0
+        son = cs[-1]
+        olay = 0
+        r2 = np.random.default_rng(9)
+        for t in range(300):
+            son.close = (fiyat[60] + r2.choice([-0.02, 0.02]) * (1 + t % 3)
+                         + r2.normal(0, 0.002))
+            son.high = max(son.high, son.close)
+            son.low = min(son.low, son.close)
+            kaynak = _kapali_mumlar(cs) if kapali_barlar else cs
+            if len(kaynak) < 30:
+                continue
+            sig = trend_mod.last_signal([c.high for c in kaynak],
+                                        [c.low for c in kaynak],
+                                        [c.close for c in kaynak])
+            if p.on_price(son.close, cs, "15m", sig):
+                olay += 1
+            if t % 20 == 19:
+                yeni = Candle(open_time=cs[-1].open_time + 60000,
+                              open=son.close, high=son.close + 0.004,
+                              low=son.close - 0.004, close=son.close,
+                              volume=1.0,
+                              close_time=cs[-1].open_time + 120000 - 1,
+                              closed=False)
+                cs = cs + [yeni]
+                son = cs[-1]
+        return olay, p.balance
+
+    eski, bakiye_eski = senaryo(False)
+    yeni, bakiye_yeni = senaryo(True)
+    # 1) Kapanmis bar ile: neredeyse hic islem olmamali.
+    assert yeni <= 3, \
+        f"kapali barla yon titremesi devam ediyor: {yeni} olay"
+    # 2) Olusan bar ile (eski sinyal kaynagi): stop dongusu ve bekleme
+    #    sayesinde yine de patlama olmamali.
+    assert eski <= 6, \
+        f"olusAN bar ile yon titremesi devam ediyor: {eski} olay"
+    # 3) Komisyon cokeni olmamali: bakiye agir kaybetmemeli.
+    assert bakiye_yeni > 980, f"bakiye eridi: {bakiye_yeni:.2f}"
+    assert bakiye_eski > 975, f"bakiye eridi: {bakiye_eski:.2f}"
+
+
+ok.append(test("CANLI: yön titremesi yok (kapanmış bar + bekleme)",
+               t_canli_titreme_yok))
 
 
 print("-" * 62)

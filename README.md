@@ -312,6 +312,46 @@ sınırdır**, kullanılan değil.
 Ayrıntılı ölçüm, duyarlılık analizi ve sınırlar:
 **[ALGORITMA_ARASTIRMASI.md](ALGORITMA_ARASTIRMASI.md)**
 
+### Canlı sorun: "LONG/SHORT arası defalarca işlem" (düzeltildi)
+
+Kullanıcı canlı log raporladı: HYPE/USDT'de Supertrend modunda long açtı,
+kâr yapmaya başladı; düşünce **long↔short geçişi arasında defalarca
+pozisyon açıp kapattı, tüm kâr ve fazlası komisyona gitti** (10 saniyede
+4 işlem).
+
+**Üç kök neden bulundu ve düzeltildi:**
+
+| Sorun | Düzeltme |
+|---|---|
+| Sinyal **oluşan (kapanmamış) bardan** hesaplanıyordu → Supertrend yönü bar içinde tik tik değişiyor, simülatör saniyede pozisyon değiştiriyordu | Sinyal artık **yalnızca kapanmış barlardan** üretilir (`core/paper.py::_kapali_mumlar`) |
+| **Stop sonrası aynı sinyalle anında yeniden giriş** (stop avcısı döngüsü) → BTC 1g'de 33 yerine **171 işlem** | Stop/likidasyon sonrası sinyal temizlenmiyor: sinyal değişmedikçe pozisyon yeniden açılmaz |
+| Likidasyon stop'tan önce kontrol ediliyordu, gap durumunda likidasyon fiyatı uygulanmıyordu | Sıra düzeltildi: **stop önce**, gap liq (likidasyon fiyatında) |
+
+Ek olarak **pozisyon değişiminde 5 dakika bekleme** var
+(`PAPER_FLIP_COOLDOWN_SEC`): yön değişiminden sonra yeni pozisyon açılmaz,
+süre sonunda **sinyal yeniden değerlendirilir** (yön neyse o açılır).
+
+Canlı benzetimi (400 tick): **51 olay → 2 olay**, bakiye kaybı
+**−%31 → −%0,4**. Regresyon testi: `test_paper.py` → *"CANLI: yön titremesi yok"*.
+
+### Trend modu (Supertrend) — düzeltmelerden sonraki ölçüm
+
+1 gün dilimi, risk %5, app'in kendi backtest motoru:
+
+| Kâr kilitleme | Seçim (10 coin) | Holdout (15 coin) | 500 bar (seçim/holdout) | İşlem |
+|---|---|---|---|---|
+| **%0 (kapalı)** | **+%24,5** (%90 poz.) | **+%31,7** (%87) | +%11,1 / +%7,2 | 350 |
+| %3 (kullanıcı isteği) | −%10,4 (%0) | +%3,9 | +%3,6 / +%2,2 | 2.287 |
+
+**Dürüst not:** kâr kilitleme kuralı **uygulandı** (fiyat %3 → pozisyon
+durdurulur, kâr cüzdana yazılır, 1-2 dk beklenir, pozisyon yeniden
+değerlendirilir — her iki yönde de). Ama trend modunda **sonucu düşürüyor**:
+Supertrend günler boyunca pozisyon taşır, %3'te kârı kesip yeniden girmek
+"kazananı sat, kaybedeni tut" olur; işlem sayısı 6,5 katına çıkıp komisyon
+kârı götürür. Bu yüzden arayüzdeki **"Kâr kilitleme (%)"** alanı trend
+modunda **0 yapılabilir** (ölçülen en iyi). MURO modunda kâr kilitleme
+zaten var ve ölçülmüş durumda (%1 → seçim +%47,6 · holdout +%118,6).
+
 ### "Sadece LONG" modu — kullanıcı isteği
 
 Sorun: aralık modunda açılan LONG hedefe (86.976) ulaşamayınca açık kalıyor ve
@@ -678,7 +718,7 @@ smoke_test.py               masaüstü arayüz testleri
 
 ```bash
 python selftest.py       # 4h canlı veri, gösterge tabloları, DB yaz/sıfırla
-python test_paper.py     # kaldıraç simülatörü + MURO (63 test, ağ bağımsız)
+python test_paper.py     # kaldıraç simülatörü + MURO (68 test, ağ bağımsız)
 python tools/check_sh.py # Termux betikleri (shebang/CRLF/blok dengesi)
 ```
 

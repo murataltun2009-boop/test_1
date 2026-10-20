@@ -287,6 +287,38 @@ PAPER_TREND_STOP_ATR = 4.0       # giris stopu = 4 x ATR
 PAPER_TREND_TRAIL_ATR = 6.0      # takip stopu = 6 x ATR (kapanista)
 PAPER_TREND_RISK_PCT = 0.05      # islem basina sermayenin %5'i
 PAPER_TREND_MAX_LEV = 20.0       # kaldıraç ust siniri (arayuz degeri ile min)
+# Trend modunda kar kilitleme: fiyat %3 ilerleyince pozisyon kapanir,
+# kar cuzdana yazilir, 1-2 dk beklenir ve pozisyon TEKRAR DEGERLENDIRILIR.
+PAPER_TREND_LOCK_PCT = 0.03      # kar kilitleme (fiyat %3)
+PAPER_LOCK_COOLDOWN_SEC = 90     # kilit sonrasi bekleme (1,5 dk)
+# Kâr kilidi sonrası davranış:
+#   "protected" : aynı yönde HEMEN yeniden pozisyon açılır ve stop kârın
+#                 yazıldığı seviyeye çekilir → bankalanan kâr geri
+#                 verilemez.
+#   "wait"      : 1-2 dk beklenir, sonra pozisyon yeniden değerlendirilir.
+#                 (KULLANICI İSTEĞİ — varsayılan)
+#
+# ÖLÇÜM (25 coin, 1g, app backtest motoru, risk %5):
+#   kilit %0  → seçim +%24,5 · holdout +%31,7 · 350 işlem   <-- EN İYİ
+#   kilit %3  → seçim −%10,4 · holdout +%3,9  · 2.287 işlem
+#   kilit %12 → seçim +%1,9  · holdout +%6,8  · 796 işlem
+#
+# Sebep: kilit trendi %3'lük parçalara böler; işlem sayısı 6-25 katına
+# çıkar ve komisyon kârı götürür. Kullanıcı isteği olarak %3 varsayılan
+# yapıldı; arayüzden 0 yazılınca kilitleme kapanır (ölçülen en iyi).
+PAPER_TREND_LOCK_REENTRY = "wait"
+
+# Pozisyon DEGISIMI (LONG <-> SHORT) sonrasi bekleme.
+#
+# KULLANICI SORUNU (HYPE/USDT logu): "long short veya short long
+# gecislerinde defalarca islem yapiyor" — Supertrend yonu OLUSAN
+# (kapanmamis) bar icinde tik tik degisiyordu; simulator her sinyal
+# degisiminde pozisyon degistiriyor, komisyon kazanci yiyordu.
+#
+# Iki koruma birlikte calisir:
+#   1) Sinyal yalnizca KAPANMIS barlardan hesaplanir (core/service.py)
+#   2) Pozisyon kapandiktan sonra yeni pozisyon acilmaz (bu bekleme)
+PAPER_FLIP_COOLDOWN_SEC = 300    # yon degisiminden sonra 5 dk bekle
 
 # ---- MURO (yeni algoritma) -------------------------------------------
 #

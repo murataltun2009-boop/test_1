@@ -22,6 +22,7 @@ from typing import Any, Optional
 import config
 from core.analysis import Signal, TimeframeAnalysis, analyze, format_number
 from core.binance_client import BinanceFuturesClient, Candle, Trade
+from core.paper import _kapali_mumlar
 
 logger = logging.getLogger("ta.service")
 
@@ -497,21 +498,26 @@ class MarketService:
             price = self._live_price
         if price != price or price <= 0:      # NaN veya gecersiz
             price = candles[-1].close
-        signal = self._signal_for_mode(res)
+        signal = self._signal_for_mode(res, candles)
         try:
             self.paper.on_price(price, candles, tf, signal)
         except Exception as exc:      # noqa: BLE001
             self._emit_log("error", "simulator", f"Simülatör hatası: {exc}")
 
     # ------------------------------------------------------------------
-    def _muro_action(self, res: "TimeframeAnalysis") -> str:
+    def _muro_action(self, res: "TimeframeAnalysis",
+                     candles: Optional[list] = None) -> str:
         """
         MURO aksiyonu (AL / SAT / LONG_KAPAT / SHORT_KAPAT).
 
-        ONEMLI: aksiyon serisi bar bazlidir ve ayni son bar icin her
+        ONEMLI 1: aksiyon serisi bar bazlidir ve ayni son bar icin her
         analiz dongusunde TEKRAR hesaplanir. Canli akista ayni eski
         aksiyonun tekrar tekrar uygulanmamasi icin "islenen bar"
         numarasi tutulur: sadece YENI bir aksiyon varsa dondurulur.
+
+        ONEMLI 2: Sinyal YALNIZCA KAPANMIS barlardan uretilir. Olusan
+        (kapanmamis) bar icinde Supertrend yonu tik tik degisiyor ve
+        simulator saniyede bir kez LONG/SHORT degistiriyordu.
         """
         from core import muro as muro_mod
         if self.paper is None:
@@ -521,7 +527,13 @@ class MarketService:
         if self._muro_mode != self.paper.mode:
             self._muro_mode = self.paper.mode
             self._muro_action_idx = -1
-        acts = muro_mod.actions(res.o, res.h, res.l, res.c,
+        cs = _kapali_mumlar(candles or [])
+        if len(cs) < 30:
+            return ""
+        acts = muro_mod.actions([c.open for c in cs],
+                                [c.high for c in cs],
+                                [c.low for c in cs],
+                                [c.close for c in cs],
                                 self.paper.muro_cfg)
         idx = -1
         for i in range(len(acts) - 1, -1, -1):
@@ -536,7 +548,8 @@ class MarketService:
         return acts[idx]
 
     # ------------------------------------------------------------------
-    def _signal_for_mode(self, res: "TimeframeAnalysis | None") -> str | None:
+    def _signal_for_mode(self, res: "TimeframeAnalysis | None",
+                         candles: Optional[list] = None) -> str | None:
         """
         Karar mekanizmasina göre SINYAL kaynagini secer.
 
@@ -557,10 +570,20 @@ class MarketService:
         mode = self.paper.mode if self.paper is not None else "range"
         if mode == "trend":
             # Supertrend: +1 -> AL, -1 -> SAT, 0 -> NOTR.
+            #
+            # Sinyal YALNIZCA KAPANMIS barlardan: olusan bar icinde
+            # Supertrend yonu tik tik degisiyor ve simulator her sinyal
+            # degisiminde pozisyon degistiriyordu (HYPE logu: saniyede
+            # bir LONG/SHORT, kazanc komisyona gidiyordu).
             from core import trend as trend_mod
-            return trend_mod.last_signal(res.h, res.l, res.c)
+            cs = _kapali_mumlar(candles or [])
+            if len(cs) < 30:
+                return None
+            return trend_mod.last_signal([c.high for c in cs],
+                                         [c.low for c in cs],
+                                         [c.close for c in cs])
         if mode == "muro":
-            return self._muro_action(res)
+            return self._muro_action(res, candles)
         if mode not in ("ma_only", "osc_only"):
             return res.signal.value
 

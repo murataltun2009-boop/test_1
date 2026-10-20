@@ -763,8 +763,9 @@ if ("serviceWorker" in navigator) {
       if (document.activeElement !== el.pRisk && d.trend_risk_pct) {
         el.pRisk.value = Math.round(d.trend_risk_pct * 100);
       }
-      if (document.activeElement !== el.pLock && d.muro_lock_pct) {
-        el.pLock.value = d.muro_lock_pct * 100;
+      if (document.activeElement !== el.pLock) {
+        var lockV = (d.mode === "muro") ? d.muro_lock_pct : d.trend_lock_pct;
+        if (lockV) el.pLock.value = lockV * 100;
       }
       if (document.activeElement !== el.pRule) el.pRule.value = d.short_rule;
       if (document.activeElement !== el.pMode) {
@@ -905,6 +906,12 @@ if ("serviceWorker" in navigator) {
   }
 
   function paperConfig() {
+    // Kâr kilitleme eşiği (fiyat %). Aktif moda göre uygulanır:
+    // trend modunda %3, MURO'da %1 (ölçülen optimum).
+    // 0 = kilitleme KAPALI — 0'ı 0 olarak göndermek şart (|| 3
+    // kullanılsaydı 0 yazılan kullanıcıya %3 giderdi).
+    var lockVal = parseFloat(el.pLock.value);
+    if (isNaN(lockVal)) lockVal = (el.pMode.value === "muro") ? 1 : 3;
     return {
       balance: parseFloat(el.pBalance.value),
       leverage: parseFloat(el.pLev.value),
@@ -919,8 +926,7 @@ if ("serviceWorker" in navigator) {
       // Trend/MURO modu: islem basina sermaye riski (%). Sunucu 0..0,5
       // araligini kabul eder; burada %1-50 arasi girilir.
       risk_pct: (parseFloat(el.pRisk.value) || 2) / 100,
-      // MURO: kâr kilitleme eşiği (fiyat %).
-      muro_lock: (parseFloat(el.pLock.value) || 1) / 100,
+      lock_pct: lockVal / 100,
       // Dilimi sunucuya ACIKCA bildir: sunucudaki aktif dilim WS mesajiyla
       // guncelleniyor ve iki istek araya girince yanlis dilim test edilebiliyor.
       timeframe: state.tf
@@ -973,7 +979,7 @@ if ("serviceWorker" in navigator) {
     if (el.modeNote4) el.modeNote4.style.display = muro ? "" : "none";
     // Risk (trend + MURO) ve kâr kilitleme (MURO) ayarlari.
     if (el.riskWrap) el.riskWrap.style.display = trend ? "" : "none";
-    if (el.lockWrap) el.lockWrap.style.display = muro ? "" : "none";
+    if (el.lockWrap) el.lockWrap.style.display = trend ? "" : "none";
     el.pRule.disabled = kilit;
     // Kullanilan esikleri yaz: osilator modunda bilesik esikler
     // degil, olculmus daha kucuk esikler gecerli.

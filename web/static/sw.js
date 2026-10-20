@@ -19,7 +19,9 @@
 // VERSION degistirildiginde tarayici yeni surumu yukler.
 // v4: PWA geri donusunde otomatik yenilenme (visibilitychange/pageshow)
 // v5: MURO modu + 1g dilimi + yeni kaldirac paneli ayarlari
-const VERSION = "ta-v5";
+// v6: yon titremesi duzeltmesi (kapali bar sinyali + 5 dk bekleme)
+//     + trend modunda kar kilitleme
+const VERSION = "ta-v6";
 const SHELL = "shell-" + VERSION;
 
 const PRECACHE = [

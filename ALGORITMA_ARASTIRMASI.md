@@ -229,7 +229,99 @@ LONG kapandı — yapı kırıldı (MURO)
 
 ---
 
-## 7. Yeniden üretim
+## 7. CANLI SORUN: "LONG/SHORT ARASI DEFALARCA İŞLEM" (HYPE/USDT)
+
+Kullanıcı canlı log raporladı:
+
+> "Karar mekanizması Supertrend seçtim. HYPE/USDT coininde gün içinde
+> long pozisyon açtı gayet güzel kâr yapmaya başladı. Fakat düşmeye
+> başlayınca kazancı eritti; hele ki long short geçişi arasında defalarca
+> pozisyon açtı kapattı ki tüm kazanç ve fazlası komisyona gitti."
+
+Log'daki örnek: 18:31:18 SHORT açıldı → 18:31:19 SHORT kapandı → LONG
+açıldı → 18:31:29 LONG kapandı → SHORT açıldı… **10 saniyede 4 işlem**,
+her biri ~1,6-2,0 USDT komisyonla.
+
+### 7.1 Kök nedenler (üçü ölçüldü)
+
+| # | Sorun | Kanıt |
+|---|---|---|
+| **1** | **Sinyal oluşan (kapanmamış) bardan hesaplanıyordu.** Supertrend yönü bar içinde fiyat oynadıkça tik tik değişiyor; analiz 0,5 sn'de bir çalıştığı için simülatör her değişimde pozisyon değiştiriyordu. | Canlı benzetimi: 400 tick'te **51 olay** (LONG/SHORT) |
+| **2** | **Stop sonrası aynı sinyalle anında yeniden giriş.** `_close()` her kapanışta `last_signal`'ı temizliyordu → stop'a yakılan pozisyon bir sonraki tick'te aynı fiyattan tekrar açılıp tekrar stop oluyoruyordu (stop avcısı döngüsü). | BTC 1g: **33 yerine 171 işlem**; komisyon 59,6 USDT (bakiyenin %6'sı) |
+| **3** | **Likidasyon stop'tan önce kontrol ediliyordu** ve gap (bar açılışı) durumunda likidasyon fiyatı uygulanmıyordu. | İki motor aynı veride 3 kat farklı işlem sayısı çıkarıyordu |
+
+### 7.2 Düzeltmeler
+
+1. **Sinyal yalnızca kapanmış barlardan** (`core/paper.py::_kapali_mumlar`,
+   `core/service.py`). Grafikte oluşan bar gösterilmeye devam eder, ama
+   *karar* kapanmış bardan gelir.
+2. **Pozisyon değişiminde 5 dakika bekleme** (`PAPER_FLIP_COOLDOWN_SEC`).
+   Yön değişimi, stop ve likidasyon sonrası yeni pozisyon açılmaz; sinyal
+   o süre sonunda **yeniden değerlendirilir** (yön neyse o açılır).
+3. **Stop/likidasyon sonrası sinyal temizlenmiyor** (`reset_signal=False`):
+   sinyal değişmediyse pozisyon yeniden açılmaz → stop döngüsü biter.
+4. **Gap likidasyonu** borsa davranışına uyduruldu: bar stop'un ötesinde
+   açılıp likidasyon seviyesinin altındaysa pozisyon likidasyon
+   fiyatında kapanır.
+5. **Kâr kilitleme** (aşağıda) — kullanıcı isteği.
+
+### 7.3 Ölçüm (canlı benzetimi: 400 tick, sessiz piyasa)
+
+| Kip | Olay | İşlem | Bakiye |
+|---|---|---|---|
+| ESKİ (oluşan bar, bekleme yok) | 51 | 25 | 691,69 (**−%31**) |
+| YENİ (kapanmış bar + 5 dk bekleme) | 2 | 1 | **996,25** |
+
+Regresyon testi eklendi: `test_paper.py` → *"CANLI: yön titremesi yok"*.
+
+### 7.4 Trend modunun (Supertrend) ölçümü — düzeltmelerden sonra
+
+App'in **kendi** backtest motoruyla (1 gün, risk %5, komisyon %0,05 dahil;
+kayma/funding modellenmez, bu yüzden biraz iyimserdir):
+
+| Kâr kilitleme | Seçim (10 coin) | Holdout (15 coin) | Seçim 500 bar | Holdout 500 bar | İşlem |
+|---|---|---|---|---|---|
+| **%0 (kapalı)** | **+%24,5** (%90 poz.) | **+%31,7** (%87) | **+%11,1** (%100) | **+%7,2** (%67) | 350 |
+| %2 (korumali yeniden giriş) | −%45,8 (%20) | −%79,6 (%27) | — | — | 5.087 |
+| **%3 (kullanıcı isteği)** | **−%10,4** (%0) | +%3,9 (%60) | +%3,6 (%80) | +%2,2 (%60) | 2.287 |
+| %5 | −%5,0 (%30) | +%1,0 (%60) | — | — | 1.561 |
+| %8 | −%10,3 (%20) | +%5,1 (%67) | — | — | 1.066 |
+| %12 | +%1,9 (%50) | +%6,8 (%60) | — | — | 796 |
+
+### 7.5 Kâr kilitleme hakkında dürüst not
+
+Kullanıcının isteği **uygulandı**: "%3 kazanç sağlandığında pozisyon
+durdurulur, kâr cüzdana aktarılır, 1-2 dakika beklenir ve pozisyon yeniden
+değerlendirilir" (her iki yönde de).
+
+Ama **ölçüm, bu kuralın trend modunda sonucu DÜŞÜRDÜĞÜNÜ** gösteriyor:
+
+* Supertrend(10,3) günler/haftalar boyunca pozisyon taşıyan bir trend
+  takipçisidir. %3'te kârı kesip yeniden girmek, **güvenli kârı bırakıp
+  riski tekrar alan** bir davranıştır ("kazananı sat, kaybedeni tut").
+* İşlem sayısı 350'den 2.287'ye (6,5 kat) çıkıyor; komisyon kârı götürüyor.
+* Aynı sonuç MURO'da çıkmıyor — çünkü MURO'nun girişleri seyreltilmiştir
+  (geri çekilme) ve kâr kilidi %1'dir (ölçülen optimum).
+
+Bu yüzden:
+
+* **Trend modunda** kâr kilitleme alanı **0 yapılınca** (varsayılan
+  ölçülen en iyi sonucu verir) ya da istenirse %3 yapılabilir.
+* **MURO modunda** kâr kilitleme zaten vardır ve ölçülmüştür (%1 → seçim
+  +%47,6 · holdout +%118,6).
+
+Arayüzde bu ölçüm trend modunun açıklamasında yazılıdır; kilitleme
+alanının yanında "0 = kapalı" ipucu vardır.
+
+### 7.6 MURO motor doğrulaması (düzeltmelerden sonra)
+
+Uygulama backtest motoru ↔ araştırma simülatörü: BTC 1g'de **194 olayın
+194'ü de birebir aynı** (giriş, çıkış, pozisyon büyüklüğü, bakiye).
+Son bakiye: uygulama **1928,40** = araştırma **1928,40**.
+
+---
+
+## 8. Yeniden üretim
 
 ```bash
 python tools/research_muro.py search 1d 150 0.02 20 trend   # parametre arama
