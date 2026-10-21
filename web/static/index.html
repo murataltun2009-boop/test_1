@@ -167,6 +167,10 @@
           <label class="wfull" id="riskWrap" style="display:none">İşlem başına risk %
             <input id="pRisk" type="number" step="1" min="1" max="50" value="2">
           </label>
+          <label class="wfull" id="pullWrap" style="display:none">Giriş filtresi (ATR)
+            <input id="pPull" type="number" step="0.1" min="0" max="5" value="0">
+            <span class="hint">0 = kapalı</span>
+          </label>
           <label class="wfull" id="lockWrap" style="display:none">Kâr kilitleme (%)
             <input id="pLock" type="number" step="0.5" min="0" max="20" value="3">
             <span class="hint">0 = kapalı</span>
@@ -219,6 +223,11 @@
           sonuç <b>1 gün</b> diliminde ölçüldü (25 coin, komisyon + kayma +
           funding dahil). Yine de deneyseldir; geçmiş performans geleceği
           garanti etmez.<br><br>
+          <b>Optimum nokta:</b> "Giriş filtresi" alanına ATR cinsinden bir
+          değer yazarsanız long için tepeden, short için dipten giriş
+          engellenir (güçlü AL/SAT gelirse filtre atlanır ve hemen girilir).
+          <span style="color:#ffb300">Ölçüm: 1g'de sonucu düşürdüğü için
+          varsayılan 0 (kapalı).</span><br><br>
           <b>Kar koruması:</b> yön değişiminden sonra <b>5 dk beklenir</b>
           (pozisyon dalgalanmasın), stop sonrası da aynı bekleme uygulanır.
           Sinyal yalnızca <b>kapanmış barlardan</b> üretilir; açılan bar

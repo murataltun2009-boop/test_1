@@ -21,7 +21,8 @@
 // v5: MURO modu + 1g dilimi + yeni kaldirac paneli ayarlari
 // v6: yon titremesi duzeltmesi (kapali bar sinyali + 5 dk bekleme)
 //     + trend modunda kar kilitleme
-const VERSION = "ta-v6";
+// v7: 1m dilimi, stop sonrasi reclaim, optimum nokta giris filtresi
+const VERSION = "ta-v7";
 const SHELL = "shell-" + VERSION;
 
 const PRECACHE = [

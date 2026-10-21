@@ -1746,6 +1746,87 @@ ok.append(test("CANLI: yön titremesi yok (kapanmış bar + bekleme)",
                t_canli_titreme_yok))
 
 
+
+# ----------------------------------------------------------------------
+# KÂR KİLİDME POZİSYON BAZLI + STOP SONRASI RECLAIM
+#
+# KULLANICI SORUNU: "zarar yaptıktan sonra kazanç moduna geçince toplam
+# yüzdelik kazanca baktığı için Kar kilitleme çalışmıyor... dolayısıyla
+# mevcut çalışan pozisyon özelinde kar kilitleme çalışmalıdır."
+#
+# GERÇEK NEDEN: stop'a yakılan pozisyondan sonra "last_signal" bayat
+# kaldığı için aynı yönde YENİ POZİSYON hiç açılmıyordu → kâr kilitleme
+# hiç tetiklenmiyordu. Çözüm: stop sonrası aynı yöne girmeden önce fiyat
+# stop seviyesini geri almalı (reclaim). Kâr kilitleme zaten POZİSYONUN
+# kendi giriş fiyatına bakar (hesabın toplamına değil).
+# ----------------------------------------------------------------------
+def t_kar_kilidi_pozisyon_bazli():
+    """Zarardan sonra yeni pozisyon açılır ve KENDİ +%3'ünde kilitlenir."""
+    p = _trend_trader()
+    p.configure(lock_pct=0.03)
+    m = _mum()
+    p.on_price(100.0, m, "4h", "AL")
+    assert p.position and p.position.side == "LONG"
+    bakiye0 = p.balance
+    stop = p.position.stop_price
+
+    # 1) Stop ol (zarar)
+    p.on_price(stop - 0.05, _mum(t0=100), "4h", None)
+    assert p.position is None, "stop'ta kapanmaliydi"
+    assert p.balance < bakiye0, "zarar olmaliydi"
+
+    # 2) Reclaim: fiyat stop seviyesinin USTUNE cikinca yeni LONG acilir
+    p._no_entry_until = 0.0
+    p.on_price(stop + 0.5, _mum(t0=200), "4h", "AL")
+    assert p.position and p.position.side == "LONG", \
+        "reclaim sonrasi yeni LONG acilmaliydi"
+    entry = p.position.entry
+
+    # 3) Yeni pozisyonun KENDI +%3'unde kilitlenir (toplam zararda olsa bile)
+    lock_fiyat = entry * 1.03
+    ev = p.on_price(lock_fiyat, _mum(t0=300), "4h", None,
+                    bar_high=lock_fiyat * 1.001)
+    assert ev and "Kâr kilidi" in ev, f"pozisyon bazli kilit calismadi: {ev}"
+    assert p.trades[-1].net_pnl > 0, "kilit bacagi karli olmali"
+
+
+ok.append(test("TREND: kâr kilitleme pozisyon bazlı (toplam zararda bile)",
+               t_kar_kilidi_pozisyon_bazli))
+
+
+def t_stop_sonrasi_reclaim_gerekli():
+    """Stop sonrasi ayni yone, fiyat stop seviyesini geri almadan girilmez."""
+    p = _trend_trader()
+    p.on_price(100.0, _mum(), "4h", "AL")
+    stop = p.position.stop_price
+    p.on_price(stop - 0.05, _mum(t0=100), "4h", None)
+    assert p.position is None
+    # Fiyat stop seviyesinin ALTINDA: ayni yone girilmez
+    p._no_entry_until = 0.0
+    p.on_price(stop - 0.2, _mum(t0=200), "4h", "AL")
+    assert p.position is None, "reclaim olmadan girilmemeli"
+    # Reclaim (fiyat stop seviyesinin ustunde): girilir
+    p.on_price(stop + 0.3, _mum(t0=300), "4h", "AL")
+    assert p.position and p.position.side == "LONG", \
+        "reclaim sonrasi girilmeli"
+
+
+ok.append(test("TREND: stop sonrası reclaim şart (döngü yok)",
+               t_stop_sonrasi_reclaim_gerekli))
+
+
+def t_1m_dilimi_var():
+    """1 dakikalik dilim eklendi (kullanici istegi)."""
+    import config as cfg
+    assert "1m" in cfg.TIMEFRAMES, cfg.TIMEFRAMES
+    assert cfg.TF_SECONDS.get("1m") == 60, cfg.TF_SECONDS
+    assert "1m" in cfg.TF_LABELS, cfg.TF_LABELS
+    assert cfg.TIMEFRAMES.index("1m") < cfg.TIMEFRAMES.index("15m")
+
+
+ok.append(test("DİLİM: 1 dakikalık zaman dilimi mevcut", t_1m_dilimi_var))
+
+
 print("-" * 62)
 print(f"{sum(ok)}/{len(ok)} test gecti")
 sys.exit(0 if all(ok) else 1)

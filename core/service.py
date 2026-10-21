@@ -243,6 +243,18 @@ class MarketService:
             if secs:
                 pairs.append((tf, secs * 1000))
 
+        # COIN DEGISTIGINDE ESKI AKISIN DEVAMI (SORUN 1)
+        #
+        # WS thread'i recv() icinde uzun sure bloklanabilir; stop() 2 sn
+        # bekleyip vazgeciyor ve eski thread yeni coinin mumlarina da
+        # yazmaya devam ediyor. Sonuc: (a) yeni coinin mumlari bozuluyor,
+        # (b) "Bozuk islem atlandi" logu sürekli tekrarlaniyor.
+        #
+        # COZUM: akis kendi sembolunu etiketler; sembol degistiyse
+        # o akisin islemleri sessizce dusurulur.
+        akis_symbol = self.settings.symbol
+        client = self.client
+
         # Akistan gelen bozuk islem filtresi.
         #
         # OLCUM (45 sn, her iki sembol): Binance @trade akisi arada fiyati
@@ -256,6 +268,23 @@ class MarketService:
         #
         # Bu yuzden her islem son bilinen saglam fiyata karsi kontrol
         # edilir; makul olmayanlar reddedilir ve log'a dusurulur.
+        #
+        # IKINCI KATMAN (coin degisimi): Sapma buyukse islem reddedilmek
+        # yerine once REST referansina (yeni coinin son kapanisi) bakilir.
+        # Cunku coin degisiminden sonra ESKI coinin akisindan gelen
+        # islemler referansi bozuyor ve YENI coinin butun islemleri
+        # "bozuk" sayilip reddediliyordu (log sürekli tekrarlaniyordu).
+        son_bozuk_log = [0.0]
+
+        def _rest_referans() -> float:
+            """Yeni coinin REST'ten gelen son kapanis fiyati (0 = yok)."""
+            with self._lock:
+                for tf in self.settings.timeframes:
+                    buf = self._buffers.get(tf)
+                    if buf:
+                        return float(buf[-1].close)
+            return 0.0
+
         def _trade_is_sane(price: float) -> bool:
             if price <= 0 or price != price:
                 return False
@@ -263,15 +292,31 @@ class MarketService:
             if ref > 0:
                 sapma = abs(price - ref) / ref
                 if sapma > config.TRADE_PRICE_SANITY:
-                    self._emit_log(
-                        "warning", "sistem",
-                        f"Bozuk işlem atlandı: fiyat {price:,.4f} "
-                        f"(son geçerli {ref:,.4f}, sapma %{sapma*100:.1f})")
+                    # Coin degismis olabilir: REST referansina bak.
+                    rest_ref = _rest_referans()
+                    if rest_ref > 0 and \
+                            abs(price - rest_ref) / rest_ref <= \
+                            config.TRADE_PRICE_SANITY:
+                        # Yeni coinin gercek fiyati -> referansi yenile,
+                        # log'a BOSUK YAZMA.
+                        self._last_good_price = price
+                        return True
+                    # Gercekten bozuk veri. Logu HIZLANDIR (spam olmasin).
+                    now = time.time()
+                    if now - son_bozuk_log[0] > 30.0:
+                        son_bozuk_log[0] = now
+                        self._emit_log(
+                            "warning", "sistem",
+                            f"Bozuk işlem atlandı: fiyat {price:,.4f} "
+                            f"(son geçerli {ref:,.4f}, sapma %{sapma*100:.1f})")
                     return False
             self._last_good_price = price
             return True
 
         def on_trade(trade: Trade) -> None:
+            # Eski coinin akisindan gelen islemler: sessizce dusurulur.
+            if akis_symbol != self.settings.symbol:
+                return
             if trade.qty < 0:
                 return              # bozuk islem verisi, yoksay
             if not _trade_is_sane(trade.price):
@@ -343,7 +388,7 @@ class MarketService:
                 pass
 
         try:
-            self.client.stream_trades(
+            client.stream_trades(
                 on_trade=on_trade,
                 on_status=on_status,
                 stop_event=self._stop,
@@ -579,9 +624,22 @@ class MarketService:
             cs = _kapali_mumlar(candles or [])
             if len(cs) < 30:
                 return None
-            return trend_mod.last_signal([c.high for c in cs],
-                                         [c.low for c in cs],
-                                         [c.close for c in cs])
+            # Guclu sinyal dizisi: KAPANMIS son barin bilesik skoru.
+            # (res.signals her bar icin nedensel sinyal tutar.)
+            strong = None
+            if res is not None and getattr(res, "signals", None):
+                sigs = list(res.signals)
+                if len(sigs) > len(cs):
+                    sigs = sigs[:len(cs)]
+                strong = trend_mod.strong_series(sigs)
+            karar = trend_mod.decide_series(
+                [c.high for c in cs], [c.low for c in cs],
+                [c.close for c in cs], strong=strong,
+                period=self.paper.trend_period if self.paper else 10,
+                mult=self.paper.trend_mult if self.paper else 3.0,
+                pull_atr=(self.paper.trend_pull_atr if self.paper else 0.0),
+                pull_bars=(self.paper.trend_pull_bars if self.paper else 20))
+            return karar[-1] if karar else None
         if mode == "muro":
             return self._muro_action(res, candles)
         if mode not in ("ma_only", "osc_only"):

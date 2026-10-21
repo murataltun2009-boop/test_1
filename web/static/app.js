@@ -104,7 +104,7 @@ if ("serviceWorker" in navigator) {
    "wFee", "wTrades", "wLastLong", "wPeak", "wPosBox", "wPosTitle", "wPosBody",
    "pBalance", "pLev", "pFrac", "pFee", "pLook", "pHold", "pConfirm",
    "pBacktest", "pRule", "pMode", "pStart", "pLive", "pStop", "pReset",
-   "pRisk", "riskWrap", "pLock", "lockWrap",
+   "pRisk", "riskWrap", "pLock", "lockWrap", "pPull", "pullWrap",
    "ruleWrap", "modeNote", "modeNote2", "modeNote3", "modeNote4",
    "modeThr",
    "wTradeList", "btBox", "btRange", "btBody",
@@ -677,8 +677,8 @@ if ("serviceWorker" in navigator) {
   // Buton metni kisa olmali: "15dk / 1sa / 4sa" yerine uzun etiket
   // basligi sIKISTIRIR.
   function kisaEtiket(tf) {
-    return ({ "15m": "15dk", "1h": "1sa", "2h": "2sa", "4h": "4sa",
-              "1d": "1gün" })[tf] || tf;
+    return ({ "1m": "1dk", "15m": "15dk", "1h": "1sa", "2h": "2sa",
+              "4h": "4sa", "1d": "1gün" })[tf] || tf;
   }
 
   function updateTfLabel() {
@@ -762,6 +762,9 @@ if ("serviceWorker" in navigator) {
       if (document.activeElement !== el.pHold) el.pHold.value = d.min_hold_bars;
       if (document.activeElement !== el.pRisk && d.trend_risk_pct) {
         el.pRisk.value = Math.round(d.trend_risk_pct * 100);
+      }
+      if (document.activeElement !== el.pPull && d.trend_pull_atr !== undefined) {
+        el.pPull.value = d.trend_pull_atr;
       }
       if (document.activeElement !== el.pLock) {
         var lockV = (d.mode === "muro") ? d.muro_lock_pct : d.trend_lock_pct;
@@ -927,6 +930,8 @@ if ("serviceWorker" in navigator) {
       // araligini kabul eder; burada %1-50 arasi girilir.
       risk_pct: (parseFloat(el.pRisk.value) || 2) / 100,
       lock_pct: lockVal / 100,
+      // Girişte optimum nokta filtresi (ATR cinsinden; 0 = kapalı).
+      pull_atr: (parseFloat(el.pPull.value) || 0),
       // Dilimi sunucuya ACIKCA bildir: sunucudaki aktif dilim WS mesajiyla
       // guncelleniyor ve iki istek araya girince yanlis dilim test edilebiliyor.
       timeframe: state.tf
@@ -980,6 +985,7 @@ if ("serviceWorker" in navigator) {
     // Risk (trend + MURO) ve kâr kilitleme (MURO) ayarlari.
     if (el.riskWrap) el.riskWrap.style.display = trend ? "" : "none";
     if (el.lockWrap) el.lockWrap.style.display = trend ? "" : "none";
+    if (el.pullWrap) el.pullWrap.style.display = (mode === "trend") ? "" : "none";
     el.pRule.disabled = kilit;
     // Kullanilan esikleri yaz: osilator modunda bilesik esikler
     // degil, olculmus daha kucuk esikler gecerli.
@@ -991,8 +997,8 @@ if ("serviceWorker" in navigator) {
   }
   el.pMode.addEventListener("change", syncModeUI);
   syncModeUI();
-  ["pBalance", "pLev", "pFrac", "pFee", "pLook", "pHold", "pRisk", "pLock"]
-    .forEach(function (id) {
+  ["pBalance", "pLev", "pFrac", "pFee", "pLook", "pHold", "pRisk",
+   "pLock", "pPull"].forEach(function (id) {
       el[id].addEventListener("input", function () { state.userTouched = true; });
     });
 

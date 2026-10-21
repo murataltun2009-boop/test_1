@@ -40,7 +40,7 @@ SYMBOL = "BTCUSDT"
 # ACTIVE_TIMEFRAME yalnizca acilista secili gelen dilimdir; arayuzden
 # degistirilebilir.
 ACTIVE_TIMEFRAME = "4h"
-TIMEFRAMES: list[str] = ["15m", "1h", "4h", "1d"]
+TIMEFRAMES: list[str] = ["1m", "15m", "1h", "4h", "1d"]
 
 # Odak disi dilimler bu kadar daha seyrek yeniden hesaplanir. analyze()
 # 500 bar icin ~55 ms surer; uc dilimi de 0,5 sn'de bir calistirmak
@@ -49,6 +49,7 @@ TIMEFRAMES: list[str] = ["15m", "1h", "4h", "1d"]
 BACKGROUND_REFRESH_FACTOR = 4
 
 TF_LABELS: dict[str, str] = {
+    "1m": "1 Dakika",
     "1d": "1 Gün",
     "15m": "15 Dakika",
     "1h": "1 Saat",
@@ -58,6 +59,7 @@ TF_LABELS: dict[str, str] = {
 
 # Arayuzde tek birim olarak gosterilen saniye cinsinden sureler.
 TF_SECONDS: dict[str, int] = {
+    "1m": 60,
     "1d": 86400,
     "15m": 900,
     "1h": 3600,
@@ -307,6 +309,23 @@ PAPER_LOCK_COOLDOWN_SEC = 90     # kilit sonrasi bekleme (1,5 dk)
 # çıkar ve komisyon kârı götürür. Kullanıcı isteği olarak %3 varsayılan
 # yapıldı; arayüzden 0 yazılınca kilitleme kapanır (ölçülen en iyi).
 PAPER_TREND_LOCK_REENTRY = "wait"
+
+# GIRIŞTE "OPTIMUM NOKTA" KURALI (trend modu)
+#
+# KULLANICI SORUNU: "long pozisyonunu açmasın hemen arkasından coin
+# fiyatı düştüğü için zarar yapıyor" ve "short fiyatın en dibine
+# gelmiş oluyor artık longa geçecek shortla girince zarar yapıyor".
+#
+# KURAL: long için fiyat son N barın ZIRVESINE çok yakınsa girilmez;
+# short için DIP'e çok yakınsa girilmez. Ölçü: ATR cinsinden mesafe.
+#   long  : (zirve - fiyat) >= pull_atr * ATR
+#   short : (fiyat - dip)  >= pull_atr * ATR
+# 0 = filtre kapalı.
+#
+# AYRICA: bilesik skorda GÜÇLÜ AL / GÜÇLÜ SAT varsa filtre Bypass edilir
+# (güçlü sinyalde hemen girilir).
+PAPER_TREND_PULL_ATR = 0.0
+PAPER_TREND_PULL_BARS = 20
 
 # Pozisyon DEGISIMI (LONG <-> SHORT) sonrasi bekleme.
 #

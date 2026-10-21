@@ -321,7 +321,79 @@ Son bakiye: uygulama **1928,40** = araştırma **1928,40**.
 
 ---
 
-## 8. Yeniden üretim
+## 9. KULLANICININ 2. TUR ŞİKÂYETLERİ VE ÇÖZÜMLERİ
+
+### 9.1 "Coin değişiminde Bozuk işlem atlandı hataları devamlı"
+
+**Neden:** WebSocket thread'i `recv()` içinde uzun süre bloklanabiliyor;
+`stop()` 2 sn bekleyip vazgeçiyor ve **eski coinin akışı yeni coinin
+mumlarına yazmaya devam ediyordu**. Bozuk-veri filtresi eski coinin
+fiyatını referans alıyor, yeni coinin her işlemi "%25 sapma" diye
+reddediliyordu → log sürekli aynı hatayı tekrarlıyordu.
+
+**Çözüm (3 katman):**
+1. Akış kendi sembolünü etiketler; sembol değiştiyse o akışın işlemleri
+   **sessizce** düşürülür (yeni coinin mumları bozulmaz).
+2. Sapma büyükse işlem doğrudan reddedilmez; **REST referansına**
+   (yeni coinin son kapanışı) bakılır — tutuyorsa referans yenilenir ve
+   log'a yazılmaz.
+3. "Bozuk işlem" logu **30 saniyede bir** yazılır (spam olmaz).
+
+### 9.2 "Kâr kilitleme çalışmıyor"
+
+**Gerçek neden (beklenenden farklı):** Kâr kilitleme zaten **pozisyonun
+kendi giriş fiyatına** bakıyordu (hesabın toplamına değil). Asıl sorun,
+**stop'a yakılan pozisyondan sonra yeni pozisyonun hiç açılmamasıydı**:
+`_close()` her kapanışta `last_signal`'ı temizlediği için sinyal "aynı"
+sayılıyor, `signal == last_signal` kontrolü girişi engelliyordu → yeni
+pozisyon yok → kâr kilitleme tetiklenmiyordu.
+
+**Çözüm:** Stop sonrası aynı yöne girmek için fiyatın **stop seviyesini
+geri alması (reclaim)** şart. Reclaim olmadan girilmez → hem stop
+döngüsü kurulmaz hem de "kaybedeni hemen değiştir" tuzağı olmaz.
+Reclaim gerçekleşince yeni pozisyon açılır ve **kendi +%3'ünde** kilitlenir
+(hesabın toplamı zararda olsa bile).
+
+Regresyon testleri: *"MURO/TREND: kâr kilitleme pozisyon bazlı (toplam
+zararda bile)"* ve *"TREND: stop sonrası reclaim şart (döngü yok)"*.
+
+### 9.3 "1 dakikalık işlem listesi"
+
+`1m` dilimi eklendi (`15m`'nin yanına): `config.TIMEFRAMES =
+["1m", "15m", "1h", "4h", "1d"]`. Arayüzde "1dk" düğmesi olarak çıkar.
+Not: 5 dilim arka planda aynı anda hesaplanır (odak 0,5 sn'de bir, diğerleri
+2 sn'de bir) → CPU yükü ~%10 artar.
+
+### 9.4 "İlk pozisyon daha kararlı olsun; tepede long / dipte short açmasın"
+
+**Kural (uygulandı):**
+* **Optimum nokta filtresi:** Long için fiyat son N barın zirvesine
+  **ATR cinsinden çok yakınsa girilmez**; short için dibe yakınsa girilmez.
+  Ölçü: `PAPER_TREND_PULL_ATR` (ATR birimi) — arayüzden ayarlanır.
+* **Güçlü sinyal bypass'ı:** Bileşik skorda **GÜÇLÜ AL / GÜÇLÜ SAT**
+  varsa filtre atlanır → "güçlü sinyalde hemen gir" kuralı.
+* Karar mantığı `core/trend.py::decide_series` içinde: canlı akış ve geri
+  dönük test **aynı** fonksiyonu kullanır.
+
+**Ölçüm (trend modu, 1g, risk %5, kilitleme kapalı):**
+
+| Optimum nokta filtresi | Seçim (10 coin) | Holdout (15 coin) | 500 bar (seçim/holdout) |
+|---|---|---|---|
+| **kapalı (0)** | **+%24,5** (%90 poz.) | **+%31,7** (%87) | +%11,1 / +%7,2 |
+| 0,3 ATR | +%17,6 (%70) | +%21,8 (%80) | +%12,1 / +%5,3 |
+| 0,6 ATR | +%12,1 (%60) | +%27,6 (%80) | +%16,6 / +%3,7 |
+| 1,0 ATR | +%14,8 (%80) | +%24,0 (%87) | +%14,5 / +%3,2 |
+
+**Dürüst okuma:** filtre 1g'de ölçülmüş sonucu **düşürüyor**; 4h'de de
+nötr. Bu yüzden **varsayılan KAPALI** bırakıldı (ölçülen en iyi) ama
+arayüzden açılabilir — kullanıcı canlıda kendi gözlemine göre
+değerlendirebilsin. "Tepe/dipte girme" davranışının ölçülmüş olarak
+pozitif çıktığı algoritma **MURO**'dur (geri çekilme girişi: seçim
++%47,6 · holdout +%118,6).
+
+---
+
+## 10. Yeniden üretim
 
 ```bash
 python tools/research_muro.py search 1d 150 0.02 20 trend   # parametre arama

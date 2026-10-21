@@ -75,3 +75,94 @@ def atr_value(high, low, close, n: int = 14) -> float:
 
 def is_trend_mode(mode: Optional[str]) -> bool:
     return mode == "trend"
+
+# --------------------------------------------------------------------------
+# KARAR SERISI (canlı akış ve geriye dönük test ORTAK kullanır)
+# --------------------------------------------------------------------------
+def decide_series(high, low, close, strong=None, period: int = 10,
+                  mult: float = 3.0, pull_atr: float = 0.0,
+                  pull_bars: int = 20) -> list[str]:
+    """
+    Bar başına karar dizisi.
+
+    Çıktı: "AL" · "SAT" · "NÖTR" · "GÜÇLÜ AL" · "GÜÇLÜ SAT" · "" (bekle)
+
+    KURALLAR
+    --------
+    1. YÖN: Supertrend(period, mult).
+    2. OPTIMUM NOKTA (pull_atr > 0):
+       * LONG  : fiyat son pull_bars barın zirvesine çok yakınsa GİRİLMEZ
+                 (tepede alıp hemen düşmek en sık zarar sebebi).
+       * SHORT : fiyat son pull_bars barın dibine çok yakınsa GİRİLMEZ.
+       Ölçü ATR cinsinden mesafe.
+    3. GÜÇLÜ SİNYAL (strong dizisi: +1 GÜÇLÜ AL, −1 GÜÇLÜ SAT, 0 yok):
+       optimum nokta beklense bile GÜÇLÜ AL/GÜÇLÜ SAT gelirse HEMEN girilir.
+
+    strong dizisi verilmemişse sadece yön + optimum nokta uygulanır.
+    """
+    h = np.asarray(high, dtype=float)
+    l = np.asarray(low, dtype=float)
+    c = np.asarray(close, dtype=float)
+    n = c.size
+    out: list[str] = [""] * n
+    if n == 0:
+        return out
+
+    _, dirn = ind.supertrend(h, l, c, period, mult)
+
+    # Zon filtresi icin ATR ve donen zirve/dip
+    atr_v = None
+    roll_hi = roll_lo = None
+    if pull_atr > 0 and n > 1:
+        atr_v = ind.atr(h, l, c, 14)
+        w = max(2, int(pull_bars))
+        roll_hi = np.empty(n)
+        roll_lo = np.empty(n)
+        for i in range(n):
+            j0 = max(0, i - w + 1)
+            seg_h = h[j0:i + 1]
+            seg_l = l[j0:i + 1]
+            roll_hi[i] = float(seg_h.max())
+            roll_lo[i] = float(seg_l.min())
+
+    for i in range(n):
+        d = int(dirn[i])
+        if d == 0:
+            out[i] = "NÖTR"
+            continue
+        if strong is not None and i < len(strong):
+            st = int(strong[i])
+        else:
+            st = 0
+        if d > 0:
+            if st > 0:
+                out[i] = "GÜÇLÜ AL"
+                continue
+            if atr_v is not None and np.isfinite(atr_v[i]) and atr_v[i] > 0:
+                if (roll_hi[i] - c[i]) < pull_atr * atr_v[i]:
+                    continue          # tepede: bekle
+            out[i] = "AL"
+        else:
+            if st < 0:
+                out[i] = "GÜÇLÜ SAT"
+                continue
+            if atr_v is not None and np.isfinite(atr_v[i]) and atr_v[i] > 0:
+                if (c[i] - roll_lo[i]) < pull_atr * atr_v[i]:
+                    continue          # dipte: bekle
+            out[i] = "SAT"
+    return out
+
+
+def strong_series(signals) -> list[int]:
+    """core.analysis.Signal listesinden guclu sinyal dizisi (+1 / -1 / 0)."""
+    from core.analysis import Signal
+    out = []
+    for s in signals or []:
+        v = getattr(s, "value", s)
+        if v == "GÜÇLÜ AL":
+            out.append(1)
+        elif v == "GÜÇLÜ SAT":
+            out.append(-1)
+        else:
+            out.append(0)
+    return out

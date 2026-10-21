@@ -334,6 +334,15 @@ süre sonunda **sinyal yeniden değerlendirilir** (yön neyse o açılır).
 Canlı benzetimi (400 tick): **51 olay → 2 olay**, bakiye kaybı
 **−%31 → −%0,4**. Regresyon testi: `test_paper.py` → *"CANLI: yön titremesi yok"*.
 
+### 2. tur şikâyetler ve çözümleri
+
+| Şikâyet | Çözüm |
+|---|---|
+| Coin değişiminde "Bozuk işlem atlandı" hataları **devamlı** | Eski WS akışı yeni coinin mumlarına yazıyordu. Akış artık sembolünü etiketliyor (eskisi sessizce düşürülüyor), sapma büyükse REST referansına bakılıyor, log 30 sn'de bir yazılıyor. |
+| "Kâr kilitleme çalışmıyor" | Kilit zaten **pozisyonun kendi kârına** bakıyordu; asıl sorun **stop sonrası yeni pozisyonun hiç açılmamasıydı** (bayat sinyal). Artık stop sonrası aynı yöne girmeden önce fiyat **stop seviyesini geri almalı (reclaim)** → yeni pozisyon açılır ve kendi +%3'ünde kilitlenir. |
+| "1 dakikalık işlem listesi" | `1m` dilimi eklendi (`15m`'nin yanına, "1dk" düğmesi). |
+| "Tepede long / dipte short açmasın, ilk pozisyon kararlı olsun" | **Optimum nokta filtresi** (long için zirveye, short için dibe ATR cinsinden yakınken girilmez) + **GÜÇLÜ AL/SAT varsa filtre atlanır** (güçlü sinyalde hemen girilir). Ölçümde 1g'de sonucu düşürdüğü için **varsayılan kapalı**, arayüzden açılabilir. |
+
 ### Trend modu (Supertrend) — düzeltmelerden sonraki ölçüm
 
 1 gün dilimi, risk %5, app'in kendi backtest motoru:
@@ -718,7 +727,7 @@ smoke_test.py               masaüstü arayüz testleri
 
 ```bash
 python selftest.py       # 4h canlı veri, gösterge tabloları, DB yaz/sıfırla
-python test_paper.py     # kaldıraç simülatörü + MURO (68 test, ağ bağımsız)
+python test_paper.py     # kaldıraç simülatörü + MURO (71 test, ağ bağımsız)
 python tools/check_sh.py # Termux betikleri (shebang/CRLF/blok dengesi)
 ```
 

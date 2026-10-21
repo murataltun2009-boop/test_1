@@ -341,6 +341,7 @@ def create_app(service: MarketService, store: SignalStore,
             min_hold=int(_num(data.get("min_hold")) or 0),
             risk_pct=_num(data.get("risk_pct")),
             lock_pct=_num(data.get("lock_pct")),
+            pull_atr=_num(data.get("pull_atr")),
         )
 
         # "Gecmisten baslat": once grafikteki tum mumlar tekrar edilir,
@@ -442,6 +443,7 @@ def create_app(service: MarketService, store: SignalStore,
             min_hold=int(_num(data.get("min_hold")) or 0),
             risk_pct=_num(data.get("risk_pct")),
             lock_pct=_num(data.get("lock_pct")),
+            pull_atr=_num(data.get("pull_atr")),
         )
         return JSONResponse({"ok": True, "state": paper.state(_paper_price())})
 
