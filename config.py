@@ -327,6 +327,32 @@ PAPER_TREND_LOCK_REENTRY = "wait"
 PAPER_TREND_PULL_ATR = 0.0
 PAPER_TREND_PULL_BARS = 20
 
+# ---- 1m Optimized (yeni mod) --------------------------------------------
+#
+# Multi-timeframe: 15m Supertrend trend + 5m confirmation + 1m EMA20 pullback
+# Filters: ADX>20, Vol z-score > -1.5, ATR percentile 10-90%, Session 00-06 UTC
+# Cooldown: 100 bars, Min hold: 30 bars
+# Risk: 0.3%/trade, Max effective leverage 5x, Stop 3*ATR (min 0.15%), Trail 5*ATR
+# Session filter: 00-06 UTC
+# Bu mod 1 dakikalık grafikler için optimize edilmiştir.
+PAPER_1M_TREND_PERIOD = 10
+PAPER_1M_TREND_MULT = 3.0
+PAPER_1M_PULLBACK_EMA = 20
+PAPER_1M_PULLBACK_ATR = 1.0
+PAPER_1M_COOLDOWN = 100
+PAPER_1M_MIN_HOLD = 30
+PAPER_1M_ADX_MIN = 20
+PAPER_1M_VOL_Z_MIN = -1.5
+PAPER_1M_ATR_PCT_MIN = 0.1
+PAPER_1M_ATR_PCT_MAX = 0.9
+PAPER_1M_STOP_ATR = 3.0
+PAPER_1M_TRAIL_ATR = 5.0
+PAPER_1M_MIN_STOP_PCT = 0.0015
+PAPER_1M_MAX_STOP_PCT = 0.02
+PAPER_1M_RISK_PCT = 0.003
+PAPER_1M_MAX_LEV = 5.0
+PAPER_1M_SESSION_FILTER = True
+
 # Pozisyon DEGISIMI (LONG <-> SHORT) sonrasi bekleme.
 #
 # KULLANICI SORUNU (HYPE/USDT logu): "long short veya short long

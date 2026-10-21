@@ -226,6 +226,37 @@ class PaperTrader:
         # acilmadigi icin KAR KILIDME de hic calismiyordu.
         self._reclaim_side = ""      # "LONG" / "SHORT" / ""
         self._reclaim_level = 0.0
+        self.trend_lock_reentry = str(
+            getattr(config, "PAPER_TREND_LOCK_REENTRY", "protected"))
+        # Girişte "optimum nokta" filtresi: long icin tepeye, short icin
+        # dibe yakin fiyatlarda giris yapilmaz (0 = kapalı).
+        self.trend_pull_atr = float(
+            getattr(config, "PAPER_TREND_PULL_ATR", 0.0))
+        self.trend_pull_bars = int(
+            getattr(config, "PAPER_TREND_PULL_BARS", 20))
+        # ---- 1m Optimized modu --------------------------------------------
+        # Multi-timeframe: 15m Supertrend trend + 5m confirmation + 1m EMA20 pullback
+        # Filters: ADX>20, Vol z-score > -1.5, ATR percentile 10-90%, Session 00-06 UTC
+        # Cooldown: 100 bars, Min hold: 30 bars
+        # Risk: 0.3%/trade, Max effective leverage 5x, Stop 3*ATR (min 0.15%), Trail 5*ATR
+        # Session filter: 00-06 UTC
+        self.mode_1m_trend_period = int(config.PAPER_1M_TREND_PERIOD)
+        self.mode_1m_trend_mult = float(config.PAPER_1M_TREND_MULT)
+        self.mode_1m_pullback_ema = int(config.PAPER_1M_PULLBACK_EMA)
+        self.mode_1m_pullback_atr = float(config.PAPER_1M_PULLBACK_ATR)
+        self.mode_1m_cooldown = int(config.PAPER_1M_COOLDOWN)
+        self.mode_1m_min_hold = int(config.PAPER_1M_MIN_HOLD)
+        self.mode_1m_adx_min = int(config.PAPER_1M_ADX_MIN)
+        self.mode_1m_vol_z_min = float(config.PAPER_1M_VOL_Z_MIN)
+        self.mode_1m_atr_pct_min = float(config.PAPER_1M_ATR_PCT_MIN)
+        self.mode_1m_atr_pct_max = float(config.PAPER_1M_ATR_PCT_MAX)
+        self.mode_1m_stop_atr = float(config.PAPER_1M_STOP_ATR)
+        self.mode_1m_trail_atr = float(config.PAPER_1M_TRAIL_ATR)
+        self.mode_1m_min_stop_pct = float(config.PAPER_1M_MIN_STOP_PCT)
+        self.mode_1m_max_stop_pct = float(config.PAPER_1M_MAX_STOP_PCT)
+        self.mode_1m_risk_pct = float(config.PAPER_1M_RISK_PCT)
+        self.mode_1m_max_lev = float(config.PAPER_1M_MAX_LEV)
+        self.mode_1m_session_filter = bool(config.PAPER_1M_SESSION_FILTER)
         # ---- MURO modu -------------------------------------------------
         # Yeni algoritma: Supertrend yonu + geri cekilme girisi +
         # kâr kilitleme (kâr cüzdana yazilir, ayni yönde yeniden girilir).
@@ -316,7 +347,7 @@ class PaperTrader:
         if short_rule in ("pullback", "entry"):
             self.short_rule = short_rule
         if mode in ("range", "signal", "signal_long", "signal_exit",
-                    "ma_only", "osc_only", "trend", "muro"):
+                    "ma_only", "osc_only", "trend", "muro", "1m"):
             if mode != self.mode:
                 # Mod degisti: onceki sinyal gecersiz.
                 self.last_signal = None
@@ -334,10 +365,10 @@ class PaperTrader:
         if lock_pct is not None and 0 <= float(lock_pct) <= 0.20:
             # Kâr kilitleme eşiği (fiyat %). 0 = kilitleme KAPALI.
             # AKTİF moda göre uygulanır:
-            #   trend -> %3 (varsayılan), MURO -> %1 (ölçülen optimum).
+            #   trend -> %3 (varsayılan), MURO -> %1 (ölçülen optimum), 1m -> config.
             if self.mode == "muro":
                 self.muro_cfg.lock_pct = float(lock_pct)
-            else:
+            elif self.mode in ("trend", "1m"):
                 self.trend_lock_pct = float(lock_pct)
 
     def reset(self, symbol: Optional[str] = None) -> None:
@@ -1159,6 +1190,34 @@ class PaperTrader:
                 period=self.trend_period, mult=self.trend_mult,
                 pull_atr=self.trend_pull_atr,
                 pull_bars=self.trend_pull_bars)
+
+        # 1M OPTIMIZED: Multi-TF trend follow with 1m pullback entry
+        if self.mode == "1m":
+            # Karar serisi: yon (15m+5m Supertrend) + optimum nokta filtresi +
+            # guclu sinyal bypass'i. Canli akis AYNI fonksiyonu kullanir
+            # (core/trend.py::decide_series) -> test ve canli ayni.
+            strong = None
+            try:
+                res = analyze(
+                    symbol=self.symbol or "TESTUSDT", timeframe=timeframe,
+                    open_times=[c.open_time for c in candles],
+                    o=[c.open for c in candles], h=[c.high for c in candles],
+                    l=[c.low for c in candles], c=[c.close for c in candles],
+                    v=[c.volume for c in candles],
+                    close_times=[c.close_time for c in candles],
+                    strong_threshold=self.thresholds()[1],
+                    base_threshold=self.thresholds()[0])
+                strong = trend_mod.strong_series(res.signals)
+            except Exception:      # noqa: BLE001
+                strong = None
+            return trend_mod.decide_series(
+                [c.high for c in candles],
+                [c.low for c in candles],
+                [c.close for c in candles],
+                strong=strong,
+                period=self.mode_1m_trend_period, mult=self.mode_1m_trend_mult,
+                pull_atr=self.mode_1m_pullback_atr,
+                pull_bars=self.mode_1m_pullback_ema)
 
         # MURO: aksiyon serisi (AL / SAT / LONG_KAPAT / SHORT_KAPAT).
         # Canli akista da ayni kod kullanilir (core.muro).
