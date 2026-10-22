@@ -26,6 +26,40 @@ from core.paper import _kapali_mumlar
 
 logger = logging.getLogger("ta.service")
 
+# MURO/karar etiketlerini grafik Signal'ine cevirir. MURO "kapama"
+# aksiyonlarinda yildiz TERS yonde olmalidir (long kapat = sat, short
+# kapat = al); aksi halde grafik yanlis gecerli aksiyon gosterir.
+_LABEL_TO_SIGNAL = {
+    "GÜÇLÜ AL": Signal.STRONG_BUY,
+    "AL": Signal.BUY,
+    "NÖTR": Signal.NEUTRAL,
+    "SAT": Signal.SELL,
+    "GÜÇLÜ SAT": Signal.STRONG_SELL,
+    "": Signal.NEUTRAL,
+    "LONG_KAPAT": Signal.SELL,
+    "SHORT_KAPAT": Signal.BUY,
+}
+
+
+def _score_signal_series(score, base: float, strong: float) -> list[Signal]:
+    """Skor dizisini (-1..1) esiklerle Signal serisine cevirir."""
+    out: list[Signal] = []
+    for s in score:
+        v = float(s)
+        if v != v:                      # NaN -> NÖTR
+            out.append(Signal.NEUTRAL)
+        elif v >= strong:
+            out.append(Signal.STRONG_BUY)
+        elif v >= base:
+            out.append(Signal.BUY)
+        elif v <= -strong:
+            out.append(Signal.STRONG_SELL)
+        elif v <= -base:
+            out.append(Signal.SELL)
+        else:
+            out.append(Signal.NEUTRAL)
+    return out
+
 # Ayni yon icin ardisik kayitlar arasindaki en kisa sure (sn).
 # Sinyal NÖTR <-> AL arasinda zipliyorsa log/kayit şişmesini engeller.
 COOLDOWN_SECONDS = 60
@@ -71,6 +105,8 @@ class MarketService:
         self._muro_action_idx: int = -1
         self._muro_mode: Optional[str] = None
         self._pushed_versions: dict[str, int] = {}
+        # Mod bazlı grafik yıldızı serisi cache'i: (cache_key, Signal listesi)
+        self._mode_series_cache: dict[str, tuple] = {}
 
         self.events: queue.Queue = queue.Queue()
         # Anlik fiyat tikleri (her islem). Web arayuzu bunu dogrudan
@@ -87,6 +123,21 @@ class MarketService:
     def request_full_refresh(self) -> None:
         """Anlik goruntu (snapshot) gonderilmesini zorlar."""
         with self._lock:
+            self._dirty.update(self._buffers.keys())
+        self._push_snapshot()
+
+    def force_mode_refresh(self) -> None:
+        """
+        Mod degisiminde grafik yildizlarini hemen yeniler.
+
+        _mode_series_cache temizlenir; ws push deduplasyonu
+        (sent == version) onceki surumu gordugunden her dilimin
+        surumu 1 artirilir, sonra snapshot zorla gonderilir.
+        """
+        self._mode_series_cache.clear()
+        with self._lock:
+            for tf in list(self._versions):
+                self._versions[tf] = self._versions.get(tf, 0) + 1
             self._dirty.update(self._buffers.keys())
         self._push_snapshot()
 
@@ -694,6 +745,122 @@ class MarketService:
         return "NÖTR"
 
     # ------------------------------------------------------------------
+    def mode_signal_series(self, tf: str) -> list[Signal]:
+        """
+        Grafik yildizlarina temel olacak MOD BAZLI sinyal serisi.
+
+        Grafik yildizlari daha once her zaman bilesik skordan geliyordu;
+        artik secilen algoritmaya gore uretilir:
+          signal/range : bilesik skor (res.signals, ayni)
+          ma_only      : sadece MA skoru esiklenir
+          osc_only     : sadece osilator skoru esiklenir
+          trend        : Supertrend karar serisi (decide_series)
+          1m           : 1m modu karar serisi (ayni decide_series)
+          muro         : muro.actions serisi (kapama ters yonde yildiz)
+
+        Seri analizin AKTIF versiyonu icin cache'lenir; her tik
+        yeniden hesaplanmaz.
+        """
+        mode = self.paper.mode if self.paper is not None else "range"
+        with self._lock:
+            res = self._analyses.get(tf)
+            version = self._versions.get(tf, 0)
+        if res is None:
+            return []
+
+        key = self._mode_cache_key(mode, version)
+        cached = self._mode_series_cache.get(tf)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+
+        if mode in ("trend", "1m", "muro"):
+            with self._lock:
+                buf = list(self._buffers.get(tf) or [])
+            series = self._decision_series_for_mode(mode, res, buf)
+        elif mode == "ma_only":
+            series = _score_signal_series(
+                res.ma_scores,
+                self.settings.base_threshold,
+                self.settings.strong_threshold)
+        elif mode == "osc_only":
+            series = _score_signal_series(
+                res.oscillator_scores,
+                config.PAPER_OSC_BASE_THRESHOLD,
+                config.PAPER_OSC_STRONG_THRESHOLD)
+        else:
+            series = list(res.signals)
+
+        n = len(res.signals)
+        if n and len(series) != n:
+            # Hizalama bozuksa cevreleyen emniyet: bilesik seri göster.
+            series = list(res.signals)
+
+        self._mode_series_cache[tf] = (key, series)
+        return series
+
+    def _mode_cache_key(self, mode: str, version: int) -> tuple:
+        """Seri cache anahtari: analiz versiyonu + mod + ilgili parametreler."""
+        parts: list = [version, mode,
+                       round(self.settings.base_threshold, 4),
+                       round(self.settings.strong_threshold, 4)]
+        p = self.paper
+        if p is not None:
+            if mode == "trend":
+                parts += [p.trend_period, p.trend_mult,
+                          p.trend_pull_atr, p.trend_pull_bars]
+            elif mode == "1m":
+                parts += [p.mode_1m_trend_period, p.mode_1m_trend_mult,
+                          p.mode_1m_pullback_atr, p.mode_1m_pullback_ema]
+        return tuple(parts)
+
+    def _decision_series_for_mode(self, mode: str, res: TimeframeAnalysis,
+                                  candles: list) -> list[Signal]:
+        """trend/1m/muro modlari icin bar bazli karar serisi."""
+        from core import muro as muro_mod
+        from core import trend as trend_mod
+        cs = _kapali_mumlar(candles)
+        if len(cs) < 30 or self.paper is None:
+            return list(res.signals)
+        gap = len(res.signals) - len(cs)
+
+        if mode == "muro":
+            acts = muro_mod.actions(
+                [c.open for c in cs], [c.high for c in cs],
+                [c.low for c in cs], [c.close for c in cs],
+                self.paper.muro_cfg)
+            base = [_LABEL_TO_SIGNAL.get(a, Signal.NEUTRAL) for a in acts]
+        else:
+            # Guclu sinyal dizisi: KAPANMIS son barin bilesik skoru.
+            strong = None
+            if getattr(res, "signals", None):
+                sigs = list(res.signals)
+                if len(sigs) > len(cs):
+                    sigs = sigs[:len(cs)]
+                strong = trend_mod.strong_series(sigs)
+            if mode == "1m":
+                period = self.paper.mode_1m_trend_period
+                mult = self.paper.mode_1m_trend_mult
+                pull_atr = self.paper.mode_1m_pullback_atr
+                pull_bars = self.paper.mode_1m_pullback_ema
+            else:
+                period = self.paper.trend_period
+                mult = self.paper.trend_mult
+                pull_atr = self.paper.trend_pull_atr
+                pull_bars = self.paper.trend_pull_bars
+            karar = trend_mod.decide_series(
+                [c.high for c in cs], [c.low for c in cs],
+                [c.close for c in cs], strong=strong,
+                period=period, mult=mult,
+                pull_atr=pull_atr, pull_bars=pull_bars)
+            base = [_LABEL_TO_SIGNAL.get(k, Signal.NEUTRAL) for k in karar]
+
+        if gap > 0 and base:
+            # Olusan (kapanmamis) son bar: son KAPANMIS karar gecerli
+            # (_signal_for_mode ile ayni semantik).
+            base = base + [base[-1]] * gap
+        return base
+
+    # ------------------------------------------------------------------
     def switch_symbol(self, symbol: str) -> tuple[bool, str]:
         """
         Coin degistirir: istemci dogrulanir, servis sifirdan kurulur.
@@ -731,6 +898,7 @@ class MarketService:
             self._last_signal.clear()
             self._last_record_time.clear()
             self._dirty.clear()
+            self._mode_series_cache.clear()
         if self.paper is not None:
             self.paper.reset(symbol)
 

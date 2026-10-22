@@ -270,6 +270,33 @@ class IndicatorValue:
         return format_number(self.value, digits=None)
 
 
+def marker_indices_from(signals: list[Signal],
+                        min_gap: int = MARKER_MIN_GAP) -> list[int]:
+    """
+    Bir sinyal serisinden grafik yildzisi olacak barlari uretir.
+
+    Moddan bagimsiz ayni iki kural kullanilir:
+      1. Sinyalin ilk ortaya CIKTIĞI bar isaretlenir.
+      2. Ardisik yildizlar arasinda en az `min_gap` bar; cakismada
+         guclu olan korunur (NÖTR strength=0 oldugu icin kaybeder,
+         grafik dolanmaz ama bosluklardaki gri yildiz kaybolmaz).
+    """
+    candidates: list[int] = []
+    for i, sig in enumerate(signals):
+        if i == 0 or signals[i - 1] is not sig:
+            candidates.append(i)
+
+    kept: list[int] = []
+    for i in candidates:
+        if kept and (i - kept[-1]) < min_gap:
+            if abs(signals[i].strength) <= abs(signals[kept[-1]].strength):
+                continue
+            kept[-1] = i
+            continue
+        kept.append(i)
+    return kept
+
+
 @dataclass
 class TimeframeAnalysis:
     """Bir zaman dilimi icin tum hesaplar + gosterge gecmisi."""
@@ -332,22 +359,7 @@ class TimeframeAnalysis:
           2. Ardisik yildizlar arasinda en az `min_gap` bar birakilir; iki
              isaret arasindan guclu olan korunur.
         """
-        candidates: list[int] = []
-        for i, sig in enumerate(self.signals):
-            # NÖTR de isaretlenir: grafikte gri yildiz ile göstersin.
-            # (DB kaydı ayrı: record_neutral ayarına bağlıdır.)
-            if i == 0 or self.signals[i - 1] is not sig:
-                candidates.append(i)
-
-        kept: list[int] = []
-        for i in candidates:
-            if kept and (i - kept[-1]) < min_gap:
-                if abs(self.signals[i].strength) <= abs(self.signals[kept[-1]].strength):
-                    continue
-                kept[-1] = i
-                continue
-            kept.append(i)
-        return kept
+        return marker_indices_from(self.signals, min_gap)
 
 
 # --------------------------------------------------------------------------

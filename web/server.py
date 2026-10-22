@@ -32,6 +32,7 @@ from starlette.staticfiles import StaticFiles
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 import config
+import core.analysis as analysis_mod
 from core.analysis import Signal
 from core.service import MarketService
 from core.store import SignalStore
@@ -61,8 +62,12 @@ def _fmt_ts(ms: int) -> str:
         .astimezone().isoformat(timespec="seconds")
 
 
-def candle_payload(res, price: float) -> dict[str, Any]:
-    """Bir TimeframeAnalysis'i tarayiciya gonderilecek JSON'a cevirir."""
+def candle_payload(res, price: float, signals=None) -> dict[str, Any]:
+    """Bir TimeframeAnalysis'i tarayiciya gonderilecek JSON'a cevirir.
+
+    signals: MOD BAZLI sinyal serisi (list[Signal]). Verilirse yildizlar
+    bu seriden uretilir; verilmezse bilesik skor serisi kullanilir.
+    """
     n = int(res.c.size)
     # Tarayiciye tum gecmisi gondermek yerine son N mum + yeterli indikator
     # gecmisi: gosterge hesabinda kullanilan tum bar sonucu zaten hesaplandi.
@@ -88,12 +93,18 @@ def candle_payload(res, price: float) -> dict[str, Any]:
         "hma": series("hma"), "vwma": series("vwma"),
     }
 
-    # Sinyal yildizlari: sinyalin ilk ortaya ciktigi barlar
+    # Sinyal yildizlari: sinyalin ilk ortaya ciktigi barlar.
+    # Secilen algoritma (ma_only/osc_only/trend/1m/muro) bir sinyal serisi
+    # verildiyse YILDIZLAR o seriden uretilir.
+    if signals is None:
+        marc = res.marker_indices()
+    else:
+        marc = analysis_mod.marker_indices_from(signals)
     markers = []
-    for i in res.marker_indices():
+    for i in marc:
         if i < lo:
             continue
-        sig = res.signals[i]
+        sig = res.signals[i] if signals is None else signals[i]
         markers.append({
             "t": int(res.open_times[i]) // 1000,
             "signal": sig.value,
@@ -272,7 +283,8 @@ def create_app(service: MarketService, store: SignalStore,
         res = snap["analyses"].get(tf)
         if res is None:
             return None
-        payload = candle_payload(res, price)
+        sigs = service.mode_signal_series(tf)
+        payload = candle_payload(res, price, sigs or None)
         payload["strong_threshold"] = service.settings.strong_threshold
         payload["base_threshold"] = service.settings.base_threshold
         return payload
@@ -343,6 +355,9 @@ def create_app(service: MarketService, store: SignalStore,
             lock_pct=_num(data.get("lock_pct")),
             pull_atr=_num(data.get("pull_atr")),
         )
+        # Mod degisince grafik yildizlarini yeni algoritmaya gore
+        # hemen yeniden uretip gonder.
+        service.force_mode_refresh()
 
         # "Gecmisten baslat": once grafikteki tum mumlar tekrar edilir,
         # boylece "simdiye kadar ne kadar kazanirdi" olculmus olur;
@@ -445,6 +460,7 @@ def create_app(service: MarketService, store: SignalStore,
             lock_pct=_num(data.get("lock_pct")),
             pull_atr=_num(data.get("pull_atr")),
         )
+        service.force_mode_refresh()
         return JSONResponse({"ok": True, "state": paper.state(_paper_price())})
 
     # ------------------------------------------------------------------
@@ -675,7 +691,8 @@ def create_app(service: MarketService, store: SignalStore,
                     if sent.get(tf) == versions.get(tf):
                         continue
                     sent[tf] = versions.get(tf)
-                    payload = candle_payload(res, price)
+                    sigs = service.mode_signal_series(tf)
+                    payload = candle_payload(res, price, sigs or None)
                     payload["strong_threshold"] = \
                         service.settings.strong_threshold
                     payload["base_threshold"] = \
