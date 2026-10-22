@@ -445,7 +445,7 @@ class Settings:
     active_timeframe: str = ACTIVE_TIMEFRAME
     strong_threshold: float = STRONG_THRESHOLD
     base_threshold: float = BASE_THRESHOLD
-    record_neutral: bool = False   # NOTR gecislerini de kaydet (varsayilan hayir)
+    record_neutral: bool = True   # NÖTR gecislerini de kaydet (varsayilan evet)
     show_ma_overlay: bool = True
     visible_candles: int = VISIBLE_CANDLES
 
