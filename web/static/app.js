@@ -429,9 +429,11 @@ if ("serviceWorker" in navigator) {
       var isBuy = (m.signal === "AL" || m.signal === "GÜÇLÜ AL");
       var isSell = (m.signal === "SAT" || m.signal === "GÜÇLÜ SAT");
       var isNeutral = (m.signal === "NÖTR");
-      if (buy && !isBuy) return;
-      if (!buy && !isSell) return;
-      if (neutral && !isNeutral) return;
+      // Tek cikis: hangi grup isteniyorsa yalnizca o gruptan kalsin.
+      // (onceki kod "buy=false -> hepsi SAT" farz ediyordu; NÖTR bu
+      //  sartta satirlar arasinda dusuyordu ve gri yildiz hic cikmiyordu.)
+      var keep = neutral ? isNeutral : (buy ? isBuy : isSell);
+      if (!keep) return;
       var idx = state.candleMap[m.t];
       if (idx === undefined || m.price === null) return;
       out.push({
