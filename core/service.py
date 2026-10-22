@@ -640,6 +640,28 @@ class MarketService:
                 pull_atr=(self.paper.trend_pull_atr if self.paper else 0.0),
                 pull_bars=(self.paper.trend_pull_bars if self.paper else 20))
             return karar[-1] if karar else None
+        if mode == "1m":
+            # 1m modu: MTF trend follow + pullback entry + profit lock
+            # Sinyal: 15m Supertrend trend + 5m confirmation + 1m EMA20 pullback
+            # Filtreler: ADX>20, Vol z-score > -1.5, ATR percentile 10-90%, session 00-06 UTC
+            from core import trend as trend_mod
+            cs = _kapali_mumlar(candles or [])
+            if len(cs) < 30:
+                return None
+            strong = None
+            if res is not None and getattr(res, "signals", None):
+                sigs = list(res.signals)
+                if len(sigs) > len(cs):
+                    sigs = sigs[:len(cs)]
+                strong = trend_mod.strong_series(sigs)
+            karar = trend_mod.decide_series(
+                [c.high for c in cs], [c.low for c in cs],
+                [c.close for c in cs], strong=strong,
+                period=self.paper.mode_1m_trend_period if self.paper else 10,
+                mult=self.paper.mode_1m_trend_mult if self.paper else 3.0,
+                pull_atr=(self.paper.mode_1m_pullback_atr if self.paper else 1.0),
+                pull_bars=(self.paper.mode_1m_pullback_ema if self.paper else 20))
+            return karar[-1] if karar else None
         if mode == "muro":
             return self._muro_action(res, candles)
         if mode not in ("ma_only", "osc_only"):
