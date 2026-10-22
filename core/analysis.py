@@ -39,7 +39,7 @@ class Signal(Enum):
 
     @property
     def is_actionable(self) -> bool:
-        """Grafikte yildiz olarak isaretlenecek durumlar (NÖTR haric)."""
+        """Pozisyon aksiyonu alinabilir durumlar (NÖTR hariç)."""
         return self is not Signal.NEUTRAL
 
     @property
@@ -334,7 +334,9 @@ class TimeframeAnalysis:
         """
         candidates: list[int] = []
         for i, sig in enumerate(self.signals):
-            if sig.is_actionable and (i == 0 or self.signals[i - 1] is not sig):
+            # NÖTR de isaretlenir: grafikte gri yildiz ile göstersin.
+            # (DB kaydı ayrı: record_neutral ayarına bağlıdır.)
+            if i == 0 or self.signals[i - 1] is not sig:
                 candidates.append(i)
 
         kept: list[int] = []

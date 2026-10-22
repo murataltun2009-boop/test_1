@@ -78,8 +78,9 @@ if ("serviceWorker" in navigator) {
     return "image://data:image/svg+xml;base64," +
            btoa(unescape(encodeURIComponent(svg)));
   }
-  var STAR_BUY  = starUri("#00c853");
-  var STAR_SELL = starUri("#ff5252");
+  var STAR_BUY    = starUri("#00c853");
+  var STAR_SELL   = starUri("#ff5252");
+  var STAR_NEUTRAL = starUri("#93a4b8");   // gri: NÖTR gecisleri
 
   var state = {
     candles: [], candleMap: {}, markers: [],
@@ -273,8 +274,8 @@ if ("serviceWorker" in navigator) {
         },
         {                                        // 11 · NÖTR yildizlari (gri)
           id: "starsNeutral", name: "NÖTR", type: "scatter",
-          symbol: STAR_SELL, z: 15, silent: true, tooltip: { show: false },
-          symbolSize: 13, color: "#6b7b8c",
+          symbol: STAR_NEUTRAL, z: 15, silent: true, tooltip: { show: false },
+          symbolSize: 12,
           data: []
         }
       ])
