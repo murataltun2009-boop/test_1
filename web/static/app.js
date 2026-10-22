@@ -56,7 +56,7 @@ if ("serviceWorker" in navigator) {
   var IDX = {
     candle: 0, volume: 1, composite: 2,
     ema20: 3, ema50: 4, ema200: 5, sma200: 6, hma: 7, vwma: 8,
-    buyStars: 9, sellStars: 10
+    buyStars: 9, sellStars: 10, neutralStars: 11
   };
   var MA_ORDER = ["ema20", "ema50", "ema200", "sma200", "hma", "vwma"];
   var MA_DEF = [
@@ -270,6 +270,12 @@ if ("serviceWorker" in navigator) {
           symbol: STAR_SELL, z: 20, silent: true, tooltip: { show: false },
           symbolSize: function (v) { return (v && v[2]) ? 21 : 13; },
           data: []
+        },
+        {                                        // 11 · NÖTR yildizlari (gri)
+          id: "starsNeutral", name: "NÖTR", type: "scatter",
+          symbol: STAR_SELL, z: 15, silent: true, tooltip: { show: false },
+          symbolSize: 13, color: "#6b7b8c",
+          data: []
         }
       ])
     };
@@ -399,8 +405,9 @@ if ("serviceWorker" in navigator) {
     MA_ORDER.forEach(function (k) {
       series[IDX[k]] = { data: (d.ma && d.ma[k]) || [] };
     });
-    series[IDX.buyStars]  = { data: starData(true) };
-    series[IDX.sellStars] = { data: starData(false) };
+    series[IDX.buyStars]  = { data: starData(true, false) };
+    series[IDX.sellStars] = { data: starData(false, false) };
+    series[IDX.neutralStars] = { data: starData(false, true) };
 
     chart.setOption({ xAxis: [{ data: times }, { data: times }],
                       series: series });          // MERGE (notMerge degil!)
@@ -414,18 +421,22 @@ if ("serviceWorker" in navigator) {
   // Sinyal yildizlari -> scatter verisi.
   // Kategori ekseni olduğu icin x = KATEGORI INDEKSI (zaman degil).
   // deger: [indeks, fiyat, gucluMu?1:0]
-  function starData(buy) {
+  function starData(buy, neutral) {
     if (!state.showStars) return [];
     var out = [];
     state.markers.forEach(function (m) {
       var isBuy = (m.signal === "AL" || m.signal === "GÜÇLÜ AL");
-      if (isBuy !== buy) return;
+      var isSell = (m.signal === "SAT" || m.signal === "GÜÇLÜ SAT");
+      var isNeutral = (m.signal === "NÖTR");
+      if (buy && !isBuy) return;
+      if (!buy && !isSell) return;
+      if (neutral && !isNeutral) return;
       var idx = state.candleMap[m.t];
       if (idx === undefined || m.price === null) return;
       out.push({
         value: [idx, m.price, m.strong ? 1 : 0],
         // AL yildizi mumun ustunde, SAT altinda dursun
-        symbolOffset: [0, buy ? -14 : 16],
+        symbolOffset: [0, buy ? -14 : (neutral ? 0 : 16)],
         name: m.signal
       });
     });
@@ -1139,8 +1150,9 @@ if ("serviceWorker" in navigator) {
   el.showStars.addEventListener("change", function () {
     state.showStars = el.showStars.checked;
     var patch = [];
-    patch[IDX.buyStars]  = { data: starData(true) };
-    patch[IDX.sellStars] = { data: starData(false) };
+    patch[IDX.buyStars]  = { data: starData(true, false) };
+    patch[IDX.sellStars] = { data: starData(false, false) };
+    patch[IDX.neutralStars] = { data: starData(false, true) };
     chart.setOption({ series: patch }, { lazyUpdate: true });
   });
 
