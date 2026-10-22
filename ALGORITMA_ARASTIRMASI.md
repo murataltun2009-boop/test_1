@@ -402,3 +402,39 @@ python tools/research_muro.py final 1d trend 0.02 20 30     # iki küme birlikte
 python tools/research_muro.py sens 1d trend 0.02 20         # duyarlılık
 python test_paper.py                                        # 63 test
 ```
+
+
+## EVRENSEL KURALLAR — TÜM ALGORITMALAR (kullanıcı kuralı)
+
+İstek: açılan pozisyonun kendi +si kazançta nakde çevir, sonra
+pozisyonu tekrar kontrol et; en uygun long/short girişinde devam et.
+Pozisyon zarara geçmeden (giriş fiyatına dönmeden) kapatılır; kazanılan
+para cüzdanda kalır, komisyonla erimesin.
+
+Koddaki adları (core/paper.py::_on_price):
+
+1b-4) EVRENSEL KÂR BANKASI (PAPER_BANK_PCT=0.02): açık pozisyonun KENDİ
+giriş fiyatına göre +%2 fiyat hareketinde limit gibi kapatılır; kâr
+cüzdana yazılır. ma_only/osc_only/signal*/range/1m modlarının tek kâr
+çıkışı budur; trend ve muro kendi kilid bloklarını kullanır — üçünün
+varsayılanı da %2ye eşitlendi. Arayüzdeki kâr kilidi değeri hepsini
+eşler. Kapanış sonrası 90 sn bekleme, sinyal yeniden değerlendirilir,
+en uygun yonde girilir (devam et).
+
+1b-5) BAŞABAŞ KORUMASI (PAPER_BREAKEVEN_BUF=0.0012): pozisyon asla
+zarara geçemez; fiyat giriş fiyatına (komisyon payı +-%0.12 kadar önce)
+dönüp dokunursa kapatılır. Çıkış fiyatı kademeli: gap→bar açılışı,
+bar içi dokunuş→eşik (limit), canlı tik→anlık fiyat. Giriş barında
+devre dışı (Position.entry_bar). Kapanış sinyali temizler + kısa
+bekleme; trend/1m ayrıca RECLAIM ister (döngü yok).
+
+1m MODU İŞLEME BAĞLANDI: eskiden 1m modunun _on_priceta hiç
+giriş/çıkış bloğu yoktu (pozisyon açamıyordu). Artık sinyal bloklarına
+eklendi; _open kendi mode_1m_* parametreleriyle risk-bazlı
+boyutlandırıyor (ATR stop + trail). Evrensel kurallarla tam döngü:
+giriş → +%2 banka → yeniden giriş.
+
+Testler (75): BE (LONG/SHORT/trend-reclaim), evrensel banka (+%2
+hedeften önce, iki komisyonla net doğrulama), 1m modu (giriş + banka +
+devam) testleri eklendi; eski hedef/kilit testleri yeni doktrine
+(banka hedeften ÖNCE) uyarlandı.

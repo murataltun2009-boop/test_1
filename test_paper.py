@@ -178,21 +178,24 @@ def t_kar_zarar():
     cs, px = v_shape()
     tr.on_price(px, cs, "1h")
     p = tr.position
-    # Girişte dondurulan hedef seviyesine tirmak -> kapanir
+    # +%2 KÂR BANKASI (kullanıcı kuralı): fiyat hedefe tırmanırken
+    # pozisyon girisin +%2'sinde nakde çevrilir (hedeften ÖNCE).
     assert p.target > px, p.target
     zirve = dizi([100 + i for i in range(19)]) + [mk(19, 119, 120, 119, 119)]
     tr.on_price(p.target, zirve, "1h")
-    assert tr.position is None, "hedefe ulaşınca LONG kapanmalıydı"
+    assert tr.position is None, "+%2 kâr bankasında LONG kapanmalıydı"
     t = tr.trades[0]
-    brut = (p.target - px) * p.qty
-    kap_fee = p.qty * p.target * 0.0005
+    bank_px = px * (1.0 + tr.bank_pct)
+    brut = (bank_px - px) * p.qty
+    kap_fee = p.qty * bank_px * 0.0005
     assert abs(t.gross_pnl - brut) < 1e-6, (t.gross_pnl, brut)
     assert abs(t.net_pnl - (brut - p.fee_open - kap_fee)) < 1e-6, t.net_pnl
     assert abs(tr.balance - (1000.0 - p.fee_open + brut - kap_fee)) < 1e-6
     assert tr.wins == 1 and tr.losses == 0
+    assert t.exit < p.target, "banka hedeften ÖNCE tetiklenmeliydi"
 
 
-ok.append(test("Kâr/zarar iki komisyonla birlikte doğru", t_kar_zarar))
+ok.append(test("Kâr bankası +%2 iki komisyonla birlikte doğru", t_kar_zarar))
 
 
 def t_zarar_komisyonlu():
@@ -252,7 +255,7 @@ ok.append(test("SHORT: referans LONG yoksa verilmez", t_short_referanssiz))
 
 
 def t_short_kar():
-    """SHORT düşüşte kazanır (kural: entry)."""
+    """SHORT: +%2 kâr bankasında nakde çevrilir (kural: entry)."""
     tr = new_trader()
     tr.short_rule = "entry"
     tr.last_long_price = 120.0
@@ -263,13 +266,15 @@ def t_short_kar():
     # girişte dondurulan hedef = pencerenin dibi
     assert p.target < px, (p.target, px)
     tr.on_price(p.target, cs, "1h")
-    assert tr.position is None, "hedefe ulaşınca SHORT kapanmalıydı"
+    assert tr.position is None, "+%2 kâr bankasında SHORT kapanmalıydı"
     t = tr.trades[-1]
-    brut = (px - p.target) * p.qty
+    bank_px = px * (1.0 - tr.bank_pct)
+    brut = (px - bank_px) * p.qty
     assert t.gross_pnl > 0 and abs(t.gross_pnl - brut) < 1e-6, t.gross_pnl
+    assert t.exit > p.target, "banka hedeften ÖNCE tetiklenmeliydi"
 
 
-ok.append(test("SHORT: düşüşte kâr eder", t_short_kar))
+ok.append(test("SHORT: +%2 kâr bankasında nakde çevrilir", t_short_kar))
 
 
 def t_likidasyon():
@@ -683,8 +688,10 @@ def t_min_bekleme_engeller():
 
     seri = list(cs)
     for k in range(1, 4):                    # 3 bar geçsin
-        seri = yeni_mum(seri, k, px)
-        tr.on_price(px, seri, "1h", "AL")
+        # Bekleme barlarında fiyat basabaş eşiğinin (entry +%0,12) ÜSTÜNDE
+        # kalir: giriş duvarı (zarara geçmeden kapat) tetiklenmez.
+        seri = yeni_mum(seri, k, px * 1.01)
+        tr.on_price(px * 1.01, seri, "1h", "AL")
     assert tr._bars_held >= 3, tr._bars_held
     assert tr.position.side == LONG, "barken pozisyon degismemeli"
 
@@ -1099,14 +1106,15 @@ def t_tek_kaynak_min_bekleme():
     p.configure(min_hold=5)
     p.on_price(100.0, m(), "4h", "AL")
     assert p.position.side == "LONG"
-    # Ayni barda hemen SAT: bekleme suresi dolmadi
-    p.on_price(99.0, m(), "4h", "SAT")
+    # Ayni barda hemen SAT: bekleme suresi dolmadi. Fiyat basabas
+    # esiginin (giriş +%0,12) ustunde: giris duvari karismaz.
+    p.on_price(100.5, m(), "4h", "SAT")
     assert p.position.side == "LONG", \
         "min. bekleme dolmadan pozisyon kapanmamali"
     # Her adimda YENI bir bar olmali: on_price sayaci yalnizca
     # mumlarin son barinin open_time'i degistiginde artirir.
     for i in range(8):
-        p.on_price(99.0, m(t0=(i + 1) * 30), "4h", "SAT")
+        p.on_price(100.5, m(t0=(i + 1) * 30), "4h", "SAT")
         if p.position and p.position.side == "SHORT":
             break
     assert p.position and p.position.side == "SHORT", \
@@ -1256,13 +1264,17 @@ def t_kapanistan_sonra_ayni_sinyal():
         assert p.position and p.position.side == "SHORT", \
             f"{mod}: kapanıştan sonra aynı SAT yeni SHORT açmalıydı"
 
-        # --- 2) Hedefe ulaşarak kapandı, aynı yönde yeni sinyal ---
+        # --- 2) +%2 kâr bankasında kapandı, aynı yönde yeni sinyal ---
         p, m = _tek_kaynak(mod)
         p.on_price(100.0, m(), "4h", "AL")
         hedef = p.position.target
         assert hedef > 0, f"{mod}: hedef 0 olmamalı (bu test için)"
         p.on_price(hedef + 0.01, m(), "4h", "AL")
-        assert p.position is None, f"{mod}: hedefte kapanmaliydi"
+        assert p.position is None, f"{mod}: bankada kapanmaliydi"
+        # Kâr bankası sonrası 90 sn bekleme canlı saatiyle ölçülür;
+        # testte beklemek yerine temizlenir: bekleme bitince aynı AL
+        # sinyali yeniden değerlendirilir ve LONG açılmalı.
+        p._no_entry_until = 0.0
         p.on_price(hedef + 0.02, m(), "4h", "AL")
         assert p.position and p.position.side == "LONG", \
             f"{mod}: kapanıştan sonra aynı AL yeni LONG açmalıydı"
@@ -1388,7 +1400,9 @@ def t_muro_yapi_kirilimi_karsi_yon_acmaz():
     p = _muro_trader()
     p.on_price(100.0, _mum(), "1d", "AL")
     assert p.position.side == "LONG"
-    ev = p.on_price(99.0, _mum(t0=100), "1d", "LONG_KAPAT")
+    # Fiyat başabaş eşiğinin (giriş +%0,12) ÜSTÜNDE: yoksa giriş duvarı
+    # (zarara geçmeden kapat) yapı kırılımından önce tetiklenir.
+    ev = p.on_price(100.5, _mum(t0=100), "1d", "LONG_KAPAT")
     assert ev and "LONG kapandı" in ev, ev
     assert p.position is None, "yapı kırılınca pozisyon kalmamali"
 
@@ -1402,7 +1416,9 @@ def t_muro_ters_yon_kapatir_acar():
     sonrası açılır (pozisyon dalgalanması olmasın)."""
     p = _muro_trader()
     p.on_price(100.0, _mum(), "1d", "AL")
-    ev = p.on_price(99.0, _mum(t0=100), "1d", "SAT")
+    # Fiyat başabaş eşiğinin ÜSTÜNDE: giriş duvarı tetiklenmeden
+    # ters yön sinyali işlesin.
+    ev = p.on_price(100.5, _mum(t0=100), "1d", "SAT")
     assert ev and "LONG kapandı" in ev, ev
     assert p.position is None, "karsi yon bekleme suresi dolmadan acilmamali"
     # Bekleme dolduktan sonra karsi yon acilir.
@@ -1584,7 +1600,9 @@ def t_trend_yon_degisiminde_bekleme():
     p = _trend_trader()
     p.on_price(100.0, _mum(), "4h", "AL")
     assert p.position.side == "LONG"
-    ev = p.on_price(99.0, _mum(t0=100), "4h", "SAT")
+    # Fiyat başabaş eşiğinin (giriş +%0,12) ÜSTÜNDE: giriş duvarı
+    # tetiklenmeden trend yön değişimi bekleme akışı işlesin.
+    ev = p.on_price(100.5, _mum(t0=100), "4h", "SAT")
     assert ev and "kapandı" in ev, ev
     assert p.position is None, "karsi yon bekleme dolmadan acilmamali"
     assert p._bekleme_kaldi_ms(_mum()) > 0, "bekleme baslamaliydi"
@@ -1825,6 +1843,136 @@ def t_1m_dilimi_var():
 
 
 ok.append(test("DİLİM: 1 dakikalık zaman dilimi mevcut", t_1m_dilimi_var))
+
+
+# ----------------------------------------------------------------------
+# EVRENSEL KURALLAR (tüm algoritmalarda geçerli — kullanıcı kuralı)
+#   1) BAŞABAŞ KORUMASI: pozisyon zarara geçemez; fiyat giriş fiyatına
+#      (komisyon payı kadar önce) dönerse kapatılır.
+#   2) KÂR BANKASI: +%2 kârda nakde çevir; kısa bekleme sonrası sinyal
+#      yeniden değerlendirilir ve en uygun yonde devam edilir.
+# ----------------------------------------------------------------------
+def t_basabas_korumasi_long():
+    """BAŞABAŞ (LONG): giriş eşiğine dönüşte pozisyon zarara geçmeden
+    kapatılır; net kâr komisyondan sonra bile pozitif kalır."""
+    p, _ = _tek_kaynak("ma_only")
+
+    def bars(t0=0, n=25, fiyat=100.0):
+        # Düz mumlar (açılış=kapanış=fiyat): fiyat parametresiyle
+        # TUTARLI — BE gap dalinin yanlış tetiklenmesini önler.
+        # n=25: lookback (20) penceresinden uzun olmalı.
+        return [mk(t0 + i, fiyat, fiyat * 1.001, fiyat * 0.999, fiyat)
+                for i in range(n)]
+
+    p.on_price(100.0, bars(), "4h", "AL")
+    po = p.position
+    assert po and po.side == "LONG"
+    # Düz pencere uydurma mikro-hedef üretir (~100,1): hedef çıkışı
+    # devre dışı — doktrin çıkışları (kâr bankası + başabaş + sinyal)
+    # test edilir.
+    po.target = 0
+    # +%1 kâr: eşik tetiklenmez (kâr bankası +%2'de) — pozisyon korunur.
+    p.on_price(101.0, bars(t0=100, fiyat=101.0), "4h", "AL")
+    assert p.position and p.position.side == "LONG"
+    # Giriş eşiğine dönüş (entry + komisyon payı) -> kapatılır.
+    be_px = po.entry * (1.0 + p.breakeven_buf)
+    ev = p.on_price(be_px, bars(t0=200, fiyat=be_px), "4h", "AL")
+    assert p.position is None, "eşikte LONG kapanmalıydı"
+    assert ev and "Başabaş koruması" in ev, ev
+    t = p.trades[-1]
+    assert t.exit_reason == "başabaş koruması", t.exit_reason
+    assert abs(t.exit - be_px) < 1e-6, t.exit
+    assert t.net_pnl > 0, f"net kâr zarara düşümemeli: {t.net_pnl}"
+    # Anti-döngü: bekleme sırasında aynı sinyal yeniden giriş yapmaz.
+    p.on_price(be_px, bars(t0=300, fiyat=be_px), "4h", "AL")
+    assert p.position is None, "beklemede tekrar giriş yapılmamalı"
+
+
+ok.append(test("BAŞABAŞ koruması (LONG): zarara geçmeden kapatır",
+               t_basabas_korumasi_long))
+
+
+def t_basabas_korumasi_short():
+    """BAŞABAŞ (SHORT): fiyat girişe (yukarıya) dönerse pozisyon
+    zarara geçmeden kapatılır."""
+    p, _ = _tek_kaynak("ma_only")
+
+    def bars(t0=0, n=25, fiyat=100.0):
+        return [mk(t0 + i, fiyat, fiyat * 1.001, fiyat * 0.999, fiyat)
+                for i in range(n)]
+
+    p.on_price(100.0, bars(), "4h", "SAT")
+    po = p.position
+    assert po and po.side == "SHORT"
+    po.target = 0        # pencere hedefi devre dışı (BKZ: BE LONG testi)
+    p.on_price(99.0, bars(t0=100, fiyat=99.0), "4h", "SAT")  # kârda güvenli
+    assert p.position and p.position.side == "SHORT"
+    be_px = po.entry * (1.0 - p.breakeven_buf)
+    ev = p.on_price(be_px, bars(t0=200, fiyat=be_px), "4h", "SAT")
+    assert p.position is None, "eşikte SHORT kapanmalıydı"
+    assert ev and "Başabaş koruması" in ev, ev
+    t = p.trades[-1]
+    assert abs(t.exit - be_px) < 1e-6, t.exit
+    assert t.net_pnl > 0, f"net kâr zarara düşümemeli: {t.net_pnl}"
+    p.on_price(be_px, bars(t0=300, fiyat=be_px), "4h", "SAT")
+    assert p.position is None, "beklemede tekrar giriş yapılmamalı"
+
+
+ok.append(test("BAŞABAŞ koruması (SHORT): zarara geçmeden kapatır",
+               t_basabas_korumasi_short))
+
+
+def t_basabas_trend_reclaim():
+    """TREND + BAŞABAŞ: kapanış stop gibi davranır — aynı yone giriş
+    ancak eşik geri alınırsa (reclaim) açılır (döngü yok)."""
+    p = _trend_trader()
+    p.on_price(100.0, _mum(), "4h", "AL")
+    po = p.position
+    assert po and po.side == "LONG"
+    be_px = po.entry * (1.0 + p.breakeven_buf)
+    ev = p.on_price(be_px, _mum(t0=100), "4h", "AL")
+    assert p.position is None, "eşikte LONG kapanmalıydı"
+    assert ev and "Başabaş koruması" in ev, ev
+    assert p._reclaim_side == "LONG", "başabaş sonrası reclaim istenmeli"
+    # Reclaim olmadan aynı yone girilmez.
+    p._no_entry_until = 0.0
+    p.on_price(be_px - 0.1, _mum(t0=200), "4h", "AL")
+    assert p.position is None, "reclaim olmadan girilmemeli"
+    # Eşik geri alındı -> girilir (yeniden değerlendir, devam et).
+    p.on_price(be_px + 0.3, _mum(t0=300), "4h", "AL")
+    assert p.position and p.position.side == "LONG", "reclaim sonrasi girilmeli"
+
+
+ok.append(test("TREND: başabaş sonrası reclaim şart", t_basabas_trend_reclaim))
+
+
+def t_1m_modu_islem_acar_banka_kapar():
+    """1m MOD: işlem açar/kapatır + evrensel +%2 kâr bankası bu modda
+    da geçerlidir (tüm algoritmalarda aynı kurallar)."""
+    p = _trend_trader(mode="1m")
+    p.on_price(100.0, _mum(), "1h", "AL")
+    po = p.position
+    assert po and po.side == "LONG", "1m modunda AL LONG açmalıydı"
+    assert po.stop_price > 0, "1m stopu ATR tabanlı olmalı"
+    # +%2 kâr bankası: nakde çevir, kâr cüzdanda kalır.
+    lock_px = po.entry * (1.0 + p.bank_pct)
+    bakiye_once = p.balance
+    ev = p.on_price(lock_px, _mum(t0=100), "1h", "AL")
+    assert p.position is None, "1m modunda +%2 bankalama kapanmalıydı"
+    assert ev and "Kâr bankası" in ev, ev
+    assert p.balance > bakiye_once, "bankalanan kâr cüzdanda olmalı"
+    t = p.trades[-1]
+    assert abs(t.exit - lock_px) < 1e-6 and t.net_pnl > 0
+    # Bekleme bitince aynı AL sinyali yeniden değerlendirilir:
+    # kullanıcı kuralı — en uygun yonde devam.
+    p._no_entry_until = 0.0
+    p.on_price(100.0, _mum(t0=200), "1h", "AL")
+    assert p.position and p.position.side == "LONG", \
+        "banka sonrası 1m modu sinyalle devam etmeli"
+
+
+ok.append(test("1m MOD: işlem açar + evrensel +%2 kâr bankası",
+               t_1m_modu_islem_acar_banka_kapar))
 
 
 print("-" * 62)

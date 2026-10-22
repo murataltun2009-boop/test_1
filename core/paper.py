@@ -62,6 +62,10 @@ class Position:
     # noktadan sonra devreye girer.
     trail_frac: float = 0.0
     locked: bool = False
+    # Başabaş koruması: pozisyonun açıldığı bar (epoch ms). KORUMA bu
+    # barda DEĞİL, sonraki bardan itibaren devreye girer — giriş
+    # salınımı pozisyonu anında kapatmasın.
+    entry_bar: int = 0
 
 
 @dataclass
@@ -212,6 +216,19 @@ class PaperTrader:
         self.flip_cooldown_ms = float(config.PAPER_FLIP_COOLDOWN_SEC) * 1000
         # Kâr kilidi sonrası bekleme (1-2 dakika).
         self.lock_cooldown_ms = float(config.PAPER_LOCK_COOLDOWN_SEC) * 1000
+        # ---- EVRENSEL KURALLAR (tüm modlar, kullanıcı kuralı) ----------
+        # 1) KÂR BANKASI: açık pozisyon KENDİ GİRİŞ FİYATINA göre +%X
+        #    kârda nakde çevrilir; kâr cüzdanda kalır, sonra sinyal
+        #    yeniden değerlendirilip en uygun yönde devam edilir.
+        #    (trend/muro kendi kilit bloklarını kullanır; onların
+        #    varsayılanları da %2'ye eşitlendi.)
+        # 2) BAŞABAŞ KORUMASI: pozisyon ZARARA GEÇEMEZ — fiyat giriş
+        #    fiyatına geri dönüp dokunursa pozisyon kapatılır. Tam
+        #    girişte değil, giriş + komisyon payı kadar önce (yoksa
+        #    net kâr 0'ın altına düşer). Giriş barında devreye girmez.
+        self.bank_pct = float(getattr(config, "PAPER_BANK_PCT", 0.02))
+        self.breakeven_buf = float(
+            getattr(config, "PAPER_BREAKEVEN_BUF", 0.0012))
         # Yeni pozisyon açılamayacak ana kadar (piyasa zamanı, ms).
         self._no_entry_until = 0.0
         self._backtesting = False
@@ -363,13 +380,16 @@ class PaperTrader:
             # Girişte optimum nokta filtresi (ATR cinsinden).
             self.trend_pull_atr = float(pull_atr)
         if lock_pct is not None and 0 <= float(lock_pct) <= 0.20:
-            # Kâr kilitleme eşiği (fiyat %). 0 = kilitleme KAPALI.
-            # AKTİF moda göre uygulanır:
-            #   trend -> %3 (varsayılan), MURO -> %1 (ölçülen optimum), 1m -> config.
+            # Kâr bankalama eşiği (fiyat %). 0 = kilitleme KAPALI.
+            # Kullanıcı kuralı: TÜM MODELLERDE aynı +%X bankalama.
+            #   trend -> trend_lock_pct, MURO -> muro_cfg.lock_pct,
+            #   1m -> trend_lock_pct, diğerleri -> bank_pct.
+            lv = float(lock_pct)
+            self.bank_pct = lv
             if self.mode == "muro":
-                self.muro_cfg.lock_pct = float(lock_pct)
+                self.muro_cfg.lock_pct = lv
             elif self.mode in ("trend", "1m"):
-                self.trend_lock_pct = float(lock_pct)
+                self.trend_lock_pct = lv
 
     def reset(self, symbol: Optional[str] = None) -> None:
         """Simulasyonu sifirlar (coin degisiminde de cagrilir)."""
@@ -611,7 +631,7 @@ class PaperTrader:
             # barin kapanisina gore hesaplanir (stop kontrolunden SONRA
             # uygulanmis olur). Aksi halde stop, icinde bulunulan barin
             # dip/zirvesi tarafindan ayni barda tetiklenirdi.
-            if self.mode == "trend" and p.trail_mult > 0 and yeni_bar:
+            if self.mode in ("trend", "1m") and p.trail_mult > 0 and yeni_bar:
                 a = trend_mod.atr_value([c.high for c in candles],
                                         [c.low for c in candles],
                                         [c.close for c in candles])
@@ -678,7 +698,7 @@ class PaperTrader:
                     self._close(cikis, f"stop ({_px(p.stop_price)})",
                                 timeframe,
                                 )
-                    if self.mode == "trend":
+                    if self.mode in ("trend", "1m"):
                         # Ayni yone girilmeden once fiyat stop seviyesini
                         # geri almali (reclaim).
                         self._reclaim_side = p.side
@@ -699,7 +719,7 @@ class PaperTrader:
                (p.side == SHORT and price >= p.liq_price):
                 self._close(price, "LİKİDASYON (kaldıraç kaybı)", timeframe,
                             )
-                if self.mode == "trend":
+                if self.mode in ("trend", "1m"):
                     self._reclaim_side = p.side
                     self._reclaim_level = p.liq_price
                     # Likidasyondan sonra da bekleme: ayni fiyattan
@@ -793,6 +813,97 @@ class PaperTrader:
                             f"yazıldı, {self.lock_cooldown_ms/60000:.1f} dk "
                             f"bekleniyor (pozisyon yeniden değerlendirilecek)")
 
+            # 1b-4) EVRENSEL KÂR BANKASI (tüm modlar) — kullanıcı kuralı:
+            # "açılan pozisyonun KENDİ kazancı +%X olunca nakde çevir;
+            #  kâr cüzdanda kalsın, sonra en uygun girişte devam et".
+            # trend/muro kendi kilid bloklarını kullandığı için buraya
+            # gelmez (varsayılanları da %2'ye eşitlendi). Diğer modların
+            # (ma_only/osc_only/sinyal/1m/aralık) tek kâr çıkışı budur.
+            #
+            # KİLİT FİYATI limit emir gibidir: fiyat seviyeye
+            # dokunmalıdır (bar içi ekstrem / anlık fiyat).
+            #
+            # SINYAL TEMİZLEME (reset_signal varsayılan = True): kâr
+            # bankalandıktan sonra aynı sinyal TEKRAR geçerli sayılır —
+            # kısa bekleme (lock_cooldown) sonrası sistem sinyali yeniden
+            # değerlendirir ve EN UYGUN yone (AL -> LONG, SAT -> SHORT)
+            # yeniden girer. Böylece "banka + devam" şeklinde işler.
+            p2 = self.position
+            if p2 is not None and self.mode not in ("trend", "muro") and \
+                    self.bank_pct > 0:
+                lock = self.bank_pct
+                if p2.side == LONG:
+                    lock_px = p2.entry * (1.0 + lock)
+                    vurdu = (bar_high is not None and bar_high >= lock_px) \
+                        or (price >= lock_px)
+                else:
+                    lock_px = p2.entry * (1.0 - lock)
+                    vurdu = (bar_low is not None and bar_low <= lock_px) \
+                        or (price <= lock_px)
+                if vurdu:
+                    self._close(lock_px,
+                                f"kâr bankası +%{lock*100:.0f}", timeframe)
+                    self._bekleme_baslat(self.lock_cooldown_ms, candles)
+                    return (f"Kâr bankası — {p2.side} %{lock*100:.0f} kâr "
+                            f"cüzdana yazıldı; "
+                            f"{self.lock_cooldown_ms/60000:.1f} dk sonra "
+                            f"sinyal yeniden değerlendirilir")
+
+            # 1b-5) BAŞABAŞ KORUMASI (TÜM MODLAR) — kullanıcı kuralı:
+            # "pozisyon zarara geçmeden kapat": fiyat giriş fiyatına
+            # GERİ DÖNMEYE başladıysa (giriş + komisyon payı seviyesine
+            # dokunursa) pozisyon kapatılır; net zarar ~0 civarı kalır.
+            #
+            #   LONG  : çıkış eşiği = entry * (1 + komisyon payı)
+            #   SHORT : çıkış eşiği = entry * (1 - komisyon payı)
+            #
+            # GİRİŞ BARINDA devreye girmez (giriş salınımı trips); sonraki
+            # bardan itibaren aktiftir. Durak/likidasyondan SONRA
+            # kontrol edilir; kâr bankaları önce gelir (favori taraf).
+            p3 = self.position
+            if p3 is not None and p3.entry_bar and \
+                    int(candles[-1].open_time) != int(p3.entry_bar) and \
+                    self.breakeven_buf > 0:
+                be_buf = self.breakeven_buf
+                acilis = float(candles[-1].open) if candles else price
+                tetik = False
+                if p3.side == LONG:
+                    be_px = p3.entry * (1.0 + be_buf)
+                    if acilis < p3.entry:
+                        # Bar girişin ALTINDA açıldı (gap): piyasa
+                        # eşiği zaten geçmiş — var olan fiyattan çık.
+                        tetik, cikis = True, acilis
+                    elif bar_low is not None and bar_low <= be_px:
+                        tetik, cikis = True, be_px          # bar ici esige dokundu (limit)
+                    elif price <= be_px:
+                        tetik, cikis = True, price           # anlik tik esigi asti
+                else:
+                    be_px = p3.entry * (1.0 - be_buf)
+                    if acilis > p3.entry:
+                        tetik, cikis = True, acilis
+                    elif bar_high is not None and bar_high >= be_px:
+                        tetik, cikis = True, be_px
+                    elif price >= be_px:
+                        tetik, cikis = True, price
+                if tetik:
+                    # Kapanışta sinyal TEMİZLENİR + kısa bekleme: aksi
+                    # halde eşik çevresinde aç-kapa döngüsü (komisyon
+                    # yeme) kurulur. Bekleme bitince sinyal YENİDEN
+                    # değerlendirilir ve en uygun yone girilir.
+                    self._close(cikis, "başabaş koruması", timeframe)
+                    if self.mode in ("trend", "1m"):
+                        # Aynı yone girmeden önce eşik geri alınmalı
+                        # (stop-after-reclaim kuralıyla aynı mantık).
+                        self._reclaim_side = p3.side
+                        self._reclaim_level = be_px
+                        self._bekleme_baslat(self.flip_cooldown_ms, candles)
+                    elif self.mode == "muro":
+                        self._bekleme_baslat(self.flip_cooldown_ms, candles)
+                    else:
+                        self._bekleme_baslat(self.lock_cooldown_ms, candles)
+                    return (f"Başabaş koruması — {p3.side} zarara geçmeden "
+                            f"kapatıldı ({_px(cikis)})")
+
             # 2) GIRISTE DONDURULAN hedefe ulasildi mi?
             #    (Yuvarlanan pencere kullanılmıyor: pencere bir bar kayınca
             #     "dibden zirveye" zıplayıp her pozisyonu tek barda
@@ -828,7 +939,7 @@ class PaperTrader:
             #
             # Bu blok POZISYON ACIKKEN calisir — aksi halde asagidaki
             # sinyal bloguna hic ulasilamaz (proje tarihinde yasanmis hata).
-            if self.mode in ("ma_only", "osc_only", "trend") and signal:
+            if self.mode in ("ma_only", "osc_only", "trend", "1m") and signal:
                 if signal == self.last_signal:
                     return None                 # ayni yon: dokunma
                 if self._bars_held < self.min_hold_bars:
@@ -845,7 +956,8 @@ class PaperTrader:
                 nötr = signal == "NÖTR"
                 kaynak = ("hareketli ortalamalar" if self.mode == "ma_only"
                           else "osilatörler" if self.mode == "osc_only"
-                          else "Supertrend")
+                          else "Supertrend" if self.mode == "trend"
+                          else "MTF (1m)")
 
                 # ---- NÖTR: KAPAT VE BEKLE, TERS YÖN ACMA ----
                 if nötr:
@@ -908,6 +1020,10 @@ class PaperTrader:
             #   signal_exit HARIC: girisi araliktan gelir; sadece SAT
             #   sinyali kapatir (asili zararda kalmasin diye).
             if self.mode in ("signal", "signal_long", "signal_exit") and signal:
+                # Kâr bankası sonrasi kısa bekleme: bankalanan kâr
+                # cüzdanda kalır, pozisyon hemen yeniden açılmaz.
+                if self._bekleme_kaldi_ms(candles) > 0:
+                    return None
                 if signal == self.last_signal:
                     return None
                 self.last_signal = signal
@@ -1031,7 +1147,7 @@ class PaperTrader:
         # (LONG → SAT → LONG) ilk pozisyonu zaten yukarıdaki açık
         # pozisyon bloğu açıyor.
         # ------------------------------------------------------------------
-        if self.mode in ("ma_only", "osc_only", "trend") and signal:
+        if self.mode in ("ma_only", "osc_only", "trend", "1m") and signal:
             # BEKLEME (cooldown): pozisyon kapandıktan sonra yeni
             # pozisyon açılmaz. Kullanıcı isteği: "pozisyon
             # değişmlerinde mevcut pozisyonu kapattıktan sonra 5 dk
@@ -1046,7 +1162,7 @@ class PaperTrader:
             # STOP SONRASI RECLAIM: ayni yone, fiyat stop seviyesini geri
             # almadan girilmez. Boylece (a) stop dongusu kurulmaz,
             # (b) kaybeden pozisyon hemen yenisiyle degistirilmez.
-            if self.mode == "trend" and self._reclaim_side:
+            if self.mode in ("trend", "1m") and self._reclaim_side:
                 long_mu = signal in ("AL", "GÜÇLÜ AL")
                 short_mu = signal in ("SAT", "GÜÇLÜ SAT")
                 if self._reclaim_side == LONG and long_mu and \
@@ -1061,7 +1177,8 @@ class PaperTrader:
             self.last_signal = signal
             kaynak = ("hareketli ortalamalar" if self.mode == "ma_only"
                       else "osilatörler" if self.mode == "osc_only"
-                      else "Supertrend")
+                      else "Supertrend" if self.mode == "trend"
+                      else "MTF (1m)")
 
             if signal in ("SAT", "GÜÇLÜ SAT"):
                 self._open(SHORT, price, f"{signal} ({kaynak})", timeframe,
@@ -1338,7 +1455,7 @@ class PaperTrader:
                 if signals is None and self.mode in ("signal", "signal_long",
                                                      "signal_exit",
                                                      "ma_only", "osc_only",
-                                                     "trend", "muro"):
+                                                     "trend", "muro", "1m"):
                     # Sinyal listesi YOKSA ve karar modu sinyal tabanliysa
                     # burada analiz yapip signal listesini kendimiz uretiriz.
                     #
@@ -1483,6 +1600,33 @@ class PaperTrader:
             margin = notional / eff_lev if eff_lev > 0 else 0.0
             stop_price = price - (stop_dist if side == LONG else -stop_dist)
             trail_mult = self.trend_trail_atr
+        elif self.mode == "1m":
+            # 1M OPTIMIZED: trend ile ayni risk-tabanli sema, KENDI
+            # parametreleriyle (daha dar stop, sinirli kaldirac).
+            a = 0.0
+            if candles_for_target:
+                a = trend_mod.atr_value(
+                    [c.high for c in candles_for_target],
+                    [c.low for c in candles_for_target],
+                    [c.close for c in candles_for_target])
+            if a <= 0:
+                return              # ATR yok (isinma) -> islem acma
+            stop_dist = self.mode_1m_stop_atr * a
+            stop_frac = stop_dist / price
+            # ATR dabası cok dar gelirse gurultude kapanmasin:
+            stop_frac = max(stop_frac, self.mode_1m_min_stop_pct)
+            stop_frac = min(stop_frac, self.mode_1m_max_stop_pct)
+            if stop_frac <= 0:
+                return
+            stop_dist = stop_frac * price
+            # Likidasyon stop'tan SONRA gelmeli (liq mesafesi ~ 1/lev).
+            eff_lev = min(self.leverage, self.mode_1m_max_lev,
+                          0.6 / stop_frac)
+            notional = eq * self.mode_1m_risk_pct / stop_frac
+            notional = min(notional, eq * self.wallet_fraction * eff_lev)
+            margin = notional / eff_lev if eff_lev > 0 else 0.0
+            stop_price = price - (stop_dist if side == LONG else -stop_dist)
+            trail_mult = self.mode_1m_trail_atr
 
         qty = notional / price if price > 0 else 0.0
         if qty <= 0 or margin <= 0 or notional <= 0:
@@ -1550,7 +1694,8 @@ class PaperTrader:
             target=target, window_low=win_low, window_high=win_high,
             stop_price=stop_price, trail_mult=trail_mult,
             eff_leverage=eff_lev, trail_frac=trail_frac, locked=locked,
-        )
+            entry_bar=(int(candles_for_target[-1].open_time)
+                       if candles_for_target else 0))
         self._bars_held = 0        # yeni pozisyon: bekleme sayaci sifirlanir
         if side == LONG:
             self.last_long_price = price

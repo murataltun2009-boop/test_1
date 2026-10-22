@@ -289,10 +289,23 @@ PAPER_TREND_STOP_ATR = 4.0       # giris stopu = 4 x ATR
 PAPER_TREND_TRAIL_ATR = 6.0      # takip stopu = 6 x ATR (kapanista)
 PAPER_TREND_RISK_PCT = 0.05      # islem basina sermayenin %5'i
 PAPER_TREND_MAX_LEV = 20.0       # kaldıraç ust siniri (arayuz degeri ile min)
-# Trend modunda kar kilitleme: fiyat %3 ilerleyince pozisyon kapanir,
+# Trend modunda kar kilitleme: fiyat %2 ilerleyince pozisyon kapanir,
 # kar cuzdana yazilir, 1-2 dk beklenir ve pozisyon TEKRAR DEGERLENDIRILIR.
-PAPER_TREND_LOCK_PCT = 0.03      # kar kilitleme (fiyat %3)
+# (Kullanıcı kuralı: TÜM algoritmalarda +%2 kâr bankası — önceden %3 idi.)
+PAPER_TREND_LOCK_PCT = 0.02      # kar bankasi (fiyat +%2)
 PAPER_LOCK_COOLDOWN_SEC = 90     # kilit sonrasi bekleme (1,5 dk)
+# ---- EVRENSEL KURALLAR (tüm modlar, kullanıcı kuralı) ----------------
+# 1) KÂR BANKASI: açık pozisyon KENDİ giriş fiyatına göre +%2 kârda
+#    nakde çevrilir; kâr cüzdanda kalır, sonra sinyal yeniden
+#    değerlendirilip en uygun yönde devam edilir.
+#    (trend/muro kendi kilit bloklarıyla kullanır; diğer modların tek
+#    kâr çıkışı budur. Arayüzdeki "kâr kilidi" değeri hepsini eşler.)
+PAPER_BANK_PCT = 0.02            # evrensel kâr bankası (fiyat +%2)
+# 2) BAŞABAŞ KORUMASI: pozisyon ZARARA GEÇEMEZ. Fiyat giriş fiyatına
+#    geri dönüp bu pay kadar önce dokunursa pozisyon kapatılır.
+#    Pay = gidiş-dönüş komisyon + kayma payı: o kadar kızgın çıkışta
+#    bile net kâr ~0'ın üstünde kalır.
+PAPER_BREAKEVEN_BUF = 0.0012     # giriş ± %0,12 (2 komisyon + kayma)
 # Kâr kilidi sonrası davranış:
 #   "protected" : aynı yönde HEMEN yeniden pozisyon açılır ve stop kârın
 #                 yazıldığı seviyeye çekilir → bankalanan kâr geri
@@ -387,7 +400,8 @@ PAPER_MURO_K = 3                  # swing pivot kolları (yapı varyantı)
 PAPER_MURO_STOP_PCT = 0.025       # giriş stopu (fiyat %2,5)
 PAPER_MURO_MAX_STOP_PCT = 0.05    # risk kapısı (stop en fazla %5)
 PAPER_MURO_MIN_STOP_PCT = 0.015   # gürültü kapısı (stop en az %1,5)
-PAPER_MURO_LOCK_PCT = 0.01        # kâr kilitleme (fiyat %1) — ÖLÇÜLEN OPTİMUM
+PAPER_MURO_LOCK_PCT = 0.02        # kâr bankası (fiyat +%2) — kullanıcı kuralı
+                                  # (tüm algoritmalarda +%2; önceden %1 idi)
 PAPER_MURO_TRAIL_PCT = 0.02       # kilitleme sonrası trailing stop
 PAPER_MURO_RETEST_ATR = 0.6       # kırılan seviyeye dönüş bandı (x ATR)
 PAPER_MURO_MAX_RETEST = 24        # retest bekleme süresi (bar)
