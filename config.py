@@ -378,8 +378,12 @@ PAPER_1M_SESSION_FILTER = True
 #   uygun yonde devam), başabaş koruması + stop sonrası reclaim.
 # --------------------------------------------------------------------------
 PAPER_PPT_PERIOD = 10             # PP-Supertrend pivot dönemi (bar)
-PAPER_PPT_MULT = 3.0              # bant genişliği (x ATR)
-PAPER_PPT_PULL_ATR = 0.0          # optimum nokta filtresi (0 = kapalı)
+# OLCUM (tools/research_ppt.py, BTC/ETH/SOL 5m x1500 + BTC 1h x1500):
+# mult 3.5 + pull 1.0, tek olumlu bolge; pull kapaliyken (0.0) ayni
+# pencerede sonuc -%2..-%9 -> optimum nokta filtresi sart.
+# period 14/20 ve stop 2.0 komisyon gitgidi (islem sayisi firlar).
+PAPER_PPT_MULT = 3.5              # bant genişliği (x ATR)
+PAPER_PPT_PULL_ATR = 1.0          # optimum nokta filtresi (tepe 1 ATR mesafede bekle)
 PAPER_PPT_PULL_BARS = 20          # dönen zirve/dip penceresi
 PAPER_PPT_STOP_ATR = 3.0          # giriş stopu = 3 x ATR
 PAPER_PPT_TRAIL_ATR = 5.0         # takip stopu = 5 x ATR

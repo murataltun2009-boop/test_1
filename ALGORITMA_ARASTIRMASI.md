@@ -481,3 +481,35 @@ Dogrulama: test_paper.py toplam 81 test (6 yeni: 5m dilimi, PPST
 nedensellik, karar kumesi, PPT giris+stop, PPT %2 kilit + yeniden
 giris, PPT yon degisiminde bekleme). tools/check_mode_markers.py ppT
 serisini canli BTCUSDT verisinde hizali uretiyor.
+
+### PPT parametre olcumu (tools/research_ppt.py — uretim motoru ile)
+Uygulanacak motorun kendisi (PaperTrader.backtest) kullanilarak olculdu;
+veriler BTC/ETH/SOL 5m x1500 (~5 gun) ve BTCUSDT 1h x1500 (~2 ay) taze
+Binance verisi. Kaldi: %2, risk %3, maks kaldirac 10x sabit.
+
+Bulunanlar (dustukler net degerlerle):
+1. OPTIMUM NOKTA FILTRESI (pull_atr) SART: kapaliyken ayni pencere
+   -%2..-%9 NET; pull 0.5-1.0 arasi (atr cinsinden) sonucu isaret
+   degistiriyor. pull=1.25 fazla kati (misallanmis, giris skacar).
+   Varsayilan: pull_atr = 1.0.
+2. BANT GENISLIGI: mult=3.5 en iyi denge. mult 2.0-3.0 bantlar 150-350
+   islem uretir (%72-78 kazan oranina ragmen NET KAYIP — komisyon gitgidi);
+   mult 4.0 5m'de katkisi olumlu ama istikrarsiz. Varsayilan: 3.5.
+3. PIVOT DONEMI: period=10 dogru; 14/20 islem sayisini buyutse de
+   NET daha kotu (pivot penceresi uzayinca bantlar sicrar).
+4. STOP/TRAIL: 3xATR / 5xATR uygun; 4-5xATR stoplar yalniz ETH
+   penceresinde daha iyi, genel etki dusuk. DeGISMEZ.
+5. KAR KILIDI ESIGI: 5m'de %1..%4 arasi hicbaglaymadi (gozlemlenen
+   tum cikislari zaten stop/trail aliyor). 1h'de %1 kilit (%2 yerine)
+   daha calisik cikti ama kullanici kurali %2 hicbir modda degismez.
+
+Uygulanan degisim: PAPER_PPT_MULT 3.0 -> 3.5, PAPER_PPT_PULL_ATR
+0.0 -> 1.0. Testler 81/81.
+
+Ucuncu saglik notu: BTC/ETH/SOL 5m ~5 gun penceresinde pozitif olan
+yapilandiirmalar aslinda dayanikli olsa da ETH 5m bu pencerede her
+ayrindaya gunlukti; 5m borsade kayip periyotlari gorunur. Sonuc:
+PPT "5 dk" rafinajidir ve Supertrend taban cizgisine karsi net olarak
+daha iyi (ayni pencerede ST(10,3): BTC -%9.7 / ETH -%2.0 / SOL -%3.4;
+PPT(P=10,m=3.5,pull=1.0): BTC +%0.5..%1.8 / SOL +%0.1..%0.8) ama
+garantili kar SISTEMI degil; 1h ust dilimde klasik Supertrend daha iyi.
