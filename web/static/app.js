@@ -106,7 +106,8 @@ if ("serviceWorker" in navigator) {
    "pBalance", "pLev", "pFrac", "pFee", "pLook", "pHold", "pConfirm",
    "pBacktest", "pRule", "pMode", "pStart", "pLive", "pStop", "pReset",
    "pRisk", "riskWrap", "pLock", "lockWrap", "pPull", "pullWrap",
-   "ruleWrap", "modeNote", "modeNote2", "modeNote3", "modeNote4",
+   "ruleWrap", "modeNote", "modeNote2", "modeNote3", "modeNote3ppt",
+   "modeNote4",
    "modeThr",
    "wTradeList", "btBox", "btRange", "btBody",
    "liveBox", "lProfit", "lTrades", "lFee", "lStart", "lStatus"
@@ -994,7 +995,8 @@ if ("serviceWorker" in navigator) {
     el.ruleWrap.style.display = kilit ? "none" : "";
     el.modeNote.style.display = tek ? "none" : "";
     el.modeNote2.style.display = tek ? "" : "none";
-    if (el.modeNote3) el.modeNote3.style.display = (mode === "trend" || mode === "ppt") ? "" : "none";
+    if (el.modeNote3) el.modeNote3.style.display = (mode === "trend") ? "" : "none";
+    if (el.modeNote3ppt) el.modeNote3ppt.style.display = (mode === "ppt") ? "" : "none";
     if (el.modeNote4) el.modeNote4.style.display = muro ? "" : "none";
     // Risk (trend + MURO) ve kâr kilitleme (MURO) ayarlari.
     if (el.riskWrap) el.riskWrap.style.display = trend ? "" : "none";
@@ -1009,7 +1011,28 @@ if ("serviceWorker" in navigator) {
         : "hareketli ortalamalar için 0,40 / 0,65 (bileşik eşikler)";
     }
   }
-  el.pMode.addEventListener("change", syncModeUI);
+  el.pMode.addEventListener("change", function () {
+    syncModeUI();
+    // PPT: olculmus optimum parametreler OTOMATIK atanir (kullanici
+    // istegi: "alsat noktasini elle ayarlamayalim, pivot kendisi ayarlasi").
+    // Kaynak: tools/research_ppt.py olcumu (BTC/ETH/SOL 5m + BTC 1h).
+    if (el.pMode.value === "ppt") {
+      if (el.pRisk) el.pRisk.value = 3;
+      if (el.pPull) el.pPull.value = 1.0;
+      el.pLock.value = 2;
+    }
+    // Secilen algoritma ANINDA uygulanir: /api/paper/config sunucuda
+    // configure + force_mode_refresh calistirir -> grafik AL/SAT yildizlari
+    // secilen modun karar serisine gecer (pozisyon BASLATILMAZ, running
+    // durumu korunur; "canli baslat" ayri kabuldir).
+    addLog(nowTs(), "info",
+      "Karar mekanizması: " + el.pMode.value +
+      (el.pMode.value === "ppt"
+        ? " · optimum parametreler otomatik uygulandı "
+          + "(mult 3,5 · pull 1,0 ATR · risk %3 · kilit %2)"
+        : "") + " · grafik yıldızları güncelleniyor");
+    paperCall("/api/paper/config");
+  });
   syncModeUI();
   ["pBalance", "pLev", "pFrac", "pFee", "pLook", "pHold", "pRisk",
    "pLock", "pPull"].forEach(function (id) {
