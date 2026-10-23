@@ -40,7 +40,7 @@ SYMBOL = "BTCUSDT"
 # ACTIVE_TIMEFRAME yalnizca acilista secili gelen dilimdir; arayuzden
 # degistirilebilir.
 ACTIVE_TIMEFRAME = "4h"
-TIMEFRAMES: list[str] = ["1m", "15m", "1h", "4h", "1d"]
+TIMEFRAMES: list[str] = ["1m", "5m", "15m", "1h", "4h", "1d"]
 
 # Odak disi dilimler bu kadar daha seyrek yeniden hesaplanir. analyze()
 # 500 bar icin ~55 ms surer; uc dilimi de 0,5 sn'de bir calistirmak
@@ -50,6 +50,7 @@ BACKGROUND_REFRESH_FACTOR = 4
 
 TF_LABELS: dict[str, str] = {
     "1m": "1 Dakika",
+    "5m": "5 Dakika",
     "1d": "1 Gün",
     "15m": "15 Dakika",
     "1h": "1 Saat",
@@ -60,6 +61,7 @@ TF_LABELS: dict[str, str] = {
 # Arayuzde tek birim olarak gosterilen saniye cinsinden sureler.
 TF_SECONDS: dict[str, int] = {
     "1m": 60,
+    "5m": 300,
     "1d": 86400,
     "15m": 900,
     "1h": 3600,
@@ -365,6 +367,26 @@ PAPER_1M_MAX_STOP_PCT = 0.02
 PAPER_1M_RISK_PCT = 0.003
 PAPER_1M_MAX_LEV = 5.0
 PAPER_1M_SESSION_FILTER = True
+
+# --------------------------------------------------------------------------
+# PPT: PIVOT POINT SUPERTREND MODU (kullanıcı isteği — 5 dk önerilir)
+#
+#   Karar: core/ppst.py → PP-Supertrend(period, mult) yönü
+#   + optimum nokta filtresi (pull_atr, pull_bars) + GÜÇLÜ sinyal bypass.
+#   Pozisyon yönetimi trend ailesiyle aynı: stop/trail ATR bazlı,
+#   +%2 kâr kilidi ("wait": bekle → sinyali yeniden değerlendir → en
+#   uygun yonde devam), başabaş koruması + stop sonrası reclaim.
+# --------------------------------------------------------------------------
+PAPER_PPT_PERIOD = 10             # PP-Supertrend pivot dönemi (bar)
+PAPER_PPT_MULT = 3.0              # bant genişliği (x ATR)
+PAPER_PPT_PULL_ATR = 0.0          # optimum nokta filtresi (0 = kapalı)
+PAPER_PPT_PULL_BARS = 20          # dönen zirve/dip penceresi
+PAPER_PPT_STOP_ATR = 3.0          # giriş stopu = 3 x ATR
+PAPER_PPT_TRAIL_ATR = 5.0         # takip stopu = 5 x ATR
+PAPER_PPT_MIN_STOP_PCT = 0.003    # gürültü kapısı (stop en az %0,3)
+PAPER_PPT_MAX_STOP_PCT = 0.05     # risk kapısı (stop en fazla %5)
+PAPER_PPT_RISK_PCT = 0.03         # işlem başına sermayenin %3'ü
+PAPER_PPT_MAX_LEV = 10.0          # kaldıraç üst sınırı
 
 # Pozisyon DEGISIMI (LONG <-> SHORT) sonrasi bekleme.
 #

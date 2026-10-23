@@ -1975,6 +1975,153 @@ ok.append(test("1m MOD: işlem açar + evrensel +%2 kâr bankası",
                t_1m_modu_islem_acar_banka_kapar))
 
 
+# ----------------------------------------------------------------------
+# 5 DAKİKA DİLİMİ + PPT (Pivot Point Supertrend) MODU — kullanıcı isteği
+#   * 5m zaman dilimi uygulama genelinde kullanılabilir.
+#   * PPT modu: karar mekanizması PP-Supertrend (core/ppst.py).
+#   * Pozisyon +%2 kârda kapanır (kâr kilidi), kısa bekleme sonrası
+#     indikatör yeniden izlenir; sinyal uygunsa aynı yönde devam edilir.
+# ----------------------------------------------------------------------
+def t_5m_dilimi_var():
+    """5 dakikalık dilim eklendi (kullanıcı isteği)."""
+    import config as cfg
+    assert "5m" in cfg.TIMEFRAMES, cfg.TIMEFRAMES
+    assert cfg.TF_SECONDS.get("5m") == 300, cfg.TF_SECONDS
+    assert "5m" in cfg.TF_LABELS, cfg.TF_LABELS
+    assert cfg.TIMEFRAMES.index("5m") < cfg.TIMEFRAMES.index("15m")
+
+
+ok.append(test("DİLİM: 5 dakikalık zaman dilimi mevcut", t_5m_dilimi_var))
+
+
+def t_ppst_nedensel_ve_yon():
+    """PP-Supertrend: geleceğe bakmamalı (kesme testi) + yön geçişleri."""
+    from core import ppst
+    import numpy as np
+
+    n = 60
+    base = np.concatenate([np.linspace(100.0, 130.0, 30),
+                           np.linspace(130.0, 105.0, 30)])
+    c = base + np.random.default_rng(7).normal(0.0, 0.4, n)
+    w = np.abs(np.random.default_rng(11).normal(0.3, 0.2, n))
+    h = c + w
+    l = c - w
+    _, d1 = ppst.ppsupertrend(h, l, c, 10, 3.0)
+    _, d2 = ppst.ppsupertrend(h[:45], l[:45], c[:45], 10, 3.0)
+    assert (d1[:45] == d2).all(), "PPST geleceğe bakmamalı (kesme testi)"
+    assert d1[:8].sum() == 0, "ısınma barlarında yön NÖTR kalmalı"
+    assert (d1[20:28] == 1).any(), "yükselen bölümde +1 yön olmalı"
+    assert (d1[40:58] == -1).any(), "düşen bölümde -1 yön olmalı"
+
+
+ok.append(test("PPST: nedensel + yön geçişleri doğru",
+               t_ppst_nedensel_ve_yon))
+
+
+def t_ppst_karar_seti():
+    """decide_series çıktı kümesi: AL / SAT / NÖTR / GÜÇLÜ ["AL"/"SAT"] / ''."""
+    from core import ppst
+    import numpy as np
+
+    n = 80
+    base = np.concatenate([np.linspace(100.0, 140.0, 40),
+                           np.linspace(140.0, 100.0, 40)])
+    c = base + np.random.default_rng(5).normal(0.0, 0.3, n)
+    v = np.abs(np.random.default_rng(9).normal(0.3, 0.1, n))
+    karar = ppst.decide_series(c + v, c - v, c, period=10, mult=3.0)
+    assert set(karar) <= {"AL", "SAT", "NÖTR", "GÜÇLÜ AL", "GÜÇLÜ SAT", ""}, \
+        set(karar)
+    assert "AL" in karar and "SAT" in karar, "iki yönde de karar üretmeli"
+    # strong=0 iken GÜÇLÜ karar gelmemeli (bypass yalnız güçlü skorda).
+    karar2 = ppst.decide_series(c + v, c - v, c, strong=[0] * n,
+                                period=10, mult=3.0,
+                                pull_atr=1.0, pull_bars=20)
+    assert "GÜÇLÜ AL" not in karar2 and "GÜÇLÜ SAT" not in karar2
+    # Optimum nokta filtresi açıkken en azından aynı karar kümesi kalır
+    # ve karar ' ' (bypass bekleme) satırları üretir.
+    karar3 = ppst.decide_series(c + v, c - v, c, period=10, mult=3.0,
+                                pull_atr=1.0, pull_bars=20)
+    assert set(karar3) <= {"AL", "SAT", "NÖTR", ""}, set(karar3)
+
+
+ok.append(test("PPST: karar kümesi + optimimum filtre + GÜÇLÜ bypass",
+               t_ppst_karar_seti))
+
+
+def _ppt_trader(**kw):
+    from core.paper import PaperTrader
+    import config as cfg
+
+    p = PaperTrader(cfg.Settings())
+    p.configure(balance=1000.0, leverage=10, fee_rate=0.0005,
+                wallet_fraction=0.8, mode="ppt", risk_pct=0.03)
+    p.running = True
+    p.start_balance = 1000.0
+    p.balance = 1000.0
+    for k, v in kw.items():
+        setattr(p, k, v)
+    return p
+
+
+def t_ppt_islem_acar_stoplu():
+    """PPT: AL sinyali LONG açar; stop ATR tabanlı, leş üst sınırı PPT."""
+    p = _ppt_trader()
+    p.on_price(100.0, _mum(), "5m", "AL")
+    po = p.position
+    assert po and po.side == "LONG", "PPT modunda AL LONG açmalıydı"
+    assert po.stop_price > 0, "PPT stopu ATR tabanlı olmalı"
+    assert po.stop_price < po.entry, "LONG stopu girişin altında olmalı"
+    assert po.eff_leverage <= p.mode_ppt_max_lev + 1e-9, \
+        "PPT kaldıraç üst sınırı aşılmamalı"
+
+
+ok.append(test("PPT: AL sinyali işlem açar + ATR stopu", t_ppt_islem_acar_stoplu))
+
+
+def t_ppt_kar_kilidi_ve_yeniden_giris():
+    """PPT: +%2 kâr kilit; bekleme sonrası sinyal yeniden değerlendirilir."""
+    p = _ppt_trader()
+    m = _mum()
+    p.on_price(100.0, m, "5m", "AL")
+    po = p.position
+    lock_px = po.entry * (1 + p.trend_lock_pct)      # varsayılan %2
+    bakiye_once = p.balance
+    ev = p.on_price(lock_px, m, "5m", None, bar_high=lock_px * 1.001)
+    assert ev and "Kâr kilidi" in ev, f"kilit tetiklenmedi: {ev}"
+    assert p.position is None, "kâr kilidi pozisyonu kısmalı"
+    assert p.balance > bakiye_once, "kâr cuzdana yazılmalı"
+    assert p.trades[-1].net_pnl > 0
+    # Bekleme süresi içinde aynı sinyal açmaz.
+    p.on_price(lock_px, m, "5m", "AL")
+    assert p.position is None, "bekleme bitmeden açılmamalı"
+    # Süre doldu: indikatörün söylediği yonde pozisyon yeniden açılır.
+    p._no_entry_until = 0.0
+    p.on_price(lock_px, _mum(t0=300), "5m", "AL")
+    assert p.position and p.position.side == "LONG", \
+        "kilit sonrası sinyal yeniden değerlendirilip açılmalı"
+
+
+ok.append(test("PPT: +%2 kâr kilidi + yeniden değerlendirme",
+               t_ppt_kar_kilidi_ve_yeniden_giris))
+
+
+def t_ppt_yon_degisiminde_bekleme():
+    """LONG -> SAT: LONG kapanır, SHORT anında açılmaz (bekleme)."""
+    p = _ppt_trader()
+    p.on_price(100.0, _mum(), "5m", "AL")
+    assert p.position.side == "LONG"
+    ev = p.on_price(100.5, _mum(t0=100), "5m", "SAT")
+    assert ev and "kapandı" in ev, ev
+    assert p.position is None, "yön değişiminde bekleme başlamalı"
+    p._no_entry_until = 0.0
+    p.on_price(99.0, _mum(t0=300), "5m", "SAT")
+    assert p.position and p.position.side == "SHORT", \
+        "bekleme sonrası yön yeniden değerlendirilmeli"
+
+
+ok.append(test("PPT: yön değişiminde bekleme", t_ppt_yon_degisiminde_bekleme))
+
+
 print("-" * 62)
 print(f"{sum(ok)}/{len(ok)} test gecti")
 sys.exit(0 if all(ok) else 1)

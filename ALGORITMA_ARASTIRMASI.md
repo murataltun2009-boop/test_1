@@ -438,3 +438,46 @@ Testler (75): BE (LONG/SHORT/trend-reclaim), evrensel banka (+%2
 hedeften önce, iki komisyonla net doğrulama), 1m modu (giriş + banka +
 devam) testleri eklendi; eski hedef/kilit testleri yeni doktrine
 (banka hedeften ÖNCE) uyarlandı.
+
+## PP-SUPERTREND (PPT) MODU + 5 DAKIKA DILIMI (yeni)
+
+Kullanici istegi: "5 dk'lik bir periyot ekle; karar mekanizmasinda
+Pivot Point Supertrend indikatoru ekle; 5 dk'lik pozisyon +%2 kar
+yaptiginda kapansin, indikator tekrar izlenip uygunsa pozisyon acilsin."
+
+### Indikator matematisi (core/ppst.py)
+PP-Supertrend (TradingView "PP SuperTrend") nedensel olarak yeniden
+yazildi (orijinal pandas uygulamasindaki `center=True` penceresi
+gelecege baktigi icin center=False ile):
+- Donen pivot: pp = (max(h,10) + min(l,10) + close) / 3
+- Diren varyantlari: R1=2pp-lo, R2=pp+(h-l), R3=hi+2(pp-lo)
+  (R3 > R1 > R2 onceligi; seviye bandin disindaysa donen uca cakilir)
+- Dayanma varyantlari: S1=2pp-hi, S2=pp-(h-l), S3=lo-2(hi-pp)
+- Temel bantlar: inter_res = secilen_res - 3xATR(profil periyodu),
+  inter_sup = secilen_sup + 3xATR
+- Klasik Supertrend kilit dongusu (yalnizca ONCEKI barin bantlari):
+  close > onceki final_res -> +1 (AL); close < onceki final_sup -> -1 (SAT)
+- Kesme testi ile nedensellik dogrulandi (ilk 45 bar ayni).
+
+### Karar serisi (ppst.decide_series)
+trend.decide_series sozlesmasinin birebir aynisi: yon + optimum nokta
+filtresi (pull_atr/pull_bars) + GUCCLU sinyal bypass. Canli akis ile
+geriye donuk test AYNI fonksiyonu kullaniyor (service._signal_for_mode
+ve paper._build_signal_series ikisi de decide_series).
+
+### 5m davsranisi (kullanicinin yazdigi uyulama)
+PPT modu trend ailesindedir:
+- GIRIS: PP-Supertrend AL/SAT (kapanmis bar), stop = 3xATR
+  (min %0,3 / maks %5), trail 5xATR, risk %3, maks kaldirc 10x.
+- KAR KILIDI: +%2 (trend_lock_pct) seviyesine limit emir; dokununca
+  pozisyon kapanir, kar cuzdana yazilir, 90 sn bekleme ("wait & re-evaluate")
+  sonrasinda indikator yeniden okunur ve sinyal uygunsa AYNI/EN UYGUN
+  yonde pozisyon yeniden acilir. Stop/likidasyon/BASABAS/reclaim/flip
+  bekleme trend ile ayni.
+- 5m dilimi config.TIMEFRAMES'e eklendi (TF_LABELS "5 Dakika",
+  TF_SECONDS 300); arayuzde "5dk" etiketiyle kullanilir.
+
+Dogrulama: test_paper.py toplam 81 test (6 yeni: 5m dilimi, PPST
+nedensellik, karar kumesi, PPT giris+stop, PPT %2 kilit + yeniden
+giris, PPT yon degisiminde bekleme). tools/check_mode_markers.py ppT
+serisini canli BTCUSDT verisinde hizali uretiyor.

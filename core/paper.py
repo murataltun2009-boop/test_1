@@ -25,6 +25,7 @@ import config
 from core import indicators as ind
 from core import trend as trend_mod
 from core import muro as muro_mod
+from core import ppst
 
 logger = logging.getLogger("ta.paper")
 
@@ -274,6 +275,20 @@ class PaperTrader:
         self.mode_1m_risk_pct = float(config.PAPER_1M_RISK_PCT)
         self.mode_1m_max_lev = float(config.PAPER_1M_MAX_LEV)
         self.mode_1m_session_filter = bool(config.PAPER_1M_SESSION_FILTER)
+        # ---- PPT (Pivot Point Supertrend) modu --------------------------
+        # Kullanıcı isteği: 5 dk periyodu + PP-Supertrend karar
+        # mekanizması (core/ppst.py). Trend ailesiyle aynı pozisyon
+        # yönetimi (stop/trail/kâr kilidi/reclaim).
+        self.mode_ppt_period = int(config.PAPER_PPT_PERIOD)
+        self.mode_ppt_mult = float(config.PAPER_PPT_MULT)
+        self.mode_ppt_pull_atr = float(config.PAPER_PPT_PULL_ATR)
+        self.mode_ppt_pull_bars = int(config.PAPER_PPT_PULL_BARS)
+        self.mode_ppt_stop_atr = float(config.PAPER_PPT_STOP_ATR)
+        self.mode_ppt_trail_atr = float(config.PAPER_PPT_TRAIL_ATR)
+        self.mode_ppt_min_stop_pct = float(config.PAPER_PPT_MIN_STOP_PCT)
+        self.mode_ppt_max_stop_pct = float(config.PAPER_PPT_MAX_STOP_PCT)
+        self.mode_ppt_risk_pct = float(config.PAPER_PPT_RISK_PCT)
+        self.mode_ppt_max_lev = float(config.PAPER_PPT_MAX_LEV)
         # ---- MURO modu -------------------------------------------------
         # Yeni algoritma: Supertrend yonu + geri cekilme girisi +
         # kâr kilitleme (kâr cüzdana yazilir, ayni yönde yeniden girilir).
@@ -364,7 +379,7 @@ class PaperTrader:
         if short_rule in ("pullback", "entry"):
             self.short_rule = short_rule
         if mode in ("range", "signal", "signal_long", "signal_exit",
-                    "ma_only", "osc_only", "trend", "muro", "1m"):
+                    "ma_only", "osc_only", "trend", "muro", "1m", "ppt"):
             if mode != self.mode:
                 # Mod degisti: onceki sinyal gecersiz.
                 self.last_signal = None
@@ -372,13 +387,16 @@ class PaperTrader:
         if min_hold is not None and 0 <= int(min_hold) <= 500:
             self.min_hold_bars = int(min_hold)
         if risk_pct is not None and 0 < float(risk_pct) <= 0.50:
-            # Islem basina sermaye riski (trend + MURO modlari). %50 ustu
-            # anlamsiz: tek bir stop hesabin yarisini siler.
+            # Islem basina sermaye riski (trend + MURO + 1m + PPT modlari).
+            # %50 ustu anlamsiz: tek bir stop hesabin yarisini siler.
             self.trend_risk_pct = float(risk_pct)
             self.muro_risk_pct = float(risk_pct)
+            self.mode_1m_risk_pct = float(risk_pct)
+            self.mode_ppt_risk_pct = float(risk_pct)
         if pull_atr is not None and 0 <= float(pull_atr) <= 5.0:
             # Girişte optimum nokta filtresi (ATR cinsinden).
             self.trend_pull_atr = float(pull_atr)
+            self.mode_ppt_pull_atr = float(pull_atr)
         if lock_pct is not None and 0 <= float(lock_pct) <= 0.20:
             # Kâr bankalama eşiği (fiyat %). 0 = kilitleme KAPALI.
             # Kullanıcı kuralı: TÜM MODELLERDE aynı +%X bankalama.
@@ -388,7 +406,7 @@ class PaperTrader:
             self.bank_pct = lv
             if self.mode == "muro":
                 self.muro_cfg.lock_pct = lv
-            elif self.mode in ("trend", "1m"):
+            elif self.mode in ("trend", "1m", "ppt"):
                 self.trend_lock_pct = lv
 
     def reset(self, symbol: Optional[str] = None) -> None:
@@ -631,7 +649,7 @@ class PaperTrader:
             # barin kapanisina gore hesaplanir (stop kontrolunden SONRA
             # uygulanmis olur). Aksi halde stop, icinde bulunulan barin
             # dip/zirvesi tarafindan ayni barda tetiklenirdi.
-            if self.mode in ("trend", "1m") and p.trail_mult > 0 and yeni_bar:
+            if self.mode in ("trend", "1m", "ppt") and p.trail_mult > 0 and yeni_bar:
                 a = trend_mod.atr_value([c.high for c in candles],
                                         [c.low for c in candles],
                                         [c.close for c in candles])
@@ -668,7 +686,7 @@ class PaperTrader:
             # verilmez: canlida pozisyon barin ortasinda acilmis olabilir;
             # o barin low/high'i giristen ONCE olusmus olabilir ve stop
             # yanlislikla tetiklenirdi. Canlida yalnizca anlik fiyat.
-            if self.mode in ("trend", "muro") and p.stop_price > 0:
+            if self.mode in ("trend", "muro", "1m", "ppt") and p.stop_price > 0:
                 if p.side == LONG:
                     vurdu = price <= p.stop_price or \
                         (bar_low is not None and bar_low <= p.stop_price)
@@ -691,14 +709,14 @@ class PaperTrader:
                         self._close(p.liq_price, "LİKİDASYON (kaldıraç "
                                     "kaybı)", timeframe,
                                     )
-                        if self.mode == "trend":
+                        if self.mode in ("trend", "1m", "ppt"):
                             self._bekleme_baslat(self.flip_cooldown_ms,
                                                  candles)
                         return "Likidasyon"
                     self._close(cikis, f"stop ({_px(p.stop_price)})",
                                 timeframe,
                                 )
-                    if self.mode in ("trend", "1m"):
+                    if self.mode in ("trend", "1m", "ppt"):
                         # Ayni yone girilmeden once fiyat stop seviyesini
                         # geri almali (reclaim).
                         self._reclaim_side = p.side
@@ -719,7 +737,7 @@ class PaperTrader:
                (p.side == SHORT and price >= p.liq_price):
                 self._close(price, "LİKİDASYON (kaldıraç kaybı)", timeframe,
                             )
-                if self.mode in ("trend", "1m"):
+                if self.mode in ("trend", "1m", "ppt"):
                     self._reclaim_side = p.side
                     self._reclaim_level = p.liq_price
                     # Likidasyondan sonra da bekleme: ayni fiyattan
@@ -771,7 +789,7 @@ class PaperTrader:
             # KİLİT FİYATI limit emir gibidir: fiyat o seviyeye
             # dokunmalıdır. Canlida anlık fiyat, geriye dönük testte
             # bar içi en yüksek/düşük.
-            if self.mode == "trend" and p is not None and \
+            if self.mode in ("trend", "ppt") and p is not None and \
                     self.trend_lock_pct > 0:
                 lock = self.trend_lock_pct
                 if p.side == LONG:
@@ -829,7 +847,8 @@ class PaperTrader:
             # değerlendirir ve EN UYGUN yone (AL -> LONG, SAT -> SHORT)
             # yeniden girer. Böylece "banka + devam" şeklinde işler.
             p2 = self.position
-            if p2 is not None and self.mode not in ("trend", "muro") and \
+            if p2 is not None and \
+                    self.mode not in ("trend", "muro", "ppt") and \
                     self.bank_pct > 0:
                 lock = self.bank_pct
                 if p2.side == LONG:
@@ -891,7 +910,7 @@ class PaperTrader:
                     # yeme) kurulur. Bekleme bitince sinyal YENİDEN
                     # değerlendirilir ve en uygun yone girilir.
                     self._close(cikis, "başabaş koruması", timeframe)
-                    if self.mode in ("trend", "1m"):
+                    if self.mode in ("trend", "1m", "ppt"):
                         # Aynı yone girmeden önce eşik geri alınmalı
                         # (stop-after-reclaim kuralıyla aynı mantık).
                         self._reclaim_side = p3.side
@@ -939,7 +958,7 @@ class PaperTrader:
             #
             # Bu blok POZISYON ACIKKEN calisir — aksi halde asagidaki
             # sinyal bloguna hic ulasilamaz (proje tarihinde yasanmis hata).
-            if self.mode in ("ma_only", "osc_only", "trend", "1m") and signal:
+            if self.mode in ("ma_only", "osc_only", "trend", "1m", "ppt") and signal:
                 if signal == self.last_signal:
                     return None                 # ayni yon: dokunma
                 if self._bars_held < self.min_hold_bars:
@@ -957,6 +976,7 @@ class PaperTrader:
                 kaynak = ("hareketli ortalamalar" if self.mode == "ma_only"
                           else "osilatörler" if self.mode == "osc_only"
                           else "Supertrend" if self.mode == "trend"
+                          else "PP-Supertrend" if self.mode == "ppt"
                           else "MTF (1m)")
 
                 # ---- NÖTR: KAPAT VE BEKLE, TERS YÖN ACMA ----
@@ -979,7 +999,7 @@ class PaperTrader:
                     # testleri var.
                     yon = p.side
                     self._close(price, f"{signal} ({kaynak})", timeframe)
-                    if self.mode == "trend":
+                    if self.mode in ("trend", "ppt"):
                         # Yon degisti: reclaim blogu gecersiz.
                         self._reclaim_side = ""
                         self._reclaim_level = 0.0
@@ -996,7 +1016,7 @@ class PaperTrader:
                 if p.side == SHORT and not dusus:
                     yon = p.side
                     self._close(price, f"{signal} ({kaynak})", timeframe)
-                    if self.mode == "trend":
+                    if self.mode in ("trend", "ppt"):
                         self._bekleme_baslat(self.flip_cooldown_ms, candles)
                         return (f"{yon} kapandı — {signal} · {kaynak} "
                                 f"({self.flip_cooldown_ms/60000:.0f} dk "
@@ -1147,7 +1167,7 @@ class PaperTrader:
         # (LONG → SAT → LONG) ilk pozisyonu zaten yukarıdaki açık
         # pozisyon bloğu açıyor.
         # ------------------------------------------------------------------
-        if self.mode in ("ma_only", "osc_only", "trend", "1m") and signal:
+        if self.mode in ("ma_only", "osc_only", "trend", "1m", "ppt") and signal:
             # BEKLEME (cooldown): pozisyon kapandıktan sonra yeni
             # pozisyon açılmaz. Kullanıcı isteği: "pozisyon
             # değişmlerinde mevcut pozisyonu kapattıktan sonra 5 dk
@@ -1162,7 +1182,7 @@ class PaperTrader:
             # STOP SONRASI RECLAIM: ayni yone, fiyat stop seviyesini geri
             # almadan girilmez. Boylece (a) stop dongusu kurulmaz,
             # (b) kaybeden pozisyon hemen yenisiyle degistirilmez.
-            if self.mode in ("trend", "1m") and self._reclaim_side:
+            if self.mode in ("trend", "1m", "ppt") and self._reclaim_side:
                 long_mu = signal in ("AL", "GÜÇLÜ AL")
                 short_mu = signal in ("SAT", "GÜÇLÜ SAT")
                 if self._reclaim_side == LONG and long_mu and \
@@ -1178,6 +1198,7 @@ class PaperTrader:
             kaynak = ("hareketli ortalamalar" if self.mode == "ma_only"
                       else "osilatörler" if self.mode == "osc_only"
                       else "Supertrend" if self.mode == "trend"
+                      else "PP-Supertrend" if self.mode == "ppt"
                       else "MTF (1m)")
 
             if signal in ("SAT", "GÜÇLÜ SAT"):
@@ -1336,6 +1357,34 @@ class PaperTrader:
                 pull_atr=self.mode_1m_pullback_atr,
                 pull_bars=self.mode_1m_pullback_ema)
 
+        # PPT: Pivot Point Supertrend karari — trend ile ayni akis.
+        if self.mode == "ppt":
+            # Karar serisi: yon (PP-Supertrend) + optimum nokta filtresi +
+            # guclu sinyal bypass'i. Canli akis AYNI fonksiyonu kullanir
+            # (core/ppst.py::decide_series) -> test ve canli ayni.
+            strong = None
+            try:
+                res = analyze(
+                    symbol=self.symbol or "TESTUSDT", timeframe=timeframe,
+                    open_times=[c.open_time for c in candles],
+                    o=[c.open for c in candles], h=[c.high for c in candles],
+                    l=[c.low for c in candles], c=[c.close for c in candles],
+                    v=[c.volume for c in candles],
+                    close_times=[c.close_time for c in candles],
+                    strong_threshold=self.thresholds()[1],
+                    base_threshold=self.thresholds()[0])
+                strong = trend_mod.strong_series(res.signals)
+            except Exception:      # noqa: BLE001
+                strong = None
+            return ppst.decide_series(
+                [c.high for c in candles],
+                [c.low for c in candles],
+                [c.close for c in candles],
+                strong=strong,
+                period=self.mode_ppt_period, mult=self.mode_ppt_mult,
+                pull_atr=self.mode_ppt_pull_atr,
+                pull_bars=self.mode_ppt_pull_bars)
+
         # MURO: aksiyon serisi (AL / SAT / LONG_KAPAT / SHORT_KAPAT).
         # Canli akista da ayni kod kullanilir (core.muro).
         if self.mode == "muro":
@@ -1455,7 +1504,8 @@ class PaperTrader:
                 if signals is None and self.mode in ("signal", "signal_long",
                                                      "signal_exit",
                                                      "ma_only", "osc_only",
-                                                     "trend", "muro", "1m"):
+                                                     "trend", "muro", "1m",
+                                                     "ppt"):
                     # Sinyal listesi YOKSA ve karar modu sinyal tabanliysa
                     # burada analiz yapip signal listesini kendimiz uretiriz.
                     #
@@ -1600,9 +1650,25 @@ class PaperTrader:
             margin = notional / eff_lev if eff_lev > 0 else 0.0
             stop_price = price - (stop_dist if side == LONG else -stop_dist)
             trail_mult = self.trend_trail_atr
-        elif self.mode == "1m":
-            # 1M OPTIMIZED: trend ile ayni risk-tabanli sema, KENDI
+        elif self.mode in ("1m", "ppt"):
+            # 1M / PPT OPTIMIZED: trend ile ayni risk-tabanli sema, KENDI
             # parametreleriyle (daha dar stop, sinirli kaldirac).
+            # PPT: Pivot Point Supertrend modu — ayni yapi, PAPER_PPT_*
+            # parametreleri.
+            if self.mode == "1m":
+                stop_atr = self.mode_1m_stop_atr
+                trail_atr = self.mode_1m_trail_atr
+                min_stop = self.mode_1m_min_stop_pct
+                max_stop = self.mode_1m_max_stop_pct
+                risk_pct = self.mode_1m_risk_pct
+                max_lev = self.mode_1m_max_lev
+            else:
+                stop_atr = self.mode_ppt_stop_atr
+                trail_atr = self.mode_ppt_trail_atr
+                min_stop = self.mode_ppt_min_stop_pct
+                max_stop = self.mode_ppt_max_stop_pct
+                risk_pct = self.mode_ppt_risk_pct
+                max_lev = self.mode_ppt_max_lev
             a = 0.0
             if candles_for_target:
                 a = trend_mod.atr_value(
@@ -1611,22 +1677,22 @@ class PaperTrader:
                     [c.close for c in candles_for_target])
             if a <= 0:
                 return              # ATR yok (isinma) -> islem acma
-            stop_dist = self.mode_1m_stop_atr * a
+            stop_dist = stop_atr * a
             stop_frac = stop_dist / price
             # ATR dabası cok dar gelirse gurultude kapanmasin:
-            stop_frac = max(stop_frac, self.mode_1m_min_stop_pct)
-            stop_frac = min(stop_frac, self.mode_1m_max_stop_pct)
+            stop_frac = max(stop_frac, min_stop)
+            stop_frac = min(stop_frac, max_stop)
             if stop_frac <= 0:
                 return
             stop_dist = stop_frac * price
             # Likidasyon stop'tan SONRA gelmeli (liq mesafesi ~ 1/lev).
-            eff_lev = min(self.leverage, self.mode_1m_max_lev,
+            eff_lev = min(self.leverage, max_lev,
                           0.6 / stop_frac)
-            notional = eq * self.mode_1m_risk_pct / stop_frac
+            notional = eq * risk_pct / stop_frac
             notional = min(notional, eq * self.wallet_fraction * eff_lev)
             margin = notional / eff_lev if eff_lev > 0 else 0.0
             stop_price = price - (stop_dist if side == LONG else -stop_dist)
-            trail_mult = self.mode_1m_trail_atr
+            trail_mult = trail_atr
 
         qty = notional / price if price > 0 else 0.0
         if qty <= 0 or margin <= 0 or notional <= 0:
@@ -1651,9 +1717,9 @@ class PaperTrader:
             win_high = max(c.high for c in w)
         else:
             win_low = win_high = price
-        if self.mode in ("trend", "muro"):
-            # Trend ve MURO modunda sabit hedef YOK: cikis stop veya
-            # sinyal ile.
+        if self.mode in ("trend", "muro", "1m", "ppt"):
+            # Trend / MURO / 1m / PPT modunda sabit hedef YOK: cikis stop,
+            # trail veya sinyal (+kâr kilidi) ile.
             target = 0.0
         else:
             target = win_high if side == LONG else win_low
@@ -1717,6 +1783,13 @@ class PaperTrader:
                        f"efektif {eff_lev:.2f}x · teminat {margin:,.2f} · "
                        f"stop {_px(stop_price)} · "
                        f"risk %{self.trend_risk_pct*100:.1f} · "
+                       f"komisyon {fee_open:,.4f} · {reason}")
+        elif self.mode == "ppt":
+            self._emit("trade",
+                       f"{side} açıldı @ {_px(price)} · "
+                       f"efektif {eff_lev:.2f}x · teminat {margin:,.2f} · "
+                       f"stop {_px(stop_price)} · "
+                       f"risk %{self.mode_ppt_risk_pct*100:.1f} · "
                        f"komisyon {fee_open:,.4f} · {reason}")
         else:
             self._emit("trade",
@@ -1820,9 +1893,12 @@ class PaperTrader:
             "min_hold_bars": self.min_hold_bars,
             "trend_risk_pct": self.trend_risk_pct,
             "muro_risk_pct": self.muro_risk_pct,
+            "ppt_risk_pct": self.mode_ppt_risk_pct,
             "muro_lock_pct": self.muro_cfg.lock_pct,
             "trend_lock_pct": self.trend_lock_pct,
+            "ppt_lock_pct": self.trend_lock_pct,
             "trend_pull_atr": self.trend_pull_atr,
+            "ppt_pull_atr": self.mode_ppt_pull_atr,
             "flip_cooldown_sec": self.flip_cooldown_ms / 1000.0,
             "lock_cooldown_sec": self.lock_cooldown_ms / 1000.0,
             "no_entry_left_sec": round(self._bekleme_kaldi_ms([]) / 1000.0, 1),

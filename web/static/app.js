@@ -691,7 +691,7 @@ if ("serviceWorker" in navigator) {
   // Buton metni kisa olmali: "15dk / 1sa / 4sa" yerine uzun etiket
   // basligi sIKISTIRIR.
   function kisaEtiket(tf) {
-    return ({ "1m": "1dk", "15m": "15dk", "1h": "1sa", "2h": "2sa",
+    return ({ "1m": "1dk", "5m": "5dk", "15m": "15dk", "1h": "1sa", "2h": "2sa",
               "4h": "4sa", "1d": "1gün" })[tf] || tf;
   }
 
@@ -928,7 +928,7 @@ if ("serviceWorker" in navigator) {
     // 0 = kilitleme KAPALI — 0'ı 0 olarak göndermek şart (|| 3
     // kullanılsaydı 0 yazılan kullanıcıya %3 giderdi).
     var lockVal = parseFloat(el.pLock.value);
-    if (isNaN(lockVal)) lockVal = (el.pMode.value === "muro") ? 1 : 3;
+    if (isNaN(lockVal)) lockVal = (el.pMode.value === "muro") ? 2 : 2;
     return {
       balance: parseFloat(el.pBalance.value),
       leverage: parseFloat(el.pLev.value),
@@ -988,18 +988,18 @@ if ("serviceWorker" in navigator) {
     var tek = TEK_KAYNAK.indexOf(mode) >= 0;
     // Trend/MURO modu da SHORT kuralini kullanmaz: yon tamamen
     // gostergeden gelir. Bu yuzden secici kapatilir.
-    var trend = (mode === "trend" || mode === "muro");
+    var trend = (mode === "trend" || mode === "muro" || mode === "ppt");
     var muro = (mode === "muro");
     var kilit = tek || trend;
     el.ruleWrap.style.display = kilit ? "none" : "";
     el.modeNote.style.display = tek ? "none" : "";
     el.modeNote2.style.display = tek ? "" : "none";
-    if (el.modeNote3) el.modeNote3.style.display = (mode === "trend") ? "" : "none";
+    if (el.modeNote3) el.modeNote3.style.display = (mode === "trend" || mode === "ppt") ? "" : "none";
     if (el.modeNote4) el.modeNote4.style.display = muro ? "" : "none";
     // Risk (trend + MURO) ve kâr kilitleme (MURO) ayarlari.
     if (el.riskWrap) el.riskWrap.style.display = trend ? "" : "none";
     if (el.lockWrap) el.lockWrap.style.display = trend ? "" : "none";
-    if (el.pullWrap) el.pullWrap.style.display = (mode === "trend") ? "" : "none";
+    if (el.pullWrap) el.pullWrap.style.display = (mode === "trend" || mode === "ppt") ? "" : "none";
     el.pRule.disabled = kilit;
     // Kullanilan esikleri yaz: osilator modunda bilesik esikler
     // degil, olculmus daha kucuk esikler gecerli.

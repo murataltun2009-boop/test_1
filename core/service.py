@@ -713,6 +713,29 @@ class MarketService:
                 pull_atr=(self.paper.mode_1m_pullback_atr if self.paper else 1.0),
                 pull_bars=(self.paper.mode_1m_pullback_ema if self.paper else 20))
             return karar[-1] if karar else None
+        if mode == "ppt":
+            # PPT modu: PP-Supertrend yonu (5 dk periyodu icin yeni
+            # karar mekanizmasi). Sinyal YALNIZCA KAPANMIS barlardan —
+            # trend modundaki nedensellik kuralinin aynisi.
+            from core import ppst as ppst_mod
+            from core import trend as trend_mod
+            cs = _kapali_mumlar(candles or [])
+            if len(cs) < 30:
+                return None
+            strong = None
+            if res is not None and getattr(res, "signals", None):
+                sigs = list(res.signals)
+                if len(sigs) > len(cs):
+                    sigs = sigs[:len(cs)]
+                strong = trend_mod.strong_series(sigs)
+            karar = ppst_mod.decide_series(
+                [c.high for c in cs], [c.low for c in cs],
+                [c.close for c in cs], strong=strong,
+                period=(self.paper.mode_ppt_period if self.paper else 10),
+                mult=(self.paper.mode_ppt_mult if self.paper else 3.0),
+                pull_atr=(self.paper.mode_ppt_pull_atr if self.paper else 0.0),
+                pull_bars=(self.paper.mode_ppt_pull_bars if self.paper else 20))
+            return karar[-1] if karar else None
         if mode == "muro":
             return self._muro_action(res, candles)
         if mode not in ("ma_only", "osc_only"):
@@ -756,6 +779,7 @@ class MarketService:
           osc_only     : sadece osilator skoru esiklenir
           trend        : Supertrend karar serisi (decide_series)
           1m           : 1m modu karar serisi (ayni decide_series)
+          ppt          : PP-Supertrend karar serisi (core/ppst.py)
           muro         : muro.actions serisi (kapama ters yonde yildiz)
 
         Seri analizin AKTIF versiyonu icin cache'lenir; her tik
@@ -773,7 +797,7 @@ class MarketService:
         if cached is not None and cached[0] == key:
             return cached[1]
 
-        if mode in ("trend", "1m", "muro"):
+        if mode in ("trend", "1m", "muro", "ppt"):
             with self._lock:
                 buf = list(self._buffers.get(tf) or [])
             series = self._decision_series_for_mode(mode, res, buf)
@@ -811,11 +835,14 @@ class MarketService:
             elif mode == "1m":
                 parts += [p.mode_1m_trend_period, p.mode_1m_trend_mult,
                           p.mode_1m_pullback_atr, p.mode_1m_pullback_ema]
+            elif mode == "ppt":
+                parts += [p.mode_ppt_period, p.mode_ppt_mult,
+                          p.mode_ppt_pull_atr, p.mode_ppt_pull_bars]
         return tuple(parts)
 
     def _decision_series_for_mode(self, mode: str, res: TimeframeAnalysis,
                                   candles: list) -> list[Signal]:
-        """trend/1m/muro modlari icin bar bazli karar serisi."""
+        """trend/1m/muro/ppt modlari icin bar bazli karar serisi."""
         from core import muro as muro_mod
         from core import trend as trend_mod
         cs = _kapali_mumlar(candles)
@@ -842,6 +869,19 @@ class MarketService:
                 mult = self.paper.mode_1m_trend_mult
                 pull_atr = self.paper.mode_1m_pullback_atr
                 pull_bars = self.paper.mode_1m_pullback_ema
+            elif mode == "ppt":
+                from core import ppst as ppst_mod
+                karar = ppst_mod.decide_series(
+                    [c.high for c in cs], [c.low for c in cs],
+                    [c.close for c in cs], strong=strong,
+                    period=self.paper.mode_ppt_period,
+                    mult=self.paper.mode_ppt_mult,
+                    pull_atr=self.paper.mode_ppt_pull_atr,
+                    pull_bars=self.paper.mode_ppt_pull_bars)
+                base = [_LABEL_TO_SIGNAL.get(k, Signal.NEUTRAL) for k in karar]
+                if gap > 0 and base:
+                    base = base + [base[-1]] * gap
+                return base
             else:
                 period = self.paper.trend_period
                 mult = self.paper.trend_mult

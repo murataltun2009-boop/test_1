@@ -34,7 +34,7 @@ service._analyses[TF] = res
 service._versions[TF] = 1
 
 print("res.signals uz:", len(res.signals))
-for mode in ["signal", "ma_only", "osc_only", "trend", "muro", "1m"]:
+for mode in ["signal", "ma_only", "osc_only", "trend", "muro", "1m", "ppt"]:
     paper.mode = mode
     try:
         ser = service.mode_signal_series(TF)
