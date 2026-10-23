@@ -244,6 +244,12 @@ class PaperTrader:
         # acilmadigi icin KAR KILIDME de hic calismiyordu.
         self._reclaim_side = ""      # "LONG" / "SHORT" / ""
         self._reclaim_level = 0.0
+        # Reclaim sartinin dusecegi BAR SAYISI; 0 = sart yok (dustu).
+        # Bar bazlidir: 4h/1d modlarinda 2 saat anlamsiz; 12 bar her dilimde
+        # tutarli (5m'de 1 saat).
+        self._reclaim_out_bars = 0
+        # Durum olayi yazma suyu (ms): ayni engel spamini onler.
+        self._state_log_until = 0.0
         self.trend_lock_reentry = str(
             getattr(config, "PAPER_TREND_LOCK_REENTRY", "protected"))
         # Girişte "optimum nokta" filtresi: long icin tepeye, short icin
@@ -479,6 +485,21 @@ class PaperTrader:
     def _bekleme_baslat(self, ms: float, candles: list) -> None:
         """Yeni pozisyon açılmayacağı süreyi başlat."""
         self._no_entry_until = self._simdi_ms(candles) + max(0.0, ms)
+
+    def _durum_bildir(self, text: str, candles: list) -> None:
+        """
+        "Sessiz engel" durumlarini KISITLI aralikla olay akisina yazar.
+
+        Kullanici sorunu: simulator pozisyon acmiyor ama NEDEN gosterilmiyordu
+        (reclaim sarti kalicilik kilidi, pull filtresinin tepe beklemesi).
+        Ayrinti burada raporlanir; ayni engel icin her
+        PAPER_STATE_LOG_SEC'de bir kez yazilir (spam olmasin).
+        """
+        simdi = self._simdi_ms(candles)
+        if simdi < self._state_log_until:
+            return
+        self._state_log_until = simdi + config.PAPER_STATE_LOG_SEC * 1000.0
+        self._emit("info", f"Durum: {text}")
 
     # ------------------------------------------------------------------
     # Kural motoru
@@ -718,9 +739,12 @@ class PaperTrader:
                                 )
                     if self.mode in ("trend", "1m", "ppt"):
                         # Ayni yone girilmeden once fiyat stop seviyesini
-                        # geri almali (reclaim).
+                        # geri almali (reclaim). Sart tarifli: TTL sonra
+                        # dusur (kalici kilit olmasin).
                         self._reclaim_side = p.side
                         self._reclaim_level = p.stop_price
+                        self._reclaim_out_bars = self._bars_held + \
+                            config.PAPER_RECLAIM_TTL_BARS
                         # STOP SONRASI BEKLEME.
                         #
                         # KÖK NEDEN (ölçüm): stop'a yakılan pozisyon
@@ -740,6 +764,8 @@ class PaperTrader:
                 if self.mode in ("trend", "1m", "ppt"):
                     self._reclaim_side = p.side
                     self._reclaim_level = p.liq_price
+                    self._reclaim_out_bars = self._bars_held + \
+                        config.PAPER_RECLAIM_TTL_BARS
                     # Likidasyondan sonra da bekleme: ayni fiyattan
                     # tekrar likidasyon dongusu kurulmasin.
                     self._bekleme_baslat(self.flip_cooldown_ms, candles)
@@ -915,6 +941,8 @@ class PaperTrader:
                         # (stop-after-reclaim kuralıyla aynı mantık).
                         self._reclaim_side = p3.side
                         self._reclaim_level = be_px
+                        self._reclaim_out_bars = self._bars_held + \
+                            config.PAPER_RECLAIM_TTL_BARS
                         self._bekleme_baslat(self.flip_cooldown_ms, candles)
                     elif self.mode == "muro":
                         self._bekleme_baslat(self.flip_cooldown_ms, candles)
@@ -1003,6 +1031,7 @@ class PaperTrader:
                         # Yon degisti: reclaim blogu gecersiz.
                         self._reclaim_side = ""
                         self._reclaim_level = 0.0
+                        self._reclaim_out_bars = 0
                         self._bekleme_baslat(self.flip_cooldown_ms, candles)
                         return (f"{yon} kapandı — {signal} · {kaynak} "
                                 f"({self.flip_cooldown_ms/60000:.0f} dk "
@@ -1017,6 +1046,10 @@ class PaperTrader:
                     yon = p.side
                     self._close(price, f"{signal} ({kaynak})", timeframe)
                     if self.mode in ("trend", "ppt"):
+                        # Yon degisti: reclaim blogu gecersiz.
+                        self._reclaim_side = ""
+                        self._reclaim_level = 0.0
+                        self._reclaim_out_bars = 0
                         self._bekleme_baslat(self.flip_cooldown_ms, candles)
                         return (f"{yon} kapandı — {signal} · {kaynak} "
                                 f"({self.flip_cooldown_ms/60000:.0f} dk "
@@ -1161,6 +1194,35 @@ class PaperTrader:
                 return None
 
         # ------------------------------------------------------------------
+        # 2b-A) PPST SESSIZ BEKLEME RAPORU: pozisyon YOK + karar NÖTR/"".
+        #
+        # pull filtresi optimum nokta beklerken karar "" (bos) gelir:
+        # yon +1/-1 olabilir ama girilmez. Kullanici "hic acmiyor"
+        # goruyordu; NEDENI burada raporlanir (PAPER_STATE_LOG_SEC'de bir).
+        # ------------------------------------------------------------------
+        if self.mode == "ppt" and self.position is None and \
+                signal in (None, "", "NÖTR") and \
+                self._bekleme_kaldi_ms(candles) == 0 and candles:
+            try:
+                _, dseri = ppst.ppsupertrend(
+                    [c.high for c in candles], [c.low for c in candles],
+                    [c.close for c in candles],
+                    self.mode_ppt_period, self.mode_ppt_mult)
+                yon_v = int(dseri[-1]) if dseri.size else 0
+            except Exception:      # noqa: BLE001
+                yon_v = 0
+            if yon_v > 0:
+                self._durum_bildir(
+                    "PP-Supertrend yönü AL, pozisyon açılmadı — fiyat "
+                    "dönen tepeye yakın; optimum nokta filtresi geri "
+                    "çekilmeyi bekliyor", candles)
+            elif yon_v < 0:
+                self._durum_bildir(
+                    "PP-Supertrend yönü SAT, pozisyon açılmadı — fiyat "
+                    "dönen dibe yakın; optimum nokta filtresi tepenin "
+                    "dönüşünü bekliyor", candles)
+
+        # ------------------------------------------------------------------
         # 2b) YALNIZCA MA / OSILATÖR — pozisyon YOKKEN giris
         #
         # NÖTR geldiğinde pozisyon açılmaz (bekle). Sıralı sinyal
@@ -1182,18 +1244,35 @@ class PaperTrader:
             # STOP SONRASI RECLAIM: ayni yone, fiyat stop seviyesini geri
             # almadan girilmez. Boylece (a) stop dongusu kurulmaz,
             # (b) kaybeden pozisyon hemen yenisiyle degistirilmez.
+            # SART TARIFLIDIR: 12 bar sonra (PAPER_RECLAIM_TTL_BARS) blok
+            # duser — yoksa kalici "hic acmiyor" kilidi kuruluyordu.
             if self.mode in ("trend", "1m", "ppt") and self._reclaim_side:
-                long_mu = signal in ("AL", "GÜÇLÜ AL")
-                short_mu = signal in ("SAT", "GÜÇLÜ SAT")
-                if self._reclaim_side == LONG and long_mu and \
-                        price < self._reclaim_level:
-                    return None
-                if self._reclaim_side == SHORT and short_mu and \
-                        price > self._reclaim_level:
-                    return None
-                # Reclaim oldu ya da yon degisti -> blok temizlenir.
-                self._reclaim_side = ""
-                self._reclaim_level = 0.0
+                if self._bars_held >= self._reclaim_out_bars:
+                    # 12 bar doldu: sart dustu — blok temizlenir.
+                    self._reclaim_side = ""
+                    self._reclaim_level = 0.0
+                    self._reclaim_out_bars = 0
+                else:
+                    long_mu = signal in ("AL", "GÜÇLÜ AL")
+                    short_mu = signal in ("SAT", "GÜÇLÜ SAT")
+                    if self._reclaim_side == LONG and long_mu and \
+                            price < self._reclaim_level:
+                        self._durum_bildir(
+                            f"{signal} bekliyor — stop seviyesi "
+                            f"({_px(self._reclaim_level)}) geri alınmadan "
+                            "aynı yone girilmez (reclaim şartı)", candles)
+                        return None
+                    if self._reclaim_side == SHORT and short_mu and \
+                            price > self._reclaim_level:
+                        self._durum_bildir(
+                            f"{signal} bekliyor — stop seviyesi "
+                            f"({_px(self._reclaim_level)}) geri alınmadan "
+                            "aynı yone girilmez (reclaim şartı)", candles)
+                        return None
+                    # Reclaim oldu ya da yon degisti -> blok temizlenir.
+                    self._reclaim_side = ""
+                    self._reclaim_level = 0.0
+                    self._reclaim_out_bars = 0
             self.last_signal = signal
             kaynak = ("hareketli ortalamalar" if self.mode == "ma_only"
                       else "osilatörler" if self.mode == "osc_only"

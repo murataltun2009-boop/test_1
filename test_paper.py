@@ -2122,6 +2122,34 @@ def t_ppt_yon_degisiminde_bekleme():
 ok.append(test("PPT: yön değişiminde bekleme", t_ppt_yon_degisiminde_bekleme))
 
 
+def t_ppt_reclaim_12_barda_duser():
+    """PPT: stop sonrasi reclaim sarti KALICI degil; 12 bar sonra duser.
+
+    Canli rapor: 2 zararli stop sonrasi "hic pozisyon acmiyor" durumunda
+    kalicilik kilidi kok sebebeydi; simdi sart 12 bar sonrasi dusuyor.
+    """
+    p = _ppt_trader()
+    p.on_price(100.0, _mum(), "5m", "AL")
+    stop = p.position.stop_price
+    # 1) Stop ol -> reclaim sarti kurulur.
+    p.on_price(stop - 0.05, _mum(t0=100), "5m", None)
+    assert p.position is None
+    p._no_entry_until = 0.0
+    # 2) Tek yeni barda sart stilinde ayakta: ayni yon girilmez.
+    p.on_price(stop - 0.2, _mum(t0=101), "5m", "AL")
+    assert p.position is None, "12 bar dolmadan girilmemeli"
+    # 3) Yeni bar sayisi sarti asar: ayni yon girer (kalici kilit yok).
+    for i in range(12):
+        p.on_price(stop - 0.2, _mum(t0=102 + i), "5m", None)
+    p._no_entry_until = 0.0
+    p.on_price(stop - 0.2, _mum(t0=114), "5m", "AL")
+    assert p.position and p.position.side == "LONG", \
+        "reclaim suresi doldu: giris engellenmemeliydi"
+
+ok.append(test("PPT: reclaim şartı 12 barda düşer (kalıcı kilit yok)",
+               t_ppt_reclaim_12_barda_duser))
+
+
 print("-" * 62)
 print(f"{sum(ok)}/{len(ok)} test gecti")
 sys.exit(0 if all(ok) else 1)

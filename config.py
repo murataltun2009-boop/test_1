@@ -296,6 +296,16 @@ PAPER_TREND_MAX_LEV = 20.0       # kaldıraç ust siniri (arayuz degeri ile min)
 # (Kullanıcı kuralı: TÜM algoritmalarda +%2 kâr bankası — önceden %3 idi.)
 PAPER_TREND_LOCK_PCT = 0.02      # kar bankasi (fiyat +%2)
 PAPER_LOCK_COOLDOWN_SEC = 90     # kilit sonrasi bekleme (1,5 dk)
+
+# RECLAIM sarti: stop (veya basabas/likidasyon) sonrasi ayni yone girmek
+# icin stop seviyesinin "geri alinmasi" beklenir. Sart BIRIM BARDIR:
+# 12 bar sonra sart duser (5m'de 1 saat, 4h'de 2 gun). Olcum: hic
+# dusmeyen kalici blok "2 stop sonrasi hic pozisyon acmiyor" sikayetinin
+# kok sebebiydi (PPT 5m canli raporu).
+PAPER_RECLAIM_TTL_BARS = 12
+# Sessiz engeller (reclaim bekliyor / pull filtresi bekliyor) bu aralikta
+# bir kez olay akisina yazilir (spam olmasin).
+PAPER_STATE_LOG_SEC = 300
 # ---- EVRENSEL KURALLAR (tüm modlar, kullanıcı kuralı) ----------------
 # 1) KÂR BANKASI: açık pozisyon KENDİ giriş fiyatına göre +%2 kârda
 #    nakde çevrilir; kâr cüzdanda kalır, sonra sinyal yeniden
