@@ -464,15 +464,20 @@ def create_app(service: MarketService, store: SignalStore,
         # calistigini (eski surecte sessiz yok-sayma tehlikesi) ve
         # simulasyonun duraklatip duraklatmadigini acikla.
         if data.get("mode") == "tk" and paper.mode == "tk":
-            th = "0,678" if "BTC" in paper.symbol else "0,85"
+            if "BTC" in paper.symbol:
+                kar = (f"SECIKICI (tp %{paper.tk_tp*100:.0f} · SL "
+                       f"%{paper.tk_sl*100:.0f} · fib θ 0,44-0,678) — "
+                       f"gunde ~6-8 islem, olcumde 3/3 pencere pozitif")
+            else:
+                kar = (f"YOGUN (tp %{paper.tk_tp*100:.0f} · SL "
+                       f"%{paper.tk_sl*100:.0f} · fib θ 0-0,85 · "
+                       f"fill 0,40) — gunde ~15-25 islem, az az kazanc")
             dur = "" if paper.running else \
                 " · SIMULASYON DURAKLATILMIS — islem acilmasi icin " \
                 "Trade Başla'ya bas"
             service._emit_log(
                 "info", "simulator",
-                f"TİK modu aktif — sembol {paper.symbol} · TP "
-                f"%{paper.tk_tp*100:.0f} · SL %{paper.tk_sl*100:.0f} · "
-                f"tamamen limit dolum (maker) · fib θ≤{th}{dur}")
+                f"TİK modu aktif — sembol {paper.symbol} · {kar}{dur}")
         elif data.get("mode") == "tk" and paper.mode != "tk":
             service._emit_log(
                 "warning", "simulator",

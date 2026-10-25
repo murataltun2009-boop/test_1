@@ -354,6 +354,8 @@ class PaperTrader:
         self.tk_sl = float(getattr(config, "PAPER_TK_SL", 0.003))
         self.tk_window = int(getattr(config, "PAPER_TK_WIN", 60))
         self.tk_theta_max = float(getattr(config, "PAPER_TK_THETA_MAX", 0.85))
+        self.tk_theta_min = float(getattr(
+            config, "PAPER_TK_THETA_MIN", 0.44))
         self.tk_vol_mult = float(getattr(config, "PAPER_TK_VOL_MULT", 1.0))
         self.tk_fill = float(getattr(config, "PAPER_TK_FILL", 0.55))
         self.tk_trend = bool(getattr(config, "PAPER_TK_TREND", False))
@@ -448,20 +450,32 @@ class PaperTrader:
                 self.last_signal = None
             self.mode = mode
         if mode == "tk":
-            # OLCUMLU tik parametreleri (tools/research_tk.py +
-            # tools/research_tk2.py + research_tk3.py pencere testi):
-            #   BTC 5m : tp %3 sl %5 theta<=0.678  -> 3/3 pencere pozitif
-            #   SOL 1m : tp %3 sl %5 theta<=0.85   -> +118$ / 3 pencere
-            # Diger semboller ayni sl/tp, theta 0.85 (SOL etaloni).
-            self.tk_on = True
+            # OLCUMLU tik parametreleri (tools/research_tk4.py +
+            # research_tk5.py yogun-mod taramasi, research_tk3.py
+            # pencere testi). Iki karakter:
+            #   BTC 5m (SECIKICI): tp%3 sl%5 theta .44-.678 fill 0.55
+            #     -> 3/3 pencere pozitif (+150$); YOGUN varyantlarin
+            #     TAMAMI BTC'de olcumle negatif cikti (16 deneme) —
+            #     frekans BTC'de komisyona kayiyor.
+            #   SOL 1m (YOGUN): tp%2 sl%3 theta 0-0.85 fill 0.40
+            #     -> +78$/25sa, ~23 islem/gun, WR %79 (K19/Z5).
+            #     Kullanici hedefi: sik islem + az az kazanc.
             if "BTC" in self.symbol:
+                self.tk_on = True
                 self.tk_theta_max = 0.678
+                self.tk_theta_min = 0.44
+                self.tk_tp = 0.003
+                self.tk_sl = 0.005
+                self.tk_fill = 0.55
+                self.tk_vol_mult = 1.0
             else:
+                self.tk_on = True
                 self.tk_theta_max = 0.85
-            self.tk_tp = 0.003
-            self.tk_sl = 0.005
-            self.tk_fill = 0.55
-            self.tk_vol_mult = 1.0
+                self.tk_theta_min = 0.0        # her leg uygun (yogun)
+                self.tk_tp = 0.002
+                self.tk_sl = 0.003
+                self.tk_fill = 0.40
+                self.tk_vol_mult = 1.0
         if min_hold is not None and 0 <= int(min_hold) <= 500:
             self.min_hold_bars = int(min_hold)
         if risk_pct is not None and 0 < float(risk_pct) <= 0.50:
@@ -2244,7 +2258,8 @@ class PaperTrader:
             return None
         theta = float(th[-1])
         theta_max = getattr(self, "tk_theta_max", 0.85)
-        if not (fib_mod.GOLDEN_LO <= theta <= theta_max):
+        theta_min = getattr(self, "tk_theta_min", fib_mod.GOLDEN_LO)
+        if not (theta_min <= theta <= theta_max):
             return None                       # ne cok yuzeyde ne cok derin
 
         # Talep onayi: salinim hacmi pencere ortalamasinin UZERINDE

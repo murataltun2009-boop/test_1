@@ -768,9 +768,18 @@ hizli ac-kapa motoru. Komisyonu minimuma indirmek icin piyasa emri YOK.
 ### Uretim kararı
 
 * mode="tk" UI'ye eklendi ("TIK — hızlı limit scalper"): configure()
-  SEMBOLE GORE parametre uygular (BTC -> theta<=0.678, digerleri
-  0.85; ortak tp %3 sl %5 fill 0.55). ETH olcumde zayif oldugu icin
-  onerilmez; kullanici sadece secim ekraninda "deney" etiketi gorur.
+  SEMBOLE GORE iki karakter uygular (research_tk4/5 olcumu,
+  2026-10-25 ikinci tur):
+  - BTC 5m SECIKICI: tp %3 sl %5 theta 0.44-0.678 fill 0.55 — 3/3
+    pencere pozitif (+150$). YOGUN varyantlarin TAMAMI BTC'de negatif
+    (16 deneme: thmin 0-0.44, fill 0.3-0.55, tp 0.08-2%): BTC'de
+    frekans komisyona kayiyor; secikici mod korundu.
+  - SOL 1m YOGUN (kullanici hedefi: SIK islem + az az kazanc):
+    tp %2 sl %3 theta 0-0.85 fill 0.40 — bugunku 3x500 pencerede
+    +77.9$ / ~23 islem/gun / WR %79 (K19/Z5). Varyant tp3/sl4 ise
+    +125.6$ (ama ~17/gun)。
+  - Diger (HYPE vb.) ayni YOGUN parametre — UI'de "deney" etiketi;
+    HYPE 3 pencerede -526$ ile ONERILMEZ.
 * Config default'lari olcumle hizalandi: PAPER_TK_TP=0.003,
   PAPER_TK_SL=0.005, PAPER_TK_WIN=60, THETA_MAX=0.85, VOL_MULT=1.0,
   FILL=0.55, TREND=0.
