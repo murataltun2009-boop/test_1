@@ -60,6 +60,7 @@ import numpy as np
 
 import config
 from core import indicators as ind
+from core import fib as fib_mod
 
 AL = "AL"
 SAT = "SAT"
@@ -111,6 +112,10 @@ class MuroConfig:
     trail_always: bool = True  # trailing stop da kilitten once aktif
     flip_exit: bool = True     # yon degisiminde pozisyon kapanir mi
     max_losses: int = 2        # ayni yonde art arda N kayiptan sonra dur
+    # ---- AUTO FIB retracement (trend karar hattina konfur) ----
+    fib_on: bool = True        # altin cebe / uc-banti filtresi
+    fib_window: int = 160      # salinim tarama penceresi (bar)
+    fib_gate: float = 0.15     # uca yakinlik esigi (0..0.5)
 
     @staticmethod
     def from_config() -> "MuroConfig":
@@ -133,6 +138,10 @@ class MuroConfig:
             trail_always=bool(getattr(config, "PAPER_MURO_TRAIL_ALWAYS",
                                       False)),
             max_losses=int(getattr(config, "PAPER_MURO_MAX_LOSSES", 0)),
+            fib_on=bool(getattr(config, "PAPER_MURO_FIB_ON",
+                                getattr(config, "PAPER_FIB_ON", True))),
+            fib_window=int(getattr(config, "PAPER_FIB_WINDOW", 160)),
+            fib_gate=float(getattr(config, "PAPER_FIB_GATE", 0.15)),
         )
 
 
@@ -221,6 +230,11 @@ def actions_trend(o, h, l, c, cfg: Optional[MuroConfig] = None) -> list[str]:
     _, dirn = ind.supertrend(h, l, c, cfg.st_period, cfg.st_mult)
     ema_pull = ind.ema(c, cfg.pull_ema)
     a = ind.atr(h, l, c, cfg.atr_n)
+    # AUTO FIB: salinim + geri cekilme derinligi (causal).
+    fib_theta = None
+    if cfg.fib_on:
+        _, _, _, fib_theta = fib_mod.retrace_series(
+            h, l, c, cfg.fib_window)
     son_giris = -10 ** 6
     for i in range(n):
         d = int(dirn[i])
@@ -239,13 +253,31 @@ def actions_trend(o, h, l, c, cfg: Optional[MuroConfig] = None) -> list[str]:
         e = ema_pull[i]
         if not np.isfinite(e):
             continue
+        theta = float(fib_theta[i]) if fib_theta is not None else np.nan
         if d > 0:
+            # ALTIN CEBE bypass: fiyat %50-61.8 geri cekilmisse "donus
+            # yakalandi" -> yumusak pullback sartini (c <= h[i-1]) atla.
+            if fib_mod.at_golden_pocket(theta):
+                if l[i] <= e + band and c[i] > e and c[i] > c[i - 1]:
+                    acts[i] = AL
+                    son_giris = i
+                continue
+            # Uca yakin devam girisi engeli (tepeye alma).
+            if fib_mod.at_extreme(theta, cfg.fib_gate):
+                continue
             if l[i] <= e + band and c[i] > e and c[i] > c[i - 1]:
                 if cfg.pull_strong and i > 0 and c[i] <= h[i - 1]:
                     continue
                 acts[i] = AL
                 son_giris = i
         else:
+            if fib_mod.at_golden_pocket(theta):
+                if h[i] >= e - band and c[i] < e and c[i] < c[i - 1]:
+                    acts[i] = SAT
+                    son_giris = i
+                continue
+            if fib_mod.at_extreme(theta, cfg.fib_gate):
+                continue
             if h[i] >= e - band and c[i] < e and c[i] < c[i - 1]:
                 if cfg.pull_strong and i > 0 and c[i] >= l[i - 1]:
                     continue

@@ -317,6 +317,10 @@ class TimeframeAnalysis:
     oscillator_scores: np.ndarray
     ma_scores: np.ndarray
 
+    # Osilator etiketi -> bar basina tam seri (izleme modu: grafikte
+    # tiklanan mumin o andaki tum osilator degerleri sunucudan sorulur).
+    osc_series: dict[str, np.ndarray] = None
+
     rows: list[IndicatorValue] = None     # son bar icin osilatör + MA satirlari
     osc_split: int = 0                    # rows icinde osilator sayisi
 
@@ -486,6 +490,8 @@ def analyze(symbol: str, timeframe: str,
         ma_scores=ma_scores,
         rows=rows,
         osc_split=len(osc_codes),
+        osc_series={lab: arr for lab, arr in
+                    zip(OSCILLATOR_LABELS, osc_values)},
     )
 
 

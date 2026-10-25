@@ -110,8 +110,140 @@ if ("serviceWorker" in navigator) {
    "modeNote4",
    "modeThr",
    "wTradeList", "btBox", "btRange", "btBody",
-   "liveBox", "lProfit", "lTrades", "lFee", "lStart", "lStatus"
+   "liveBox", "lProfit", "lTrades", "lFee", "lStart", "lStatus",
+   "pWatch", "watchBox", "wValues", "watchHint"
   ].forEach(function (id) { el[id] = document.getElementById(id); });
+
+  // ==================================================================
+  // IZLEME MODU
+  // ==================================================================
+  // "Izle" canli islemi durdurup grafik inceleme moduna gecer:
+  // grafikte tiklanan mumun tum osilator + MA degerleri sunucudan
+  // (/api/bar_info) sorularak sag panelde gosterilir.
+  var watchOn = false;
+  var watchFetching = 0;      // eski cevaplari elemek icin sira sayaci
+
+  // Skor (-1..1) -> yuzde metni.
+  function pctScore(v) {
+    if (v === null || v === undefined || !isFinite(v)) return "—";
+    var p = v * 100;
+    return (p > 0 ? "+" : "") + p.toFixed(1) + "%";
+  }
+
+  function watchMark(barTimeSec) {
+    // Tiklanan bara kesikli sari dikey cizgi.
+    // DİKKAT: mum serisinin (index 0) markLine'i CANLI FIYAT cizgisi
+    // icin kullaniliyor — burada yildiz serisine (index 9, id: starsBuy)
+    // sparse series arrayiyle mege uygulanir, cakismaz.
+    try {
+      var patch = new Array(9);
+      patch[9] = { id: "starsBuy", markLine: {
+        silent: true, symbol: "none", animation: false,
+        lineStyle: { color: "#f5c542", type: "dashed", width: 1.2 },
+        label: { show: false },
+        data: barTimeSec === null ? [] : [{ xAxis: barTimeSec }]
+      } };
+      chart.setOption({ series: patch });
+    } catch (e) { /* grafik henuz hazir degilse sessiz gec */ }
+  }
+  function watchRow(k, v, cls) {
+    return '<div class="wrow"><span class="wk">' + k + '</span>' +
+           '<span class="wv' + (cls ? " " + cls : "") + '">' + v +
+           "</span></div>";
+  }
+  function watchSection(t) {
+    return '<div class="wsec">' + t + "</div>";
+  }
+  function fnum(v, maxDigits) {
+    if (v === null || v === undefined || !isFinite(Number(v))) return "—";
+    return Number(v).toLocaleString("tr-TR",
+      { minimumFractionDigits: 0, maximumFractionDigits: maxDigits || 3 });
+  }
+  function renderWatch(ts) {
+    var mySeq = ++watchFetching;
+    fetch("/api/bar_info?tf=" + encodeURIComponent(state.tf) +
+          "&ts=" + encodeURIComponent(ts)).then(function (r) {
+      return r.json();
+    }).then(function (j) {
+      if (mySeq !== watchFetching || !j || !j.ok) return;
+      var html = "";
+      var olusuyor = state.candles.length &&
+        j.index >= state.candles.length - 1;
+      html += watchSection("MUM · " +
+        new Date(j.time).toLocaleString("tr-TR") +
+        (olusuyor ? "  (oluşuyor)" : ""));
+      html += watchRow("Açılış", fmt(j.o)) + watchRow("En yüksek", fmt(j.h)) +
+              watchRow("En düşük", fmt(j.l)) + watchRow("Kapanış", fmt(j.c)) +
+              watchRow("Hacim", fmtVol(j.v));
+      html += watchSection("SKORLAR");
+      html += watchRow("Bileşik", pctScore(j.composite),
+        j.composite >= 0 ? "pos" : "neg");
+      html += watchRow("Osilatör ortalama", pctScore(j.osc_score),
+        j.osc_score >= 0 ? "pos" : "neg");
+      html += watchRow("Ortalamalar ortalama", pctScore(j.ma_score),
+        j.ma_score >= 0 ? "pos" : "neg");
+      html += watchRow("Bileşik kararı", j.signal);
+      html += watchRow("Algoritma kararı (" + j.mode + ")", j.mode_signal);
+      html += watchSection("OSİLATÖRLER");
+      j.osc && Object.keys(j.osc).forEach(function (k2) {
+        html += watchRow(k2, fnum(j.osc[k2], 4));
+      });
+      html += watchSection("HAREKETLİ ORTALAMALAR");
+      j.ma && Object.keys(j.ma).forEach(function (k2) {
+        var v2 = j.ma[k2];
+        var cls = "";
+        if (v2 !== null && j.c !== null) {
+          cls = Number(v2) < Number(j.c) ? "pos" : "neg";
+        }
+        html += watchRow(k2, fnum(v2, 4), cls);
+      });
+      if (j.fib_leg && j.fib_theta !== null) {
+        html += watchSection("AUTO FIB · " +
+          (j.fib_leg > 0 ? "yukarı salınım" : "aşağı salınım") +
+          " · geri çekilme %" + (Number(j.fib_theta) * 100).toFixed(1));
+        j.fib && Object.keys(j.fib).forEach(function (lvl) {
+          html += watchRow("Fib %" + (Number(lvl) * 100).toFixed(1),
+            fmt(j.fib[lvl]), "neg");
+        });
+      }
+      el.wValues.innerHTML = html;
+      el.watchHint.style.display = "none";
+    }).catch(function () { /* sessiz: eski tumpan gosterilir */ });
+  }
+  function chartClickToBar(x) {
+    // ECharts piksel -> bar zamani. X ekseni SANIYE cinsinden deger
+    // tutar (fmtAxis t*1000 kullanir), mum zamani da c[0] SANIYE.
+    try {
+      var pt = chart.convertFromPixel({ seriesIndex: 0 }, [x, 0]);
+      if (!pt || !isFinite(pt[0])) return null;
+      var best = null, bestD = null;
+      for (var i = 0; i < state.candles.length; i++) {
+        var dd = Math.abs(state.candles[i][0] - pt[0]);
+        if (bestD === null || dd < bestD) { bestD = dd; best = i; }
+      }
+      return best === null ? null : state.candles[best][0];
+    } catch (e) { return null; }
+  }
+  if (el.pWatch) {
+    el.pWatch.addEventListener("click", function () {
+      watchOn = !watchOn;
+      if (watchOn) {
+        el.pWatch.textContent = "◉ İzlemede";
+        el.pWatch.classList.add("on");
+        el.watchBox.classList.add("on");
+        el.watchBox.style.display = "";
+        // CANLI ISLEMI DURDUR (kullanicinin istegi).
+        paperCall("/api/paper/stop");
+      } else {
+        el.pWatch.textContent = "👁 İzle";
+        el.pWatch.classList.remove("on");
+        el.watchBox.classList.remove("on");
+        el.watchBox.style.display = "none";
+        el.wValues.innerHTML = "";
+        watchMark(null);
+      }
+    });
+  }
 
   // ==================================================================
   // Bicimlendirme
@@ -183,6 +315,19 @@ if ("serviceWorker" in navigator) {
   // ==================================================================
   var chart = echarts.init(el.chart, null, { renderer: "canvas" });
   chart.setOption(buildOption());
+
+  // IZLEME: grafikte tiklanan mumu yakala (mouse/touch). getZr tum
+  // grafige uygular; convertFromPixel pikseli x-ekseni degerine cevirir
+  // (x degeri SANIYE — mum zamani ile eslesir).
+  try {
+    chart.getZr().on("click", function (params) {
+      if (!watchOn) return;
+      var t = chartClickToBar(params.offsetX);
+      if (t === null || t === undefined) return;
+      watchMark(t);
+      renderWatch(t * 1000);
+    });
+  } catch (e) { /* ECharts henuz yuklenmediyse yoksay */ }
 
   function buildOption() {
     var maSeries = MA_DEF.map(function (m) {

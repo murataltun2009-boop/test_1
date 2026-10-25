@@ -19,6 +19,8 @@ import time
 from datetime import datetime
 from typing import Any, Optional
 
+import numpy as np
+
 import config
 from core.analysis import Signal, TimeframeAnalysis, analyze, format_number
 from core.binance_client import BinanceFuturesClient, Candle, Trade
@@ -107,6 +109,8 @@ class MarketService:
         self._pushed_versions: dict[str, int] = {}
         # Mod bazlı grafik yıldızı serisi cache'i: (cache_key, Signal listesi)
         self._mode_series_cache: dict[str, tuple] = {}
+        # AUTO FIB retracement serisi cache'i: (versiyon, leg, hi, lo, theta)
+        self._fib_cache: dict[str, tuple] = {}
 
         self.events: queue.Queue = queue.Queue()
         # Anlik fiyat tikleri (her islem). Web arayuzu bunu dogrudan
@@ -135,6 +139,7 @@ class MarketService:
         surumu 1 artirilir, sonra snapshot zorla gonderilir.
         """
         self._mode_series_cache.clear()
+        self._fib_cache.clear()
         with self._lock:
             for tf in list(self._versions):
                 self._versions[tf] = self._versions.get(tf, 0) + 1
@@ -822,6 +827,107 @@ class MarketService:
         self._mode_series_cache[tf] = (key, series)
         return series
 
+    # ------------------------------------------------------------------
+    # IZLEME MODU: tiklanan mumin tum gosterge degerleri
+    # ------------------------------------------------------------------
+    def bar_info(self, tf: str, ts_ms: int) -> Optional[dict[str, Any]]:
+        """
+        Izleme modu sorgusu: grafikte tiklanan mum (acilis zamanı
+        ts_ms) icin TUM gosterge degerlerini dondurur.
+
+        Donen alanlar:
+          o/h/l/c/v        : mum degerleri
+          composite/osc/ma : bilesik + osilator + MA skorlari (-1..1)
+          signal           : bilesik skor sinyali (tum modlar)
+          mode_signal      : AKTIF ALGORITMANIN o bardaki karari
+          osc              : 11 osilatorun o bardaki DEGERI
+          ma               : 15 hareketli ortalamanin o bardaki DEGERI
+          fib              : AUTO FIB retracement seviyeleri + salinim
+                             yonu ve geri cekilme derinligi (theta)
+
+        Sinyaller ve seriler gecmise kapatik, bar bazli hesaplandigindan
+        gecmis mum icin degerler NEDENSELDIR (gelecege bakmaz).
+        """
+        with self._lock:
+            res = self._analyses.get(tf)
+            buf = list(self._buffers.get(tf) or [])
+            version = self._versions.get(tf, 0)
+            mode = self.paper.mode if self.paper is not None else "range"
+        if res is None or not buf:
+            return None
+
+        idx = None
+        for i in range(res.open_times.size):
+            if int(res.open_times[i]) == int(ts_ms):
+                idx = i
+                break
+        if idx is None:
+            return None
+
+        def _f(arr) -> Optional[float]:
+            v = float(arr[idx]) if arr is not None and arr.size > idx \
+                else float("nan")
+            return v if np.isfinite(v) else None
+
+        osc = {}
+        if res.osc_series:
+            for lab, arr in res.osc_series.items():
+                osc[lab] = _f(arr)
+        ma = {}
+        for lab, arr in res.ma_series.items():
+            ma[lab] = _f(arr)
+
+        # Akif algoritmanin o bardaki karari (cache'li mod serisi).
+        try:
+            seri = self.mode_signal_series(tf)
+            mode_sig = str(seri[idx].value) if idx < len(seri) else "NÖTR"
+        except Exception:      # noqa: BLE001
+            mode_sig = "NÖTR"
+
+        # AUTO FIB seviyeleri (versiyon bazli cache).
+        fib_out: dict = {}
+        leg_i = 0
+        theta_v: Optional[float] = None
+        key = version
+        cached = self._fib_cache.get(tf)
+        if cached is None or cached[0] != key:
+            from core import fib as fib_mod
+            leg, hi_a, lo_a, th_a = fib_mod.retrace_series(
+                res.h, res.l, res.c,
+                int(getattr(config, "PAPER_FIB_WINDOW", 160)))
+            self._fib_cache[tf] = (key, leg, hi_a, lo_a, th_a)
+            cached = self._fib_cache[tf]
+        _, leg, hi_a, lo_a, th_a = cached
+        leg_i = int(leg[idx])
+        if np.isfinite(th_a[idx]):
+            theta_v = float(th_a[idx])
+            from core import fib as fib_mod
+            fib_out = fib_mod.fib_levels(leg_i, float(hi_a[idx]),
+                                         float(lo_a[idx]))
+
+        return {
+            "symbol": res.symbol,
+            "tf": tf,
+            "mode": mode,
+            "time": int(res.open_times[idx]),
+            "close_time": int(res.close_times[idx]) if
+            res.close_times.size > idx else None,
+            "index": idx,
+            "o": _f(res.o), "h": _f(res.h), "l": _f(res.l),
+            "c": _f(res.c), "v": _f(res.v),
+            "composite": _f(res.composite),
+            "osc_score": _f(res.oscillator_scores),
+            "ma_score": _f(res.ma_scores),
+            "signal": str(res.signals[idx].value) if
+            idx < len(res.signals) else "NÖTR",
+            "mode_signal": mode_sig,
+            "osc": osc,
+            "ma": ma,
+            "fib": {k: round(v, 6) for k, v in fib_out.items()},
+            "fib_leg": leg_i,
+            "fib_theta": theta_v,
+        }
+
     def _mode_cache_key(self, mode: str, version: int) -> tuple:
         """Seri cache anahtari: analiz versiyonu + mod + ilgili parametreler."""
         parts: list = [version, mode,
@@ -939,6 +1045,7 @@ class MarketService:
             self._last_record_time.clear()
             self._dirty.clear()
             self._mode_series_cache.clear()
+            self._fib_cache.clear()
         if self.paper is not None:
             self.paper.reset(symbol)
 

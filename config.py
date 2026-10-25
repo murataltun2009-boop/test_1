@@ -306,6 +306,23 @@ PAPER_RECLAIM_TTL_BARS = 12
 # Sessiz engeller (reclaim bekliyor / pull filtresi bekliyor) bu aralikta
 # bir kez olay akisina yazilir (spam olmasin).
 PAPER_STATE_LOG_SEC = 300
+
+# ---- AUTO FIB RETRACEMENT (trend + muro, hibrit donus yakalama) --------
+# core/fib.py: son salinim (yuzde tabanli degil, swing tabanli) hesaplanir.
+# * ALTIN CEBE (0.5-0.618) gelinince yon uyumlu ise GUCLU sinyal uretilir
+#   (optimum nokta filtresini atlar) -> "donus yerini yakala".
+# * SALINIM UCUNA cok yakin (FIB_GATE payindan az mesafe) devam girisi
+#   engellenir (tepe alma/dip satma).
+#
+# Olcum (tools/research_fib.py, BTC/ETH/SOL 5m x1500 + BTC 1h x1500):
+#   TREND fib acik  : toplam -427$ vs kapali -402$ -> NET OLUMSUZ (1h
+#                     +0.52% -> -1.59%). Trend filtresi KAPALI default.
+#   MURO  fib acik  : toplam -27$ vs kapali -56$  -> NET POZITIF (1h
+#                     -4.15% -> -1.57%). MURO'da fibonacci ACIK.
+PAPER_FIB_ON = False
+PAPER_MURO_FIB_ON = True
+PAPER_FIB_WINDOW = 160           # son N bar icinde salinim uclari taranir
+PAPER_FIB_GATE = 0.15            # uca yakinlik esigi (0..0.5)
 # ---- EVRENSEL KURALLAR (tüm modlar, kullanıcı kuralı) ----------------
 # 1) KÂR BANKASI: açık pozisyon KENDİ giriş fiyatına göre +%2 kârda
 #    nakde çevrilir; kâr cüzdanda kalır, sonra sinyal yeniden

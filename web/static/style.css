@@ -274,6 +274,20 @@ select.coin:disabled{opacity:.5;cursor:progress}
   font-size:10px;color:#6f8298;font-style:italic}
 .lstat.on{color:#7dd3a0;font-style:normal}
 
+/* --- IZLEME MODU paneli -------------------------------------------- */
+/* "Izle" butonu canli islemi duraklatir; grafikte tiklanan mumun TUM
+   gosterge degerleri burada listelenir. */
+.watch-hint{font-size:10px;color:#6f8298;font-style:italic;margin-bottom:5px}
+.wrow{display:flex;justify-content:space-between;align-items:baseline;
+  font-size:10.5px;padding:1px 0}
+.wk{color:var(--muted)}
+.wv{font-family:var(--mono);color:#dfe8f1}
+.wv.pos{color:#4ade80}
+.wv.neg{color:#ff6b6b}
+.wsec{font-size:9.5px;font-weight:800;letter-spacing:.5px;color:#8fb3d9;
+  border-top:1px solid #16202c;margin-top:4px;padding-top:3px}
+.wbtn.on{background:#1f5a6b;color:#e0f7ff;font-weight:700}
+
 .btn.live{background:#a4471f;color:#fff3e8;font-weight:700}
 .btn.live:hover{background:#c85a28}
 

@@ -2150,6 +2150,170 @@ ok.append(test("PPT: reclaim şartı 12 barda düşer (kalıcı kilit yok)",
                t_ppt_reclaim_12_barda_duser))
 
 
+# ======================================================================
+# AUTO FIB RETRACEMENT (trend + muro, hibrit donus yakalama)
+# ======================================================================
+def t_fib_retrace_causal():
+    """fib.retrace_series: salinim yonu + geri cekilme derinligi dogru.
+
+    Yukari salinim (dip once): theta=0 tepe uzerindeyken, 0.618 altin
+    oran. Seri NEDENSEL: her bar yalnizca gecmis + simdiki bare bakar.
+    """
+    from core import fib
+    n = 60
+    c = np.linspace(100.0, 160.0, n)
+    h = c + 0.5
+    l = c - 0.5
+    leg, hi, lo, th = fib.retrace_series(h, l, c, window=160)
+    assert leg[-1] == 1, f"yukari salinim beklenirdi: {leg[-1]}"
+    assert abs(hi[-1] - 160.5) < 1e-9, f"tepe 160.5 olmali: {hi[-1]}"
+    assert abs(lo[-1] - 99.5) < 1e-9, f"dip 99.5 olmali: {lo[-1]}"
+    assert th[-1] < 0.1, f"ucta theta kucuk olmali: {th[-1]}"
+
+    # Ters: asagi salinim (tepe once, dip en son).
+    c2 = np.linspace(160.0, 100.0, n)
+    leg2, _, _, th2 = fib.retrace_series(c2 + 0.5, c2 - 0.5, c2, window=160)
+    assert leg2[-1] == -1, f"asagi salinim beklenirdi: {leg2[-1]}"
+    assert th2[-1] < 0.1
+
+    # GERI CEKILME: yukarida 61 bar dip-> tepe sonrasi 0.618 pullback.
+    c3 = np.concatenate([np.linspace(100, 200, 40),
+                         np.linspace(200, 200 - 0.618 * 100, 21)])
+    leg3, hi3, _, th3 = fib.retrace_series(c3 + 0.5, c3 - 0.5, c3, window=160)
+    assert leg3[-1] == 1
+    assert fib.at_golden_pocket(th3[-1]), \
+        f"0.618 geri cekilme altin cebe girmeli: {th3[-1]}"
+    # Ucta (tepe cok yakin) devam girişi engelinde yakalanir.
+    assert fib.at_extreme(0.05, 0.15), "uc yakinlik yakalanmali"
+    assert not fib.at_extreme(0.5, 0.15), "orta bant engellenmemeli"
+
+
+ok.append(test("FIB: nedensel salinim + geri cekilme derinligi",
+               t_fib_retrace_causal))
+
+
+def t_fib_trend_gate():
+    """trend.decide_series fib gate'i: altın cebe GUCLU (bypass),
+    uca yakin devama engel — pull filtresi kapaliyken bile fark eder."""
+    from core import trend
+    n = 70
+    # Yukari salinim: 100 -> 170, sonra 0.55 geri cekilme (altin cebe).
+    # Wick 8 birim: ATR genis; supertrend yonu geri cekilmeyi takip etmez
+    # (dir +1 asagi gecmez) — boylece altin cebe bypass izole edilir.
+    yukari = np.concatenate([np.linspace(100, 170, 50),
+                             np.linspace(170, 170 - 0.55 * 70, 20)])
+    h = yukari + 8.0
+    l = yukari - 8.0
+
+    karar_eski = trend.FIB_ON
+    try:
+        trend.FIB_ON = True   # olcum: trend fib kapali default; test izole
+        karar = trend.decide_series(h, l, yukari, pull_atr=0)
+        assert karar[-1] == "GÜÇLÜ AL", \
+            f"altin cebe GUCLU AL uretmeliydi: {karar[-1]}"
+    finally:
+        trend.FIB_ON = karar_eski
+
+    # Ayni veri fib KAPALI: normal AL uretilirdi (bypass etkisi izole).
+    eski = trend.FIB_ON
+    try:
+        trend.FIB_ON = False
+        karar2 = trend.decide_series(h, l, yukari, pull_atr=0)
+        assert karar2[-1] == "AL", \
+            f"fib kapaliyken AL beklenirdi: {karar2[-1]}"
+    finally:
+        trend.FIB_ON = eski
+
+    # UC ENGEL: mum cok yakin (theta ~ 0.1) satiri devami engellenir.
+    tepe = np.concatenate([np.linspace(100, 170, 50),
+                           np.linspace(170, 169.5, 20)])
+    trend.FIB_ON = True
+    karar3 = trend.decide_series(tepe + 8.0, tepe - 8.0, tepe, pull_atr=0)
+    assert karar3[-1] == "", f"uca yakin devam girisi engellenmeliydi: " \
+                             f"'{karar3[-1]}'"
+
+
+ok.append(test("FIB+trend: altın cebe GÜÇLÜ bypass + uçta engel",
+               t_fib_trend_gate))
+
+
+def t_muro_fib_gate():
+    """muro.actions_trend fib gate: uca yakin giris bos; fib etkisi
+    veriyi degistirir (pull_strong kapali ki test izole olsun)."""
+    from core import muro, fib as fib_mod
+    n, per, amp, wick = 240, 14, 10.0, 2.0
+    t = np.arange(n, dtype=float)
+    c = 100.0 + amp * np.sin(t / per)
+    h = c + wick
+    l = c - wick
+    o = c.copy()
+    cfg_on = muro.MuroConfig(pull_strong=False)
+    cfg_off = muro.MuroConfig(fib_on=False, pull_strong=False)
+    acts_on = muro.actions_trend(o, h, l, c, cfg_on)
+    acts_off = muro.actions_trend(o, h, l, c, cfg_off)
+    # fib KAPALI seride AL/SAT uretilmeli (test gercekten isliyor).
+    off_giris = [a for a in acts_off if a in ("AL", "SAT")]
+    assert off_giris, "fib kapali seride hic giris uretilmedi"
+    # Fib etkisi: dalgalanan veride en az bir bar farkli karsilik gelir.
+    fark = [i for i in range(n) if acts_on[i] != acts_off[i]]
+    assert fark, "fib tamamen etkisiz kalmasin (test gercek degil)"
+    # Fib acikken uca yakin barlarda giris olmamali.
+    _, _, _, th = fib_mod.retrace_series(h, l, c, cfg_on.fib_window)
+    for i in range(n):
+        if acts_on[i] in ("AL", "SAT"):
+            assert not fib_mod.at_extreme(float(th[i]), cfg_on.fib_gate), \
+                f"bar {i}: uc-banti engelli giris uretildi"
+
+
+ok.append(test("FIB+muro: uçta engel + filtrenin etkisi", t_muro_fib_gate))
+
+
+def t_bar_info_izleme():
+    """service.bar_info: 11 osilator + 15 MA + skorlar + fib paneli."""
+    import config as cfg_mod
+    from core.service import MarketService
+    from core.analysis import analyze
+    from core.binance_client import Candle
+
+    n = 90
+    c = np.linspace(100.0, 130.0, n)
+    o = c - 0.4
+    h = c + 0.6
+    l = c - 0.8
+    v = np.full(n, 10.0)
+    ot = (np.arange(n) * 3600000).astype(np.int64)
+    ct = ot + 3599999
+    res = analyze("BTCUSDT", "1h", ot, o, h, l, c, v, ct)
+
+    mums = [Candle(open_time=int(ot[i]), open=float(o[i]), high=float(h[i]),
+                   low=float(l[i]), close=float(c[i]), volume=float(v[i]),
+                   close_time=int(ct[i]), closed=True) for i in range(n)]
+    svc = MarketService(cfg_mod.Settings(), None)
+    svc._analyses["1h"] = res
+    svc._buffers["1h"] = mums
+    svc._versions["1h"] = 1
+
+    bilgi = svc.bar_info("1h", int(ot[75]))
+    assert bilgi is not None, "bar_info döndüremedi"
+    assert bilgi["index"] == 75, f"bar indeksi: {bilgi['index']}"
+    assert len(bilgi["osc"]) == 11, f"osilator adedi: {len(bilgi['osc'])}"
+    assert len(bilgi["ma"]) == 15, f"MA adedi: {len(bilgi['ma'])}"
+    assert abs(bilgi["composite"] - float(res.composite[75])) < 1e-9
+    assert bilgi["signal"] in ("AL", "SAT", "NÖTR", "GÜÇLÜ AL", "GÜÇLÜ SAT")
+    assert bilgi["mode"] == "range"
+    # fib alanlari
+    assert bilgi["fib_leg"] in (-1, 0, 1)
+    if bilgi["fib_leg"]:
+        assert bilgi["fib"], "salinim varsa fib seviyeleri donmeli"
+        assert bilgi["fib_theta"] is not None
+    # Fib serisi cache'lenir ve parametre yenilemesinde temizlenir.
+    assert "1h" in svc._fib_cache
+
+
+ok.append(test("İZLEME: bar_info 11 osilatör + 15 MA + fib döndürür",
+               t_bar_info_izleme))
+
+
 print("-" * 62)
 print(f"{sum(ok)}/{len(ok)} test gecti")
 sys.exit(0 if all(ok) else 1)

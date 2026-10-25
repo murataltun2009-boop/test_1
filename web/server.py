@@ -496,6 +496,29 @@ def create_app(service: MarketService, store: SignalStore,
         return JSONResponse({"ok": True, "symbol": symbol})
 
     # ------------------------------------------------------------------
+    # IZLEME MODU: grafikte tiklanan mumin tum gosterge degerleri.
+    # GET /api/bar_info?tf=4h&ts=1730000000000  (ts = acilis zamanı ms)
+    # ------------------------------------------------------------------
+    async def api_bar_info(request: Request) -> Response:
+        tf = str(request.query_params.get("tf", "")).strip()
+        ts = str(request.query_params.get("ts", "")).strip()
+        if tf not in service.settings.timeframes:
+            return JSONResponse({"ok": False, "error": "geçersiz dilim"},
+                                status_code=400)
+        try:
+            ts_ms = int(float(ts))
+        except ValueError:
+            return JSONResponse({"ok": False, "error": "geçersiz zaman"},
+                                status_code=400)
+        info = await asyncio.to_thread(service.bar_info, tf, ts_ms)
+        if info is None:
+            return JSONResponse({"ok": False, "error": "mum bulunamadı"},
+                                status_code=404)
+        return JSONResponse(
+            dict(info, ok=True),
+            headers={"Cache-Control": "no-store"})
+
+    # ------------------------------------------------------------------
     async def ws_endpoint(ws: WebSocket) -> None:
         await ws.accept()
         hub.bind_loop(asyncio.get_running_loop())
@@ -637,6 +660,7 @@ def create_app(service: MarketService, store: SignalStore,
         Route("/api/paper/reset", api_paper_reset, methods=["POST"]),
         Route("/api/paper/config", api_paper_config, methods=["POST"]),
         Route("/api/symbol", api_symbol, methods=["POST"]),
+        Route("/api/bar_info", api_bar_info, methods=["GET"]),
         Route("/static/{name}", static_file),
         Route("/sw.js", service_worker),
         Route("/manifest.webmanifest", manifest),

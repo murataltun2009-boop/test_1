@@ -31,10 +31,17 @@ import numpy as np
 
 import config
 from core import indicators as ind
+from core import fib as fib_mod
 
 AL = "AL"
 SAT = "SAT"
 NOTR = "NÖTR"
+
+# AUTO FIB RETRACEMENT (kullanici isteği: "nokta atişi dönüş yerlerini
+# yakalasın, hibrit çalışsin"). Parametreler config'ten okunur.
+FIB_ON = bool(config.PAPER_FIB_ON)
+FIB_WINDOW = int(config.PAPER_FIB_WINDOW)
+FIB_GATE = float(config.PAPER_FIB_GATE)   # ucun bu payindan yakini engel
 
 
 def numeric_series(high, low, close,
@@ -95,10 +102,17 @@ def decide_series(high, low, close, strong=None, period: int = 10,
                  (tepede alıp hemen düşmek en sık zarar sebebi).
        * SHORT : fiyat son pull_bars barın dibine çok yakınsa GİRİLMEZ.
        Ölçü ATR cinsinden mesafe.
-    3. GÜÇLÜ SİNYAL (strong dizisi: +1 GÜÇLÜ AL, −1 GÜÇLÜ SAT, 0 yok):
+    3. AUTO FIB (fib=True): son salınıma göre fibonacci geri çekilme
+       derinliği (core/fib.py) hesaplanır:
+       * GÜÇLÜ BYPASS: fiyat ALTIN CEBE geldi mi (0.5-0.618)? Yön uygunsa
+         optimum nokta filtresini bile ATLAYARAK GÜÇLÜ girilir (dönüş
+         yakalama — kullanıcı isteği: "nokta atışı dönüş yerleri").
+       * UÇA YAKIN DEVAM ENGELİ: salınımin ucuna (%15'ten az mesafe her
+         iki yonde) devam girişi engellenir.
+    4. GÜÇLÜ SİNYAL (strong dizisi: +1 GÜÇLÜ AL, −1 GÜÇLÜ SAT, 0 yok):
        optimum nokta beklense bile GÜÇLÜ AL/GÜÇLÜ SAT gelirse HEMEN girilir.
 
-    strong dizisi verilmemişse sadece yön + optimum nokta uygulanır.
+    strong dizisi verilmemişse sadece yön + optimum nokta + fib uygulanır.
     """
     h = np.asarray(high, dtype=float)
     l = np.asarray(low, dtype=float)
@@ -125,6 +139,12 @@ def decide_series(high, low, close, strong=None, period: int = 10,
             roll_hi[i] = float(seg_h.max())
             roll_lo[i] = float(seg_l.min())
 
+    # AUTO FIB retracement (causal)
+    fib_leg, _, _, fib_theta = (None, None, None, None)
+    if FIB_ON:
+        fib_leg, _, _, fib_theta = fib_mod.retrace_series(
+            h, l, c, FIB_WINDOW)
+
     for i in range(n):
         d = int(dirn[i])
         if d == 0:
@@ -134,7 +154,18 @@ def decide_series(high, low, close, strong=None, period: int = 10,
             st = int(strong[i])
         else:
             st = 0
+        theta = (float(fib_theta[i])
+                 if fib_theta is not None and np.isfinite(fib_theta[i])
+                 else np.nan)
+
         if d > 0:
+            # AUTO FIB: altin cebe geldiyse "dönüş yakalandı" -> GÜÇLÜ
+            if fib_mod.at_golden_pocket(theta):
+                out[i] = "GÜÇLÜ AL"
+                continue
+            # Uga yakin devam girişi: tepe almaya biçilmez.
+            if fib_mod.at_extreme(theta, FIB_GATE) and st <= 0:
+                continue
             if st > 0:
                 out[i] = "GÜÇLÜ AL"
                 continue
@@ -143,6 +174,11 @@ def decide_series(high, low, close, strong=None, period: int = 10,
                     continue          # tepede: bekle
             out[i] = "AL"
         else:
+            if fib_mod.at_golden_pocket(theta):
+                out[i] = "GÜÇLÜ SAT"
+                continue
+            if fib_mod.at_extreme(theta, FIB_GATE) and st <= 0:
+                continue
             if st < 0:
                 out[i] = "GÜÇLÜ SAT"
                 continue

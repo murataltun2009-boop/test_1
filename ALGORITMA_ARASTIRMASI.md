@@ -513,3 +513,78 @@ PPT "5 dk" rafinajidir ve Supertrend taban cizgisine karsi net olarak
 daha iyi (ayni pencerede ST(10,3): BTC -%9.7 / ETH -%2.0 / SOL -%3.4;
 PPT(P=10,m=3.5,pull=1.0): BTC +%0.5..%1.8 / SOL +%0.1..%0.8) ama
 garantili kar SISTEMI degil; 1h ust dilimde klasik Supertrend daha iyi.
+
+
+## AUTO FIB RETRACEMENT (trend + muro; hibrit dönüş yakalama)
+
+Kullanıcı isteği: "nokta atışı dönüş yerlerini yakalayabilsin, hibrit
+çalışsın." Uygulama: core/fib.py — her bar için son `window=160` bara
+bakıp salınım uçlarını (argmax/argmin) ve yönünü bulur; geri çekilme
+derinliğini theta olarak yazar (0 = uca dokunmuş, 0.618 = altın oran).
+Nedenseldir: pencere yalnızca geçmiş + şimdiki barı görür (gelecek yok).
+
+Karar etkisi (iki kural):
+  * ALTIN CEBE BYPASS: theta 0.44 - 0.678 bandına gelince yön uygunsa
+    GÜÇLÜ sinyal; trend.decide_series'de optimum nokta (pull) filtresini
+    atlar, muro.actions_trend'de pull_strong şartını atlar.
+  * UÇ ENGELİ: theta < 0.15 veya > 0.85 (salınım ucunun %15'ine daha
+    yakın) DEVAM girişi engellenir — tepe alma / dip satmaya karşı.
+
+Ölçüm (tools/research_fib.py; motor backtest'in kendisi; BTC/ETH/SOL
+5m x1500 (~5 gün) + BTC 1h x1500 (~2 ay)):
+
+  TREND fib=KAPALI pull=0.0: BTC -121.7$ | fib AÇIK: -113.1$  (+1.0 puan)
+                             ETH -78.5$  |        -81.5$ (-0.3 puan)
+                             SOL -58.6$  |        -53.1$ (+0.6 puan)
+                             BTC 1h +5.2$|        -15.9$ (NET BOZULUR)
+  TREND pull=1.0:   BTC -47.8$/-57.5$ | ETH -48.5$/-96.5$ (NET BOZULUR)
+                    SOL -27.8$/-48.2$ | BTC 1h -53.3$/-42.3$ (+1.1)
+  TOPLAM: kapalı -402$ vs açık -427$ -> trend'de fib NET OLUMSUZ.
+
+  MURO fib=KAPALI: BTC -4.8$ | ETH +0.7$ | SOL -10.1$ | BTC 1h -41.5$
+  MURO fib=AÇIK:   BTC -4.8$ | ETH -4.9$ | SOL  -7.1$ | BTC 1h -15.8$
+  TOPLAM: kapalı -55.6$ vs açık -27.4$ -> muro'da fib NET POZİTİF.
+
+Karar:
+  * MURO: fib AÇIK (PAPER_MURO_FIB_ON = True). 1h diliminde bariz iyi
+    (-4.15% -> -1.57%); "dönüş yakalama" hedefine doğrudan hizmet eder.
+  * TREND: fib KAPALI (PAPER_FIB_ON = False). Özellikle 1h penceresinde
+    net bozucu; klasik Supertrend güçlü. Kod parametrik: config.py'de
+    PAPER_FIB_ON=True ile her an açılabilir.
+  * PPT (PP-Supertrend, ppst.py) kendi karar hattını kullanır; fib
+    entegre EDİLMEDİ (ölçülen optimum parametre setini bozmamak için).
+
+Testler: fib nedensel salınım, trend golden-pocket bypass + uç engel,
+muro gate, bar_info izleme paneli -> 86/86.
+
+
+## İZLEME MODU (grafikte nokta atışı inceleme)
+
+Kullanıcı isteği: "izleme butonuna tıklayınca canlı trade durdurulsun;
+grafikte tıkladığım noktanın osilatör ve hareketli ortalamalardaki tüm
+değerleri görüntülensin."
+
+Uygulama:
+  * "👁 İzle" butonu: bir tıklamada /api/paper/stop ile canlı simülasyon
+    durdurulur ve izleme moduna geçilir (grafik ve analiz ÇALIŞMAYA
+    DEVAM eder; yalnızca işlem motoru durur). Tekrar tıklama kapatır.
+  * Grafikte (mobil dokunuş dahil) bir muma tıklayınca:
+      - sunucuya GET /api/bar_info?tf=&ts= sorulur (bar açılış zamanı),
+      - o bardaki DEĞERLER listelenir:
+          OHLC + hacim,
+          bileşik + osilatör + MA skorları, bileşik kararı,
+          AKTİF ALGORİTMANIN o bardaki kararı (mode_signal),
+          11 osilatör (RSI, Stoch, CCI, ADX, AO, Momentum, MACD,
+          Stoch RSI, Williams %R, Bull-Bear, UO),
+          15 hareketli ortalama (EMA/SMA 5..200, Ichimoku, VWMA, HMA),
+          AUTO FIB seviyeleri + salınım yönü + theta.
+      - tıklanan bara sarı kesikli dikey çizgi konur.
+  * Sunucu tarafı: analysis.py osc_series (11 seri bar bazlı) ve
+    service.bar_info() (fib serisi versiyon bazlı cache). Değerler bar
+    bazlı hesaplandığından geçmiş mum için de NEDENSELDİR.
+
+Notlar:
+  * markLine çakışMASI: mum serisinin markLine'ı CANLI FİYAT çizgisi
+    için kullanılıyor; izleme çizgisi yıldız serisine (index 9,
+    id=starsBuy) sparse series patch'iyle bağlanır (birbirini silmez).
+  * sw VERSION ta-v11 -> ta-v12 (PWA ön bellek yenilenmesi).
