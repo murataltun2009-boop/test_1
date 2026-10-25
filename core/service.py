@@ -819,6 +819,16 @@ class MarketService:
         else:
             series = list(res.signals)
 
+        # AUTO FIB (skor tabanli modlar): altın cebe GÜÇLÜ + uç engel.
+        # Geriye dönuk test AYNI kurali uygular (paper._build_signal_series).
+        if mode in ("ma_only", "osc_only", "signal", "signal_long",
+                    "signal_exit") and self.paper is not None \
+                and getattr(self.paper, "fib_score_on", False):
+            from core.fib import gate_signals
+            series = gate_signals(
+                series, res.h, res.l, res.c, True,
+                self.paper.fib_window, self.paper.fib_gate)
+
         n = len(res.signals)
         if n and len(series) != n:
             # Hizalama bozuksa cevreleyen emniyet: bilesik seri göster.

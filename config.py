@@ -321,6 +321,17 @@ PAPER_STATE_LOG_SEC = 300
 #                     -4.15% -> -1.57%). MURO'da fibonacci ACIK.
 PAPER_FIB_ON = False
 PAPER_MURO_FIB_ON = True
+# Skor tabanli modlar (sadece MA / sadece osilator / sinyal) icin fib:
+# OLCUM (tools/research_fib2.py, BTC/ETH/SOL 5m + BTC 1h; toplam net):
+#   ma_only     -1314$ -> -794$  (+520$) -> ACIK
+#   osc_only     -607$ -> -557$  ( +50$) -> ACIK
+#   signal       -863$ -> -526$  (+337$) -> ACIK
+#   signal_long  -337$ -> -151$  (+186$) -> ACIK (1h +1.3% -> +4.3%)
+PAPER_FIB_SCORE_ON = True
+# Aralik (pencere tabani) motoru icin fib "altin cebede LONG/SHORT":
+# OLCUM: -160$ -> -671$ (-511$; giris sayisi 3-4 kat artiyor, komisyon
+# yiyor). KAPALI default.
+PAPER_FIB_RANGE_ON = False
 PAPER_FIB_WINDOW = 160           # son N bar icinde salinim uclari taranir
 PAPER_FIB_GATE = 0.15            # uca yakinlik esigi (0..0.5)
 # ---- EVRENSEL KURALLAR (tüm modlar, kullanıcı kuralı) ----------------

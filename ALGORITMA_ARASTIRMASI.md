@@ -588,3 +588,45 @@ Notlar:
     için kullanılıyor; izleme çizgisi yıldız serisine (index 9,
     id=starsBuy) sparse series patch'iyle bağlanır (birbirini silmez).
   * sw VERSION ta-v11 -> ta-v12 (PWA ön bellek yenilenmesi).
+
+
+## AUTO FIB — SKOR TABANLI + ARALIK PENCERE MOTORU (2. tur)
+
+Kullanici istegi: "sadece hareketli ortalamalar, sadece osilatorler,
+sinyal (sadece long) ve aralik pencere tabanli mekanizmalarda da Auto
+Fib'i dene, sonuclari gorelim."
+
+Uygulama:
+  * core/fib.py::gate_labels — skor serilerine (ma_only / osc_only /
+    signal / signal_long / signal_exit) fib gate:
+      - AL aralik ZIRVESINE yakin (yer > 0.85) -> NÖTR (tepe alma engel),
+        SAT aralik TABANINA yakin (yer < 0.15) -> NÖTR (dipe satma engel);
+      - yukari salinimda altin cebe -> GÜÇLÜ AL, asagi salinimda altin
+        cebe -> GÜÇLÜ SAT (dönüs yakalama).
+  * paper._build_signal_series backtest'te, service.mode_signal_series
+    canlida AYNI fonksiyonu cagirir (test/canli tutarsizligi yok).
+  * Araalık pencere motoru (range): taban sarti yetmedikce ALTIN CEBE
+    giris izni (fib_range_on) — _long_signal/_short_signal
+    (_fib_state: pencere icinde leg + theta).
+
+Olcum (tools/research_fib2.py; 4 pencere: BTC/ETH/SOL 5m ~5 gun +
+BTC 1h ~2 ay; toplam NET):
+
+  MOD          | KAPALI    | ACIK      | FARK
+  ma_only      | -1313.9$  |  -793.6$  | +520.3$   (islem 601->391 vb.)
+  osc_only     |  -606.8$  |  -557.3$  |  +49.5$
+  signal       |  -863.3$  |  -526.1$  | +337.2$
+  signal_long  |  -336.7$  |  -151.2$  | +185.5$ (BTC 1h +1.3% -> +4.3%)
+  range        |  -159.9$  |  -671.3$  | -511.4$  (islem 3-4 KAT artar)
+
+KARAR:
+  * Skor tabanli modlarda fib ACIK (PAPER_FIB_SCORE_ON = True). Uc
+    engel komisyon yiyen tepe-yakin girisleri kesiyor; islem sayisi
+    duserken kazanma orani korunuyor.
+  * Araalik pencere motorunda fib KAPALI (PAPER_FIB_RANGE_ON = False).
+    Altin-cebe giris izni giris sayisini 3-4 kat sisiyor ve komisyon
+    net zarara donusturuyor; motorun KENDISI (taban/zirve konumu) zaten
+    sekme tabanli bir退缩 filtresidir.
+  * izleme modu /bar_info bu modlar icin de fib alanlarini gosterir.
+
+Testler: gate_labels zirve-tabanlandirma + altin cebe guc -> 87/87.

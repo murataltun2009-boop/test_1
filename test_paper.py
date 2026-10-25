@@ -2268,6 +2268,34 @@ def t_muro_fib_gate():
 ok.append(test("FIB+muro: uçta engel + filtrenin etkisi", t_muro_fib_gate))
 
 
+def t_fib_gate_labels():
+    """gate_labels: skor serilerinde AL zirvede NÖTR, altın cebe GÜÇLÜ."""
+    from core import fib
+    # Yukari salinim 100->160, sonra ~%50 geri cekilme: AL -> GÜÇLÜ AL.
+    c = np.concatenate([np.linspace(100.0, 160.0, 50),
+                        np.linspace(160.0, 160.0 - 0.5 * 60.0, 4)])
+    out = fib.gate_labels(["AL"] * c.size, c + 0.5, c - 0.5, c,
+                          True, 160, 0.15)
+    assert out[-1] == "GÜÇLÜ AL", f"altin cebe guctu: {out[-1]} != GÜÇLÜ AL"
+
+    # Fiyat aralik zirvesinde: AL -> NÖTR (tepe alma engeli).
+    c2 = np.linspace(100.0, 160.0, 80)
+    out2 = fib.gate_labels(["AL"] * c2.size, c2 + 0.5, c2 - 0.5, c2,
+                           True, 160, 0.15)
+    assert out2[-1] == "NÖTR", f"zirvede AL engelenmeliydi: {out2[-1]}"
+
+    # Asagi salinimda altın cebe: SAT -> GÜÇLÜ SAT.
+    c3 = np.concatenate([np.linspace(160.0, 100.0, 50),
+                         np.linspace(100.0, 100.0 + 0.55 * 60.0, 4)])
+    out3 = fib.gate_labels(["SAT"] * c3.size, c3 + 0.5, c3 - 0.5, c3,
+                           True, 160, 0.15)
+    assert out3[-1] == "GÜÇLÜ SAT", f"donuste SAT guctu: {out3[-1]}"
+
+
+ok.append(test("FIB-gate: skor serileri (AL zirvede NÖTR, altın cebe GÜÇLÜ)",
+               t_fib_gate_labels))
+
+
 def t_bar_info_izleme():
     """service.bar_info: 11 osilator + 15 MA + skorlar + fib paneli."""
     import config as cfg_mod

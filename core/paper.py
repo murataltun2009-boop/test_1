@@ -26,6 +26,7 @@ from core import indicators as ind
 from core import trend as trend_mod
 from core import muro as muro_mod
 from core import ppst
+from core import fib as fib_mod
 
 logger = logging.getLogger("ta.paper")
 
@@ -301,6 +302,17 @@ class PaperTrader:
         self.muro_cfg = muro_mod.MuroConfig.from_config()
         self.muro_risk_pct = float(config.PAPER_MURO_RISK_PCT)
         self.muro_max_lev = float(config.PAPER_TREND_MAX_LEV)
+        # ---- AUTO FIB (skor tabanli + aralic motor) -------------------------
+        # Skor modlari (sadece MA / sadece osilator / sinyal) karar
+        # serisine ve aralik pencere motoruna AUTO FIB retracement:
+        # altin cebede GÜÇLÜ, ucda engel (skor modlari) / altin cebede
+        # ek giris (aralik motor). Olcum: tools/research_fib2.py.
+        self.fib_score_on = bool(
+            getattr(config, "PAPER_FIB_SCORE_ON", False))
+        self.fib_range_on = bool(
+            getattr(config, "PAPER_FIB_RANGE_ON", False))
+        self.fib_window = int(getattr(config, "PAPER_FIB_WINDOW", 160))
+        self.fib_gate = float(getattr(config, "PAPER_FIB_GATE", 0.15))
         self._bars_held = 0
         self._last_bar_time = 0
         # Son LONG'dan bu yana ulasilan en yuksek fiyat. SHORT karari
@@ -535,6 +547,23 @@ class PaperTrader:
         pos = (price - low) / (high - low)
         return max(0.0, min(1.0, pos))
 
+    @staticmethod
+    def _fib_state(w: list) -> tuple:
+        """
+        Pencere icindeki AUTO FIB salinim durumu: (leg, theta).
+
+        leg   : salinim yonu (+1 yukari, -1 asagi, 0 bilinmiyor)
+        theta : son kapanisin geri cekilme derinligi (0=uc, 0.618
+                altin oran; NaN = aralik yok). Aralik motorunun
+                "altin cebe" kurali bunu kullanir.
+        """
+        if len(w) < 5:
+            return 0, float("nan")
+        leg, _hi, _lo, th = fib_mod.retrace_series(
+            [c.high for c in w], [c.low for c in w],
+            [c.close for c in w], len(w))
+        return int(leg[-1]), float(th[-1])
+
     def _long_signal(self, candles: list, price: float) -> Optional[str]:
         """
         LONG: fiyat pencerenin TABAN bolgesinde mi?
@@ -551,6 +580,16 @@ class PaperTrader:
             return None
         pos = self._position_in_range(w, price)
         if pos > config.PAPER_BOTTOM_POS:
+            # AUTO FIB (fib_range_on): taban sarti yetmediyse ALTIN
+            # CEBE kurali — penceredeki asagi salinim %44-68 geri
+            # cekilme yapip donus bekliyorsa LONG acilir.
+            if self.fib_range_on:
+                leg, th = self._fib_state(w)
+                if fib_mod.at_golden_pocket(th):
+                    if self.confirm and \
+                            not (w[-1].close > w[-1].open):
+                        return None           # ayni donus teyidi
+                    return ("altın cebe (fib geri çekilme " f"%{th*100:.0f}, konum %{pos*100:.0f})")
             return None                       # henuz tabanda değil
         if self.confirm and not (w[-1].close > w[-1].open):
             return None                       # istege bagli donus teyidi
@@ -589,6 +628,15 @@ class PaperTrader:
             return (f"düşüş eğilimi başladı (pencere zirvesi, konum "
                     f"%{pos*100:.0f}), son LONG fiyatının altında")
 
+        if pos < config.PAPER_TOP_POS and self.fib_range_on:
+            # AUTO FIB: zirve bolgesi sarti yetmediyse ALTIN CEBE —
+            # yukari salinim (tepe pencerede) %44-68 geri cekilme
+            # yapiyor: donus bekleniyor, zirveden once satilir.
+            leg, th = self._fib_state(w)
+            if leg > 0 and fib_mod.at_golden_pocket(th):
+                cek2 = (1.0 - float(th)) * 100.0
+                return (f"altin cebe short (fib tepe geri çekilme "
+                        f"%{cek2:.0f}, konum %{pos*100:.0f})")
         # --- pullback ---
         if self.long_peak <= 0:
             return None            # henuz LONG yok, zirve referansı yok
@@ -1506,8 +1554,19 @@ class PaperTrader:
             # (Signal.SELL), metin DEGIL. _on_price string karsilastirmasi
             # yaptigi icin enum liste donulurse HICBIR sinyal islenmez
             # (olcum: signal/signal_long 0 islem veriyordu).
-            return [s.value if hasattr(s, "value") else s
+            vals = [s.value if hasattr(s, "value") else s
                     for s in res.signals]
+            # AUTO FIB: sinyal ailesine (signal/signal_long/signal_exit)
+            # fib gate uygulanir; ARALIK modu uygulanmaz (aralik girişleri
+            # kendi pencere motorudur, asagida).
+            if self.mode in ("signal", "signal_long", "signal_exit") \
+                    and self.fib_score_on:
+                vals = fib_mod.gate_labels(
+                    vals, [c.high for c in candles],
+                    [c.low for c in candles],
+                    [c.close for c in candles], True,
+                    self.fib_window, self.fib_gate)
+            return vals
 
         if self.mode == "osc_only":
             s2 = cfg.PAPER_OSC_STRONG_THRESHOLD
@@ -1530,6 +1589,13 @@ class PaperTrader:
                 out.append("SAT")
             else:
                 out.append("NÖTR")
+        # AUTO FIB: skor serisine fib gate (altın cebe GÜÇLÜ, uç engel).
+        # Canlida da AYNI kural isler (service.mode_signal_series).
+        if self.fib_score_on:
+            out = fib_mod.gate_labels(
+                out, [c.high for c in candles], [c.low for c in candles],
+                [c.close for c in candles], True,
+                self.fib_window, self.fib_gate)
         return out
 
     # ------------------------------------------------------------------

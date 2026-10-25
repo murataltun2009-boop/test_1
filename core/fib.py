@@ -99,3 +99,88 @@ def at_golden_pocket(theta: float, tol: float = 0.06) -> bool:
 def at_extreme(theta: float, gate: float) -> bool:
     """Salinim ucuna cok yakin mi (devam girisi engellenir)."""
     return np.isfinite(theta) and (theta < gate or theta > 1.0 - gate)
+
+
+# Altın cebe bandı (at_golden_pocket'in tol=0.06 ile aynı: 0.44..0.678).
+GOLDEN_LO = 0.44
+GOLDEN_HI = 0.678
+
+_LABEL_TO_SIGNAL = None          # tembel: core.analysis döngüsünü kırar
+
+
+def gate_labels(labels: list, high, low, close,
+                on: bool = True, window: int = 160,
+                gate: float = 0.15) -> list:
+    """
+    Skor tabanli karar serilerine AUTO FIB gate (ma_only / osc_only /
+    signal / signal_long / signal_exit).
+
+    labels: "AL" / "SAT" / "GÜÇLÜ AL" / "GÜÇLÜ SAT" / "NÖTR" / None ...
+    Salinim uclari VE fiyatin araliktaki yeri (0 = taban, 1 = zirve)
+    retrace_series'dan turetilir; yon kendini tasıyandan gelmez.
+
+    KURALLAR (trend/muro ile ayni ruhta, skor tabanina cevrilmis):
+      * AL aralgin ZIRVESINE yakinsa (yer > 1-gate) NÖTR'e iner —
+        tepe alma. (Aralik tabani alimlari serbest: dip aldir.)
+      * SAT aralin TABANINA yakinsa (yer < gate) NÖTR'e iner — dipe
+        satma. (Aralik zirvesi satislari serbest: tepeden satis.)
+      * ALTIN CEBE: AL, yukari salınimda (leg +1) altin cebede ise
+        GÜÇLÜ AL; SAT, asagi salinimda (leg -1) altin cebede ise
+        GÜÇLÜ SAT. Zaten GÜÇLÜ olanlar korunur.
+    """
+    if not on:
+        return list(labels)
+    leg, _, _, theta = retrace_series(high, low, close, window)
+    out: list = []
+    for i, lab in enumerate(labels):
+        if lab not in ("AL", "SAT", "GÜÇLÜ AL", "GÜÇLÜ SAT") \
+                or i >= leg.size:
+            out.append(lab)
+            continue
+        lg = int(leg[i])
+        th = float(theta[i])
+        if lg == 0 or not np.isfinite(th):
+            out.append(lab)
+            continue
+        if lg > 0:
+            pos = 1.0 - th          # yukari salınım: theta = tepeden uzaklik
+        else:
+            pos = float(th)         # asagi salinim: theta = dibden uzaklik
+        if lab in ("AL", "GÜÇLÜ AL"):
+            if pos > 1.0 - gate:
+                out.append("NÖTR")           # aralik zirvesinde AL
+                continue
+            if lab == "AL" and lg > 0 and \
+                    GOLDEN_LO <= th <= GOLDEN_HI:
+                out.append("GÜÇLÜ AL")
+                continue
+            out.append(lab)
+        else:
+            if pos < gate:
+                out.append("NÖTR")           # aralik tabaninda SAT
+                continue
+            if lab == "SAT" and lg < 0 and \
+                    GOLDEN_LO <= pos <= GOLDEN_HI:
+                out.append("GÜÇLÜ SAT")
+                continue
+            out.append(lab)
+    return out
+
+
+def gate_signals(sigs: list, high, low, close,
+                 on: bool = True, window: int = 160,
+                 gate: float = 0.15) -> list:
+    """Signal ENUM listesi uzerinde gate_labels. Donus: Signal listesi."""
+    global _LABEL_TO_SIGNAL
+    from core.analysis import Signal as _S
+    if _LABEL_TO_SIGNAL is None:
+        _LABEL_TO_SIGNAL = {
+            "AL": _S.BUY, "SAT": _S.SELL, "NÖTR": _S.NEUTRAL,
+            "GÜÇLÜ AL": _S.STRONG_BUY, "GÜÇLÜ SAT": _S.STRONG_SELL,
+            None: _S.NEUTRAL,
+        }
+    if not on:
+        return list(sigs)
+    labels = [(s.value if hasattr(s, "value") else s) for s in sigs]
+    gated = gate_labels(labels, high, low, close, on, window, gate)
+    return [_LABEL_TO_SIGNAL.get(x, _S.NEUTRAL) for x in gated]
