@@ -460,6 +460,24 @@ def create_app(service: MarketService, store: SignalStore,
             lock_pct=_num(data.get("lock_pct")),
             pull_atr=_num(data.get("pull_atr")),
         )
+        # TIK modu onayi: kullaniciya motorun GERCEKTEN tik ile
+        # calistigini (eski surecte sessiz yok-sayma tehlikesi) ve
+        # simulasyonun duraklatip duraklatmadigini acikla.
+        if data.get("mode") == "tk" and paper.mode == "tk":
+            th = "0,678" if "BTC" in paper.symbol else "0,85"
+            dur = "" if paper.running else \
+                " · SIMULASYON DURAKLATILMIS — islem acilmasi icin " \
+                "Trade Başla'ya bas"
+            service._emit_log(
+                "info", "simulator",
+                f"TİK modu aktif — sembol {paper.symbol} · TP "
+                f"%{paper.tk_tp*100:.0f} · SL %{paper.tk_sl*100:.0f} · "
+                f"tamamen limit dolum (maker) · fib θ≤{th}{dur}")
+        elif data.get("mode") == "tk" and paper.mode != "tk":
+            service._emit_log(
+                "warning", "simulator",
+                f"TİK modu UYGULANAMADI (motor mode={paper.mode}) — "
+                f"server kodu eski olabilir, restart gerekli")
         service.force_mode_refresh()
         return JSONResponse({"ok": True, "state": paper.state(_paper_price())})
 
