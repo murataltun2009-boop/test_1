@@ -1134,7 +1134,8 @@ if ("serviceWorker" in navigator) {
     var tek = TEK_KAYNAK.indexOf(mode) >= 0;
     // Trend/MURO modu da SHORT kuralini kullanmaz: yon tamamen
     // gostergeden gelir. Bu yuzden secici kapatilir.
-    var trend = (mode === "trend" || mode === "muro" || mode === "ppt");
+    var trend = (mode === "trend" || mode === "muro" || mode === "ppt" ||
+                 mode === "tk");
     var muro = (mode === "muro");
     var kilit = tek || trend;
     el.ruleWrap.style.display = kilit ? "none" : "";
@@ -1166,6 +1167,9 @@ if ("serviceWorker" in navigator) {
       if (el.pPull) el.pPull.value = 1.0;
       el.pLock.value = 2;
     }
+    // TIK: olculmus optimum parametreler SUNUCUDA otomatik uygulanir
+    // (kaynak: tools/research_tk*.py). Kullanici iste: "hesapla, elle oynama".
+    var tik = (el.pMode.value === "tk");
     // Secilen algoritma ANINDA uygulanir: /api/paper/config sunucuda
     // configure + force_mode_refresh calistirir -> grafik AL/SAT yildizlari
     // secilen modun karar serisine gecer (pozisyon BASLATILMAZ, running
@@ -1175,6 +1179,10 @@ if ("serviceWorker" in navigator) {
       (el.pMode.value === "ppt"
         ? " · optimum parametreler otomatik uygulandı "
           + "(mult 3,5 · pull 1,0 ATR · risk %3 · kilit %2)"
+        : "") +
+      (tik
+        ? " · ölçümlü tik parametreleri otomatik (TP %3 · SL %5 · "
+          + "tamamen limit/maker) — BTC 5m / SOL 1m önerilir"
         : "") + " · grafik yıldızları güncelleniyor");
     paperCall("/api/paper/config");
   });

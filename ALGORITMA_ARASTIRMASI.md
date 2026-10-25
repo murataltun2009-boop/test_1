@@ -718,3 +718,60 @@ stopu bunlardan bağımsız düzelticilerdir.
 
 Testler: 90/90 (duzeltici 3 mikro-test dahil: seri kilidi / ARM /
 sadece-GÜÇLÜ).
+
+## TIK (tk) MODU - super-hizli TAMAMEN-LIMIT scalper (2026-10-25)
+
+Istek: 1m/5m/15m/1h'de "az az kazanc biriktirmek": long ac -> kari al ->
+short ac... tamamen LIMIT (maker) emirli, fib + talep yogunlugu kullanan
+hizli ac-kapa motoru. Komisyonu minimuma indirmek icin piyasa emri YOK.
+
+### Tasarim (core/paper.py `_tk`, mode="tk")
+
+* LONG: yukari salinim leg'i sonrasi altin cebe (%44-67.8) pasif BUY
+  LIMIT (fill 0.55 mandali). SHORT: asagi leg'te pasif SAT LIMIT.
+* TP: resting SELL/BUY LIMIT (maker). SL: stop-market (taker).
+* Talep onayi: son 3 bar volume max >= pencere ort. (zayif salinim
+  elenir; knob vol_mult olcumde etkisiz, 1.0 birakildi).
+* DURUST DOLUM: buy limit yalnizca bar seviyeye INERKEN dolarsa
+  (open>=L ve low<=L) maker; open eSikin altindaysa marketable ->
+  SKIPTIR. TP bar araligindaysa dolu; stop acilis/ stop-seviyesi taker.
+* Canli yol: service on_price bar_low/high gecmez -> tik-dal fallback
+  eklendi (giris doldu-kosulu, SL tick-dal, TP tick-dal).
+
+### Hatalar ve duzeltmeler (olcum sirasi)
+
+1. `configure(mode="tk")` SESSIZCE yok sayilip ma_only default'a
+   donebiliyordu (beyaz-listede "tk" eksik) - ilk tarama aslinda
+   ma_only girisli BE-klip cikislarindan olusuyordu. Beyaz-listeye
+   "tk" eklendi; 2. tarama GERCEK tik motorunu confirm etti.
+2. Taban BE-klip tik pozisyonunu gaspetme riski yok: mode="tk" ise
+   _on_price direk _tk'ye return ediyor (routing), taban mantigi
+   tik pozisyonuna ulasmayan (tasarimla + olcumle dogrulandi).
+3. Trend filtresi (SMA200 uyumu) tik setup populasyonunda ETKISIZ
+   (veto edecek setup'lar zaten dolu pozisyon anlarina denk geliyor).
+   Knob PAPER_TK_TREND default kapali (olcumle gerekcesiz).
+
+### Taramalar (taze veri, 1500 bar, honest-fill)
+
+1. pas (tp-sl izgarasi): 3 coin x 4 TF x 9 kombinasyon -> yalnizca
+   SOL 1m (tp 2-3%, sl 5%) ve BTC 5m (tp3, sl5) pozitif.
+2. pas (knob tarama theta_max/vol/fill/trend): THETA<=0.85 + FILL=0.55
+   en iyi; vol1.5 ve fill0.45 iyilestirmiyor; trend etkisiz.
+3. pas (pencere-gucu: 3x500 dikey):
+   SOL 1m tp3/sl5:      +134.8 / -13.1 / -3.8 -> TOPLAM +117.9$
+   BTC 5m tp3/sl5 th0.678: +30.6 / +9.7 / +15.2 -> TOPLAM +55.5$
+   (3/3 pencere POZITIF - en dayanikli aday)
+4. URETIM YOLU dogrulamasi (configure(mode="tk") hook):
+   BTC 5m:  +125.2 / +9.7 / +15.2 -> TOPLAM +150.1$ (3/3 pozitif)
+   SOL 1m:  +141.2 / -13.9 / -3.8 -> TOPLAM +123.5$
+
+### Uretim kararı
+
+* mode="tk" UI'ye eklendi ("TIK — hızlı limit scalper"): configure()
+  SEMBOLE GORE parametre uygular (BTC -> theta<=0.678, digerleri
+  0.85; ortak tp %3 sl %5 fill 0.55). ETH olcumde zayif oldugu icin
+  onerilmez; kullanici sadece secim ekraninda "deney" etiketi gorur.
+* Config default'lari olcumle hizalandi: PAPER_TK_TP=0.003,
+  PAPER_TK_SL=0.005, PAPER_TK_WIN=60, THETA_MAX=0.85, VOL_MULT=1.0,
+  FILL=0.55, TREND=0.
+* 90/90 test gecti (tik degisikligi mevcut test akislerini bozmuyor).

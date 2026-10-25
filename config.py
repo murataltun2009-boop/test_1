@@ -370,6 +370,22 @@ PAPER_CORR_ARM_ON = True        # azap-degirmeni engeli (ters sinyal gerek)
 # Sadece GÜÇLÜ sinyaller giris acar (zayif AL/SAT -> NÖTR).
 PAPER_CORR_STRONG_ONLY = True     # zayif AL/SAT giris acmaz (NÖTR olur)
 PAPER_CORR_STRONG_FIRST = True   # zayif-yazimi ARM gate ONCESI uygula
+# ---- TICK (super-hizli tamamen-limit scalper) --------------------------
+# Mod "tk": fib altin-cebe (%44-67.8) pasif BUY/SELL LIMIT giris,
+# resting TP limit (maker) + stop-market SL. Round-trip ~%0.04 maker.
+# Olcum: tools/research_tk(2,3).py — uretim parametreleri configure()
+# icinde SEMBOLE GORE atanir:
+#   BTC  5m : tp %3 sl %5 theta<=0.678 -> 3/3 pencere pozitif (+150$)
+#   SOL  1m : tp %3 sl %5 theta<=0.85  -> +123$ / 3 pencere
+# ETH ve digerleri ayni tp/sl, theta 0.85 (ETH olcumu zayifti).
+PAPER_TK_ON = False              # mode="tk" secilirken configure acar
+PAPER_TK_TP = 0.003              # hedef %0.3 (olcum: BTC5m/SOL1m en iyi)
+PAPER_TK_SL = 0.005              # stop %0.5 (genis: 1m mean-reversion)
+PAPER_TK_WIN = 60                # fib salinim penceresi (BAR)
+PAPER_TK_THETA_MAX = 0.85        # geri cekilme ust siniri (BTC 0.678)
+PAPER_TK_VOL_MULT = 1.0          # talep onayi carpani (1.5 olcum: negatif)
+PAPER_TK_FILL = 0.55             # altin cebe giris konumu (0.55 en iyi)
+PAPER_TK_TREND = False           # SMA200 uyumu (olcumde etkisiz)
 # ---- EVRENSEL KURALLAR (tüm modlar, kullanıcı kuralı) ----------------
 # 1) KÂR BANKASI: açık pozisyon KENDİ giriş fiyatına göre +%2 kârda
 #    nakde çevrilir; kâr cüzdanda kalır, sonra sinyal yeniden
