@@ -784,3 +784,23 @@ hizli ac-kapa motoru. Komisyonu minimuma indirmek icin piyasa emri YOK.
   PAPER_TK_SL=0.005, PAPER_TK_WIN=60, THETA_MAX=0.85, VOL_MULT=1.0,
   FILL=0.55, TREND=0.
 * 90/90 test gecti (tik degisikligi mevcut test akislerini bozmuyor).
+
+### COIN TARAMASI - tik 1m yogun mod, uygulamanin 36 coinnin tamami
+(2026-10-25 ikinci tur; tools/research_tk6.py tek cekim + research_tk7.py
+6x500 dogrulama)
+
+Tek cekim (3x500, ~25 saat) POZITIF: ERA (+558) ENA (+472) HBAR (+37)
+UNI (+35) LINK (+6). Diger 31 coin negatif; SOL +78 -> -60 PENCERE
+KAYDIGINCA tersine dondu (yogun mod secerli).
+
+6x500 pencere dogrulamasi (~3 gun):
+  HBAR  +172$  POZ-PENCERE 5/6  ** EN STABIL YOGUN ADAY **
+  ERA  +2112$  4/6 (iki dev pencere getirdi; patlayici-alt riski)
+  ENA   +170$  2/6 (son pencere tek kari bagimli; kararsiz)
+  UNI   -247$  2/6 | LINK -44$ 3/6 | SOL -51$ 2/6 | DOGE -204$ 2/6
+  ADA   -142$  2/6
+
+Not: yogun mod coin-coin buyuk dagilim gosteriyor; HBAR haric tek
+cekim kazananlar pencere kaydiginda donuyor. BTC hook (secici) sadece
+BTCUSDT'de; BTC icin grafik dilimi 5m OLMALI (1m'de yogun mod
+kapanma; secikici 5m +150$/3 pencere).
