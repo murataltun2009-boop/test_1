@@ -1184,6 +1184,13 @@ class PaperTrader:
 
                 # ---- NÖTR: KAPAT VE BEKLE, TERS YÖN ACMA ----
                 if nötr:
+                    # NÖTR-HOLD (ölçüm varyantı, ntr_hold=True): NÖTR
+                    # hemen market kapatmak yerine pozisyonu BE klip
+                    # (kâra dönünce maker çıkış) ve düzeltici stopuna
+                    # korumasına bırakır. Üretim default'u KAPALI.
+                    if getattr(self, "ntr_hold", False):
+                        return (f"{p.side} tutuldu — NÖTR "
+                                f"(klip/stop koruması devrede)")
                     # Kullanici kurali: ne LONG ne SHORT acilir.
                     self._close(price, f"{signal} ({kaynak})", timeframe)
                     return (f"{p.side} kapandı — {signal} · {kaynak} "
