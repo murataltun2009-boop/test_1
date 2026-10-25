@@ -313,6 +313,41 @@ class PaperTrader:
             getattr(config, "PAPER_FIB_RANGE_ON", False))
         self.fib_window = int(getattr(config, "PAPER_FIB_WINDOW", 160))
         self.fib_gate = float(getattr(config, "PAPER_FIB_GATE", 0.15))
+        # ---- DUZELTICI (seri kilidi) -------------------------------------
+        # Zarar biten islemden sonra K BAR yeni giris yok; cikislar
+        # (stop/banka/likidasyon) her zaman serbest. TESHIS:
+        # tools/research_teshis.py — kayip serileri kumali.
+        self.corr_on = bool(getattr(config, "PAPER_CORR_ON", False))
+        self.corr_pause_bars = int(
+            getattr(config, "PAPER_CORR_PAUSE_BARS", 4))
+        self._corr_until = 0
+        # Skor modlarinda (corr_on=True iken) basabas tamponi DUZELTICI
+        # degerini kullanir: dar tampon (%0.12) komisyon-trip kayip
+        # uretir; genis tampon fiyat geldiginde +tampon mikrokâr verir.
+        self.corr_be_buf = float(
+            getattr(config, "PAPER_CORR_BE_BUF", 0.0))
+        # OLCUM yardimcisi: True iken stake start_balance'tan sabit
+        # alinir (compounding yok) — konfig karsilastirmalari adil olsun.
+        self.fixed_stake = False
+        # Skor modlarinda buyuk tolerans stop (giris x (1-stop_down)).
+        # Koken: mikro-klip (BE buffer) pozisyonlari +"micro" kesip
+        # +2% bankaya ulastirmiyordu (olcum: tools/research_be2.py);
+        # kaba tolerans stop + banka kombinasyonu tek duzeltme yolu.
+        self.corr_stop_down = float(
+            getattr(config, "PAPER_CORR_STOP_DOWN", 0.0))
+        self.corr_tfs = set(getattr(config, "PAPER_CORR_TFS", {"1h"}))
+        # ARM: zarar yonune ters sinyal gelmeden yeni giris acilmaz.
+        self.corr_arm_on = bool(getattr(config, "PAPER_CORR_ARM_ON", False))
+        self._corr_arm = ""                     # zarar yonu (LONG/SHORT)
+        # Sadece GÜÇLÜ sinyaller giris acar (zayif AL/SAT -> NÖTR).
+        self.corr_strong_only = bool(
+            getattr(config, "PAPER_CORR_STRONG_ONLY", False))
+        # GUC yen yazimi gate ONCESI (arm kurali zayif sinyalden
+        # etkilenmesin): olcum tools/research_karar2.py.
+        self.corr_strong_first = bool(
+            getattr(config, "PAPER_CORR_STRONG_FIRST", False))
+        # LIMIT-dolum cikislarda maker ucreti (resting emir gercekcigi).
+        self.maker_rate = float(getattr(config, "PAPER_MAKER_RATE", 0.0002))
         self._bars_held = 0
         self._last_bar_time = 0
         # Son LONG'dan bu yana ulasilan en yuksek fiyat. SHORT karari
@@ -706,6 +741,40 @@ class PaperTrader:
                 self._bars_held += 1
                 yeni_bar = True
 
+        # DUZELTICI (seri kilidi): zarar sonrasi K barda YENI GIRIS yok.
+        # Pozisyon VARSA gate devreye girmez — cikis/stop/banka her zaman
+        # calisir; bu koruma yalnizca yeni GIRISSI durdurur.
+        # DÜZELTİCİ (seri kilidi + arm): zarar sonrasi K barda YENI GIRIS
+        # yok; K dolunca ARM aktifse zarar yonune TERS sinyal gelmeden
+        # girilmez (azap-degirmeni engeli: ayni sinyal stoplari yeniden
+        # ucret prompt eder). Pozisyon VARSA gate devreye girmez -
+        # cikis/stop/banka her zaman calisir; yalnizca YENI GIRISI durdurur.
+        if self.corr_on and self.corr_strong_first and \
+                self.corr_strong_only and self._guc_scope() and \
+                signal in ("AL", "SAT"):
+            signal = "NÖTR"
+
+        if self.corr_on and self.position is None:
+            if self._bars_held < self._corr_until:
+                return None
+            if self._corr_arm:
+                yon = ("LONG" if signal in ("AL", "GÜÇLÜ AL")
+                       else "SHORT" if signal in ("SAT", "GÜÇLÜ SAT")
+                       else "")
+                if yon == self._corr_arm:
+                    # Zarar yonune yeniden girme yok: ters sinyal beklenir.
+                    return None
+                if yon and yon != self._corr_arm:
+                    self._corr_arm = ""     # ters sinyal geldi: arm dustu
+
+        # GÜÇÜ FIRTINA yen yazimi (PAPER_CORR_STRONG_ONLY): zayif AL/SAT
+        # -> NÖTR. Pozisyon varsa NÖTR kurali kapanir ve bekler; yeni
+        # giris acilmaz. Koken: zayif sinyaller giriş kalitesini
+        # tasimiyor; olcum tools/research_karar.py GUC kolonlari.
+        if self.corr_on and self.corr_strong_only and \
+                self._guc_scope() and signal in ("AL", "SAT"):
+            signal = "NÖTR"
+
         # 1) likidasyon kontrolu
         p = self.position
         if p is not None:
@@ -848,7 +917,8 @@ class PaperTrader:
                             else self.muro_cfg.min_stop_pct)
                     new_dist = min(dist, lock)
                     side = p.side
-                    self._close(lock_px, "kâr kilidi", timeframe)
+                    self._close(lock_px, "kâr kilidi", timeframe,
+                                maker=True)
                     self._open(side, lock_px, "kâr kilidi sonrası", timeframe,
                                candles, stop_dist=new_dist, locked=True)
                     return (f"Kâr kilidi — {side} {lock*100:.1f}% kâr "
@@ -876,7 +946,8 @@ class PaperTrader:
                         else (price <= lock_px)
                 if vurdu:
                     yon = p.side
-                    self._close(lock_px, "kâr kilidi", timeframe)
+                    self._close(lock_px, "kâr kilidi", timeframe,
+                                maker=True)
                     if self.trend_lock_reentry == "protected":
                         # KORUMALI YENİ GİRİŞ (MURO mantığı): kâr
                         # cüzdana yazıldıktan SONRA aynı yönde yeni
@@ -935,7 +1006,8 @@ class PaperTrader:
                         or (price <= lock_px)
                 if vurdu:
                     self._close(lock_px,
-                                f"kâr bankası +%{lock*100:.0f}", timeframe)
+                                f"kâr bankası +%{lock*100:.0f}", timeframe,
+                            maker=True)
                     self._bekleme_baslat(self.lock_cooldown_ms, candles)
                     return (f"Kâr bankası — {p2.side} %{lock*100:.0f} kâr "
                             f"cüzdana yazıldı; "
@@ -953,37 +1025,92 @@ class PaperTrader:
             # GİRİŞ BARINDA devreye girmez (giriş salınımı trips); sonraki
             # bardan itibaren aktiftir. Durak/likidasyondan SONRA
             # kontrol edilir; kâr bankaları önce gelir (favori taraf).
+            # 1b-5b) DUZELTICI CEKIRDEK (skor modlari): genis tolerans
+            # stop. Eski mikro-klip yerine:
+            #   * GIRIS x (1 - corr_stop_down) altini kapanis veya bar
+            #     acilisi gorurse MARKET cikis (adil: fiyat=veri).
+            #   * Mikro-klip YOK: pozisyon +2% bankaya kadar yasayabilir
+            #     (kullanici kurali: evrensel +%2 kâr bankasi).
+            #   * Zarar sourasi: satlar stop_out = -(stop_down) x
+            #     kaldirac x kese... lose sorunu olcume bagli.
             p3 = self.position
+            if p3 is not None and p3.entry_bar and self._corr_active() and \
+                    int(candles[-1].open_time) != int(p3.entry_bar):
+                stop_frac = self.corr_stop_down
+                tetik = False
+                if p3.side == LONG:
+                    stop_px = p3.entry * (1.0 - stop_frac)
+                    acilis = float(candles[-1].open) if candles else price
+                    if acilis < stop_px:
+                        # Bar stopun ALTINDA acildi: market acilisi.
+                        tetik, cikis = True, acilis
+                    elif candles[-1].close < stop_px:
+                        # Kapanis stopun altinda: bar kapanisinda market.
+                        tetik, cikis = True, candles[-1].close
+                    else:
+                        tetik = False
+                else:
+                    stop_px = p3.entry * (1.0 + stop_frac)
+                    acilis = float(candles[-1].open) if candles else price
+                    if acilis > stop_px:
+                        tetik, cikis = True, acilis
+                    elif candles[-1].close > stop_px:
+                        tetik, cikis = True, candles[-1].close
+                    else:
+                        tetik = False
+                if tetik:
+                    self._close(cikis, "duzeltici stop", timeframe)
+                    self._bekleme_baslat(self.lock_cooldown_ms, candles)
+                    return f"Duzeltici stop - {p3.side} parf. %{stop_frac*100:.1f} asti ({_px(cikis)})"
+            p3 = self.position
+            be_buf = self._be_buf(
+                p3.timeframe if p3 is not None else None)
             if p3 is not None and p3.entry_bar and \
                     int(candles[-1].open_time) != int(p3.entry_bar) and \
-                    self.breakeven_buf > 0:
-                be_buf = self.breakeven_buf
+                    be_buf > 0:
                 acilis = float(candles[-1].open) if candles else price
                 tetik = False
+                maker_dolum = False
                 if p3.side == LONG:
                     be_px = p3.entry * (1.0 + be_buf)
                     if acilis < p3.entry:
-                        # Bar girişin ALTINDA açıldı (gap): piyasa
-                        # eşiği zaten geçmiş — var olan fiyattan çık.
-                        tetik, cikis = True, acilis
-                    elif bar_low is not None and bar_low <= be_px:
-                        tetik, cikis = True, be_px          # bar ici esige dokundu (limit)
-                    elif price <= be_px:
-                        tetik, cikis = True, price           # anlik tik esigi asti
+                        # Bar girisin ALTINDA acildi: esikteki limit
+                        # DOLMAZ, pozisyon zaten tersine dondu — "koruma"
+                        # anlamini kaybetmesin: ACILIS fiyatindan (market)
+                        # cikilir.
+                        tetik, cikis, maker_dolum = True, acilis, False
+                    elif bar_high is not None and bar_low is not None and \
+                            bar_low <= be_px <= bar_high:
+                        # ESIK BAR ARALIGININ ICINDE: fiyatin o barda
+                        # seviyeye dokundugu belli -> sell-limit dolu
+                        # sayilir. Bar esige hic gitmisse (high < esik)
+                        # dolmez, pozisyon yasar (adil dolum kurali).
+                        tetik, cikis, maker_dolum = True, be_px, True
+                    elif bar_high is None and price <= be_px:
+                        # Canli (bar araligi yok): tick esigi asti (market).
+                        tetik, cikis, maker_dolum = True, price, False
                 else:
                     be_px = p3.entry * (1.0 - be_buf)
                     if acilis > p3.entry:
-                        tetik, cikis = True, acilis
-                    elif bar_high is not None and bar_high >= be_px:
-                        tetik, cikis = True, be_px
-                    elif price >= be_px:
-                        tetik, cikis = True, price
+                        # Bar girisin USTUNDE acildi: buy-limit dolmaz,
+                        # pozisyon tersine dondu — acilis fiyatindan
+                        # (market) cikilir.
+                        tetik, cikis, maker_dolum = True, acilis, False
+                    elif bar_high is not None and bar_low is not None and \
+                            bar_low <= be_px <= bar_high:
+                        # ESIK BAR ARALIGININ ICINDE -> buy-limit dolu.
+                        tetik, cikis, maker_dolum = True, be_px, True
+                    elif bar_low is None and price >= be_px:
+                        # Canli (bar araligi yok): tick esigi asti (market).
+                        tetik, cikis, maker_dolum = True, price, False
+
                 if tetik:
                     # Kapanışta sinyal TEMİZLENİR + kısa bekleme: aksi
                     # halde eşik çevresinde aç-kapa döngüsü (komisyon
                     # yeme) kurulur. Bekleme bitince sinyal YENİDEN
                     # değerlendirilir ve en uygun yone girilir.
-                    self._close(cikis, "başabaş koruması", timeframe)
+                    self._close(cikis, "başabaş koruması", timeframe,
+                                maker=maker_dolum)
                     if self.mode in ("trend", "1m", "ppt"):
                         # Aynı yone girmeden önce eşik geri alınmalı
                         # (stop-after-reclaim kuralıyla aynı mantık).
@@ -1713,7 +1840,10 @@ class PaperTrader:
             return
 
         # Varsayilan (eski) boyutlandirma: teminat x kaldirac.
-        margin = eq * self.wallet_fraction
+        # fixed_stake (olcum modu): compounding yok; yoksa farkli islem
+        # sayisina sahip konfigler karsilastirilamaz halde olurdu.
+        stake_eq = self.start_balance if self.fixed_stake else eq
+        margin = stake_eq * self.wallet_fraction
         notional = margin * self.leverage
         eff_lev = self.leverage
         stop_price = 0.0
@@ -1900,7 +2030,9 @@ class PaperTrader:
 
         self.position = Position(
             side=side, entry=price, qty=qty, margin=margin, notional=notional,
-            fee_open=fee_open, liq_price=liq, opened_at=time.time(),
+            fee_open=fee_open, liq_price=liq,
+            opened_at=(int(candles_for_target[-1].open_time)
+                       if candles_for_target else time.time()),
             timeframe=timeframe, reason=reason,
             target=target, window_low=win_low, window_high=win_high,
             stop_price=stop_price, trail_mult=trail_mult,
@@ -1943,13 +2075,45 @@ class PaperTrader:
                        f"komisyon {fee_open:,.4f} · hedef {_px(target)} · "
                        f"{reason}")
 
+    def _be_buf(self, tf: Optional[str] = None) -> float:
+        """Basabas tamponu (bar araliginda dokunma ile dolum).
+        DUZELTICI mikro-klipsi SADECE corr_tfs icindeki TF'lerde getiri
+        uretir: buyuk bar araligi (1h ~%0.5-1.5) tamponun dokunulup
+        adil dolmasini mumkun kilar; kucuk TF'lerde (5m ~%0.1) tampon
+        bar araligini asip HAYALI dolum uretiyor (olcum: tools/
+        research_be2.py honest-fill kolonu)."""
+        if tf is None or self.mode not in ("ma_only", "osc_only",
+                                           "signal", "signal_long",
+                                           "signal_exit", "range"):
+            return self.breakeven_buf
+        if self.corr_on and self.corr_be_buf > 0 and tf in self.corr_tfs:
+            return self.corr_be_buf
+        return self.breakeven_buf
+
+    def _guc_scope(self) -> bool:
+        """GÜÇLÜ-only yen yazimi yalnizca skor tabanli modlarda: muro
+        aksiyon akisi AL/SAT uzerinde kurulu — komple NÖTR'e cevirince
+        mod hic islem acmaz (olcum: tools/research_uretim.py)."""
+        return self.mode in ("ma_only", "osc_only", "signal",
+                             "signal_long", "signal_exit", "range")
+
+    def _corr_active(self) -> bool:
+        """DUZELTICI stop-rejimi skor tabanli modlarda aktif mi?"""
+        return bool(self.corr_on and self.corr_stop_down > 0 and
+                    self.mode in ("ma_only", "osc_only", "signal",
+                                  "signal_long", "signal_exit", "range"))
+
     def _close(self, price: float, reason: str, timeframe: str,
-               reset_signal: bool = True) -> None:
+               reset_signal: bool = True, maker: bool = False) -> None:
         p = self.position
         if p is None:
             return
         notional_close = p.qty * price
-        fee_close = notional_close * self.fee_rate
+        # Cikis komisyonu ayrisma: LIMIT dolumlu cikislar (basabas klip
+        # dokunmasi / kâr kilidi / kâr bankasi) resting emirdir -> maker
+        # ucreti; NÖTR-flip / stop / likidasyon MARKET'tir -> taker.
+        fc_rate = self.maker_rate if maker else self.fee_rate
+        fee_close = notional_close * fc_rate
         gross = (price - p.entry) * p.qty if p.side == LONG \
             else (p.entry - price) * p.qty
         net = gross - p.fee_open - fee_close
@@ -1970,6 +2134,15 @@ class PaperTrader:
             symbol=self.symbol,
         ))
         self.position = None
+
+        # DUZELTICI (seri kilidi): zarar biten islemden sonra K bar
+        # yeni GIRIS yok. Gate _on_price basinda ( pozisyon yokken ).
+        if self.corr_on and net < 0:
+            if self.corr_pause_bars > 0:
+                self._corr_until = self._bars_held + int(self.corr_pause_bars)
+            if self.corr_arm_on:
+                # ARM: pause_bars=0 olsa bile zarar yonu isaretlenir.
+                self._corr_arm = p.side
 
         # SONRAKI SİNYALİN AYNI OLABİLMESİ İÇİN SIFIRLA.
         #

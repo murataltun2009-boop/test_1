@@ -216,6 +216,8 @@ PAPER_INITIAL_BALANCE = 1000.0   # sanal cuzdan baslangic bakiyesi (USDT)
 PAPER_LEVERAGE = 10.0            # kaldirac carpani (1..125)
 PAPER_WALLET_FRACTION = 0.80     # cuzdanin bu kadari pozisyona kullanilir
 PAPER_FEE_RATE = 0.0005          # Binance Futures taker komisyonu (%0,05)
+# LIMIT-dolumlu cikislarda maker ucreti (resting emir gercekcigi).
+PAPER_MAKER_RATE = 0.0002        # Binance Futures maker (%0,02)
 PAPER_LOOKBACK = 20              # "en taban / zirve" penceresi (bar)
 
 # "Fiyat pencerenin en tabaninda" nasil olculur?
@@ -334,6 +336,40 @@ PAPER_FIB_SCORE_ON = True
 PAPER_FIB_RANGE_ON = False
 PAPER_FIB_WINDOW = 160           # son N bar icinde salinim uclari taranir
 PAPER_FIB_GATE = 0.15            # uca yakinlik esigi (0..0.5)
+
+# ---- DUZELTICI (seri kilidi) ------------------------------------------------
+# TESHIS (tools/research_teshis.py, 1799+628+1087+543 islem): zarar biten
+# islemden SONRA gelen islemler ortalama -7.5$ (dort mod, dort pencere
+# TUTARLI); temiz serideki islemler ortalama +1.6$. Yani kayip KUMALI:
+# basabaş gap-acilisi sonrasi piyasa chop rejiminde ve sinyaller yeniden
+# aliniyor. ILAC: zarar bitince K bar yeni GIRIS acilmaz (posisyon yoksa
+# gate devrede; cikis/stop/banka her zaman serbest).
+# ---- OLCUM SONUCU AKTIF (research_karar3.py, "GUC8REV") ------------
+# K8 + ARM + sadece-GÜÇLÜ (giris) + GÜÇLÜ-once-yen-yaz kombinasyonu:
+# 1000$ tabana gore skor modlarinda %91-95 zarar kesilmesi (sabit stake
+# 4 pencere), BTC 1h ma_only pozitivesi (+54$ compounding). Diğer modlar
+# (trend/muro/1m/ppt/range) de zarar görmüyor: -%65..%93 iyilesme.
+PAPER_CORR_ON = True
+PAPER_CORR_PAUSE_BARS = 8        # zarar sonrasi giris bekleme (BAR)
+# Skor modlarinda genis basabaş tamponu: giris sonrasi fiyat %buf geri
+# gelirse +buf mikrokâr (limit mantigi, bar isi dokunma ile). Dar tampon
+# (%0.12) komisyon-trip zarar uretiyor, genis tampon doviz-kirpma
+# hem kârlari hem zararlari buyutuyor (olcum: tools/research_be2.py).
+PAPER_CORR_BE_BUF = 0.004        # 1h/15m skor modlari mikro-klip tamponu
+# GERCEK DURECO: skor modlarinda buyuk tolerans stop (kaba stop).
+# Mikro-klip pozisyonlari +2% banka yolunda kesiyordu; genis stop +
+# banka kombinasyonu olcumle karar verilecek (research_stop.py).
+PAPER_CORR_STOP_DOWN = 0.0       # olcume kadar kapali (0..1 arasi frac)
+# Mikro-klip hangi TFlerde getiri uretir (bar araligi tamponu kapsar)?
+# 1h bar araligi ~%0.5-1.5: tamponun icinde dolum adil; 5m ~%0.1:
+# tampon bar araligini asip HAYALI dolum uretir -> 5m kapatildi.
+PAPER_CORR_TFS = {"1h", "15m"}
+# ARM: zarar yonune TERS sinyal gelmeden yeni giris acilmaz
+# (azap-degirmeni engeli). Olcum: tools/research_karar.py ARM.
+PAPER_CORR_ARM_ON = True        # azap-degirmeni engeli (ters sinyal gerek)
+# Sadece GÜÇLÜ sinyaller giris acar (zayif AL/SAT -> NÖTR).
+PAPER_CORR_STRONG_ONLY = True     # zayif AL/SAT giris acmaz (NÖTR olur)
+PAPER_CORR_STRONG_FIRST = True   # zayif-yazimi ARM gate ONCESI uygula
 # ---- EVRENSEL KURALLAR (tüm modlar, kullanıcı kuralı) ----------------
 # 1) KÂR BANKASI: açık pozisyon KENDİ giriş fiyatına göre +%2 kârda
 #    nakde çevrilir; kâr cüzdanda kalır, sonra sinyal yeniden

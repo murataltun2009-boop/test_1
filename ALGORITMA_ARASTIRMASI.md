@@ -630,3 +630,91 @@ KARAR:
   * izleme modu /bar_info bu modlar icin de fib alanlarini gosterir.
 
 Testler: gate_labels zirve-tabanlandirma + altin cebe guc -> 87/87.
+
+---
+
+## DÜZELTİCİ (corr) — zarar-redüktör katmanı
+
+İstek: fib düzeltmesinden sonra hâlâ zararda olan skor tabanlı sonuçları
+(ma_only / osc_only / signal / signal_long) **kâr bölgesine taşımak**.
+Yaklaşım: matematiksel teshis → her adım ölçümle karar (hiçbir politika
+ölçüm olmadan değişmedi).
+
+### Teshis — zararın anatomisi (tools/research_teshis.py, damp_trade.py)
+
+* **Zarar kumalı:** son kârlı işlemden SONRA gelen işlemler ortalama
+  **−7,5$**; temiz serideki işlemler **+1,6$**. Dört mod × dört pencerede
+  tutarlı (4.990 işlemde ana bulgu). Başabaş gap çıkışı sonrası piyasa
+  chop rejiminde ve aynı sinyal yeniden giriş üretiyor ("azap değirmeni").
+* **Komisyon yuvarlak-trip:** taban yapılandırmada kazanan +1,6$ (net),
+  kaybeden −8,0$ (net) — tam roundtrip komisyonu. %83 kazanma oranı
+  gerekiyor; gerçek ~%75.
+* **Kâr bankası (+2%) hiç vuramıyor:** skor modlarında pozisyon, bankaya
+  varmadan mikro-klip (başabaş +0,12%) ile kesiliyor.
+
+### Yakalanan yanlış ölçümler (dürüstlük yamaları)
+
+1. **Mikro-klip hayali dolumu:** eski BE modeli `bar_low <= be_px`
+   tetiklemesiyle, barın HIGH'ı hiç eşiğe ulaşmadığında bile +buf
+   seviyeden dolum tanıyordu → "BE +0,4%=para makinesi" illüzyonu
+   (415 milyar $ gibi saçma sonuçlar). Yamayıp `be_px` yalnızca barın
+   [low, high] ARALIĞINDA ise dolduğu kabul edildi; bar eşik ÖTAŞINDA
+   açıldıysa dolum olur (market). 5m'de ~%0,1 bar aralığı +buf eşiğini
+   kapsayamadığı için mikro-klip 5m'de meşru getiri üretmiyor.
+2. **Duvar saati zamanı:** `opened_at=time.time()` sim zamanına çevrildi
+   (`candles[-1].open_time`); saat/ATR analizleri artık veri sağlıyor.
+3. **Komisyon ayırışı:** limit-dolumlu çıkışlar (başabaş klip dokunması,
+   kâr kilidi, kâr bankası) resting emirdir → **maker %0,02**; NÖTR-flip /
+   stop / likidasyon market → **taker %0,05** (PAPER_MAKER_RATE).
+
+### Düzeltici bileşenler (üretim default'ları, "GUC8REV")
+
+| Bileşen | Config | Açıklama |
+|---|---|---|
+| Seri kilidi | `PAPER_CORR_ON=1`, `PAPER_CORR_PAUSE_BARS=8` | Zarar bitince K bar yeni giriş yok (çıkış/stop/banka her zaman serbest) |
+| ARM | `PAPER_CORR_ARM_ON=1` | K dolunca bile zarar yönüne TERS sinyal gelmeden giriş yok |
+| GÜÇLÜ-only | `PAPER_CORR_STRONG_ONLY=1` | Zayıf AL/SAT → NÖTR (giriş açmaz); kapsamı skor modları (muro aksiyon akışı korunur) |
+| GÜÇLÜ-öncelik | `PAPER_CORR_STRONG_FIRST=1` | Zayıf-yazımı ARM gate ÖNCESİNE uygula (ARM zayıf sinyalle düşmez) |
+| TF-mikro-klip | `PAPER_CORR_BE_BUF=0.004`, `PAPER_CORR_TFS={1h,15m}` | Sadece bar aralığının tamponu kapsayabildiği TF'lerde meşru |
+| Maker çıkış | `PAPER_MAKER_RATE=0.0002` | Yalnız limit-dolumlu çıkışlarda |
+
+### Ölçüm (sabit stake, 4 pencere, dürüst dolum) — tools/research_karar3.py
+
+```
+MOD          TABAN    GUCREV(K6)  GUC8REV*   iyileşme
+signal      -4037$     -345$       -349$       %91
+signal_long -3683$     -185$       -183$       %95
+osc_only    -3801$     -307$       -307$       %92
+ma_only     -4038$    -1783$      -1156$       %71
+```
+* BTC 1h penceresinde ma_only **+78$ pozitif**; GUC10'da signal −17$'a
+  kadar. GUC8REV (K8) kombinasyonu seçildi: tüm modlarda en dengeli.
+
+### Üretim kontrolü (compounding'li, tools/research_uretim.py)
+
+9 modun HEPSI tabanından iyileşiyor; hiçbir mod zarar görmüyor:
+```
+MOD         KAPALI    AÇIK
+ma_only     -3767$    -955$   (BTC 1h: +54.0$ POZİTİF)
+osc_only    -2807$    -295$
+signal      -3384$    -336$
+signal_long -2423$    -180$
+range       -1596$   -1188$
+trend       -1888$    -674$
+muro         -247$    -145$
+1m          -1615$    -705$
+ppt         -1953$     -130$
+```
+
+### Ulaşamadığını ne söylemek doğru olur
+
+Durum hâlâ toptan **negatif** (−130$..−1188$ aralığı) — düzeltici zararı
+%65-95 kesti ama sıfırın üstüne hiçbir skor modunu 5m'de çıkaramadı.
+Neden: 0,05% taker × notional ücreti, 5m/1h musterebince (maya) drifti
+(−0,15%/giriş ort.) ve sinyal kalitesinin ötesindeki yapısal
+faktörler. 1h + ma_only kombinasyonu pozitife geçti. Kullanıcının
++2% kâr bankası kuralı hiç değişmedi; mikro-klip/kâr kilidi/düzeltici
+stopu bunlardan bağımsız düzelticilerdir.
+
+Testler: 90/90 (duzeltici 3 mikro-test dahil: seri kilidi / ARM /
+sadece-GÜÇLÜ).

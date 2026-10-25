@@ -20,6 +20,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 import config
+
+# DUZELTICI (corr) ayri mikro-testlerle sinanir; URETIM default'lari
+# (corr ON + ARM + GUC) taban davranis testlerini kirletmesin:
+# test kosmasinda taban bayraklari kapatilir (testPaper cocuk modul).
+config.PAPER_CORR_ON = False
+config.PAPER_CORR_ARM_ON = False
+config.PAPER_CORR_STRONG_ONLY = False
+config.PAPER_CORR_STRONG_FIRST = False
+
 from core.paper import LONG, SHORT, PaperTrader
 
 
@@ -59,6 +68,11 @@ def new_trader(**kw):
     t = PaperTrader(balance=1000.0, leverage=10.0, fee_rate=0.0005,
                     wallet_fraction=0.80, lookback=20)
     t.running = True
+    # DUZELTICI testleri ayri testlenir; taban testleri degerleri
+    # uretim default'undan (corr ON) etkilenmesin.
+    t.corr_on = False
+    t.corr_strong_only = False
+    t.corr_arm_on = False
     for k, v in kw.items():
         setattr(t, k, v)
     return t
@@ -78,6 +92,7 @@ def test(name, fn):
 
 
 print("Kaldirac simulasyonu testleri")
+
 print("-" * 62)
 ok = []
 
@@ -187,7 +202,9 @@ def t_kar_zarar():
     t = tr.trades[0]
     bank_px = px * (1.0 + tr.bank_pct)
     brut = (bank_px - px) * p.qty
-    kap_fee = p.qty * bank_px * 0.0005
+    # Banka cikisi MAKER (resting limit emir gercekcigi): kapanis
+    # komisyonu rate PAPER_MAKER_RATE (0.0002).
+    kap_fee = p.qty * bank_px * tr.maker_rate
     assert abs(t.gross_pnl - brut) < 1e-6, (t.gross_pnl, brut)
     assert abs(t.net_pnl - (brut - p.fee_open - kap_fee)) < 1e-6, t.net_pnl
     assert abs(tr.balance - (1000.0 - p.fee_open + brut - kap_fee)) < 1e-6
@@ -2340,6 +2357,78 @@ def t_bar_info_izleme():
 
 ok.append(test("İZLEME: bar_info 11 osilatör + 15 MA + fib döndürür",
                t_bar_info_izleme))
+
+
+# ----------------------------------------------------------------------
+# DUZELTICI (corr): seri kilidi / ARM / sadece-GÜÇLÜ
+# ----------------------------------------------------------------------
+def t_corr_seri_kilidi():
+    """Zarar biten islemden sonra K barda yeni giris acilmaz."""
+    tr = new_trader(mode="signal", corr_on=True, corr_pause_bars=3)
+    cs, px = v_shape()
+    tr.on_price(px, cs, "1h", "GÜÇLÜ AL")                 # LONG acilir
+    assert tr.position and tr.position.side == LONG
+    # zarar: düser fiyat + NÖTR ile kapanir (net < 0)
+    tr.on_price(px * 0.92, cs, "1h", "NÖTR")
+    assert tr.position is None and tr.trades[0].net_pnl < 0
+    # AYNI barda ayni sinyal tekrar gelirse giris YOK (seri kilidi)
+    tr.on_price(px * 0.92, cs, "1h", "GÜÇLÜ AL")
+    assert tr.position is None, "seri kilidi aktifken giris acilmamali"
+    # yeni bardan ilk ikisi hala engelli
+    for j in range(2):
+        yeni = dizi([px * 0.92] * (len(cs) + j + 3))
+        tr.on_price(px * 0.92, yeni, "1h", "GÜÇLÜ AL")
+        assert tr.position is None, f"K dolmadan giris acildi (bar {j+1})"
+    # K bardan sonra giris serbest
+    yeni = dizi([px * 0.92] * (len(cs) + 5))
+    tr.on_price(px * 0.92, yeni, "1h", "GÜÇLÜ AL")
+    assert tr.position and tr.position.side == LONG, "K doldu, giris acilmali"
+
+
+ok.append(test("DUZELTICI: zarar sonrasi K barda yeni giris yok",
+               t_corr_seri_kilidi))
+
+
+def t_corr_arm():
+    """ARM: zarar yonune ters sinyal gelmeden giris yok."""
+    tr = new_trader(mode="signal", corr_on=True, corr_pause_bars=0,
+                    corr_arm_on=True)
+    cs, px = v_shape()
+    tr.on_price(px, cs, "1h", "GÜÇLÜ AL")                 # LONG
+    assert tr.position and tr.position.side == LONG
+    tr.on_price(px * 0.92, cs, "1h", "NÖTR")              # zarar
+    assert tr.position is None
+    assert tr._corr_arm == "LONG", tr._corr_arm
+    # ayni yon tekrar: ARM engel (azap degirmeni)
+    tr.on_price(px * 0.92, cs, "1h", "GÜÇLÜ AL")
+    assert tr.position is None, "ARM ayni-yon girisini engellemeli"
+    # TERS sinyal: arm duser, karsi yon acilir
+    tr.on_price(px * 0.92, cs, "1h", "GÜÇLÜ SAT")
+    assert tr.position and tr.position.side == SHORT, "ters sinyal acmali"
+    assert tr._corr_arm == "", tr._corr_arm
+
+
+ok.append(test("DUZELTICI ARM: zarar yonune ters sinyal gerek",
+               t_corr_arm))
+
+
+def t_corr_sadece_guclu():
+    """STRONG_ONLY: zayif AL/SAT -> NÖTR, giris acmaz; GÜÇLÜ acar."""
+    tr = new_trader(mode="signal", corr_on=True, corr_strong_only=True,
+                    corr_strong_first=True)
+    cs, px = v_shape()
+    tr.on_price(px, cs, "1h", "AL")                       # zayif: giris YOK
+    assert tr.position is None, "zayif AL giris acmamali"
+    tr.on_price(px, cs, "1h", "GÜÇLÜ AL")                 # güçlü: acilir
+    assert tr.position and tr.position.side == LONG, "GÜÇLÜ AL acmali"
+    # pozisyon acikken zayif SAT: NÖTR gibi KAPATIR ama ters acmaz
+    tr.on_price(px * 1.01, cs, "1h", "SAT")
+    assert tr.position is None, "zayif SAT pozisyonu kapatmali (NÖTR)"
+    assert all(t.side == LONG for t in tr.trades), tr.trades
+
+
+ok.append(test("DUZELTICI: sadece GÜÇLÜ sinyaller giris acar",
+               t_corr_sadece_guclu))
 
 
 print("-" * 62)
