@@ -359,6 +359,21 @@ class PaperTrader:
         self.tk_vol_mult = float(getattr(config, "PAPER_TK_VOL_MULT", 1.0))
         self.tk_fill = float(getattr(config, "PAPER_TK_FILL", 0.55))
         self.tk_trend = bool(getattr(config, "PAPER_TK_TREND", False))
+        # ---- TIK duzeltici knob'lar (canli HBAR cogor teshisi) ----
+        # Stop-sonrasi K bar bekletme: secikici "azap degirmeni" (stop ->
+        # ters yon giris -> stop zinciri) elenir. 0 = kapali.
+        self.tk_pause_bars = int(getattr(
+            config, "PAPER_TK_PAUSE_BARS", 0))
+        # BE kogusu: fayda TP mesafesinin trig Kadarina ulasinca stop
+        # girise cekilir (basabas klip, honest bar-dolum); kayiplarin
+        # bir kismi ~sifira konelisir. False = kapali.
+        self.tk_be = bool(getattr(config, "PAPER_TK_BE", False))
+        self.tk_be_trig = float(getattr(config, "PAPER_TK_BE_TRIG", 0.5))
+        self.tk_be_lock = float(getattr(config, "PAPER_TK_BE_LOCK", 0.0))
+        # Ayni salinim yonune PEKISME yeniden giris yok (cift giris
+        # israfi). False = kapali.
+        self.tk_leg_flip = bool(getattr(
+            config, "PAPER_TK_LEG_FLIP", False))
         self._bars_held = 0
         self._last_bar_time = 0
         # Son LONG'dan bu yana ulasilan en yuksek fiyat. SHORT karari
@@ -472,10 +487,23 @@ class PaperTrader:
                 self.tk_on = True
                 self.tk_theta_max = 0.85
                 self.tk_theta_min = 0.0        # her leg uygun (yogun)
-                self.tk_tp = 0.002
+                # YOGUN duzeltici seti (research_tk8/9/10 olcumu,
+                # 2026-10-26 canli HBAR cogor teshisi sonrasi):
+                #   be_lock 0.5 : TP'ye yari yol + geriden donen
+                #     dalgadan yarim-kar klip (maker, honest dolum);
+                #     HBAR'da -300 -> -70$ (%77 kayip kesme).
+                #   pause 3 bar : stop -> ters-yon hemen giris zinciri
+                #     (canli cogor) engel. Ortalama iyilesme ~%26.
+                #   tp 0.0025 sl 0.003 : WR esigi %65 -> gercek WR 67-69.
+                self.tk_tp = 0.0025
                 self.tk_sl = 0.003
                 self.tk_fill = 0.40
                 self.tk_vol_mult = 1.0
+                self.tk_be = True
+                self.tk_be_trig = 0.5
+                self.tk_be_lock = 0.5
+                self.tk_pause_bars = 3
+                self.tk_leg_flip = False
         if min_hold is not None and 0 <= int(min_hold) <= 500:
             self.min_hold_bars = int(min_hold)
         if risk_pct is not None and 0 < float(risk_pct) <= 0.50:
@@ -2212,14 +2240,67 @@ class PaperTrader:
                         self._close(price, "tk hedefe ulaşıldı",
                                     timeframe, maker=True)
                         return "TICK: hedef klip (maker)"
+            # --- BE kogusu (tk_be): TP'ye yakinlaSINCA stop girise ---
+            # Fayda trig kadar TP mesafesine ulastiysa resting limit
+            # girise ceker; horizontal bar-dolum oLcAGI kalir (maker).
+            if self.tk_be and tp > 0:
+                # acilis+cikis maker ucredi + opcional yarim-kar kilidi:
+                # trig kadar ilerledikten sonra geri donen dalgadan
+                # en az (buf) kadar kari tasiyan cikis.
+                buf = self.maker_rate * 2.0 + \
+                    float(getattr(self, "tk_be_lock", 0.0)) * self.tk_tp
+                trig_f = getattr(self, "tk_be_trig", 0.5)
+                if p.side == LONG:
+                    be_px = p.entry * (1.0 + buf)
+                    trig_px = p.entry * (1.0 + trig_f * self.tk_tp)
+                    if bar_high is not None and bar_low is not None:
+                        if getattr(p, "tk_be_armed", False) and \
+                                bar_low <= be_px <= bar_high:
+                            self._close(be_px, "tk başabaş klip",
+                                        timeframe, maker=True)
+                            return "TICK: başabaş klip (maker)"
+                        if bar_high >= trig_px:
+                            p.tk_be_armed = True
+                    elif bar_high is None:          # canli tik
+                        if not getattr(p, "tk_be_armed", False):
+                            if price >= trig_px:
+                                p.tk_be_armed = True
+                        elif price <= be_px:
+                            self._close(price, "tk başabaş klip",
+                                        timeframe)
+                            return "TICK: başabaş klip (market)"
+                else:
+                    be_px = p.entry * (1.0 - buf)
+                    trig_px = p.entry * (1.0 - trig_f * self.tk_tp)
+                    if bar_high is not None and bar_low is not None:
+                        if getattr(p, "tk_be_armed", False) and \
+                                bar_low <= be_px <= bar_high:
+                            self._close(be_px, "tk başabaş klip",
+                                        timeframe, maker=True)
+                            return "TICK: başabaş klip (maker)"
+                        if bar_low <= trig_px:
+                            p.tk_be_armed = True
+                    elif bar_high is None:          # canli tik
+                        if not getattr(p, "tk_be_armed", False):
+                            if price <= trig_px:
+                                p.tk_be_armed = True
+                        elif price >= be_px:
+                            self._close(price, "tk başabaş klip",
+                                        timeframe)
+                            return "TICK: başabaş klip (market)"
+
             # --- SL: stop-market (taker) ---
             if stop > 0:
                 if p.side == LONG:
                     if acilis <= stop:
                         self._close(acilis, "tk stop", timeframe)
+                        self._tk_kayip_t = float(
+                            candles[-1].open_time) if candles else 0.0
                         return f"TICK: stop ({_px(acilis)})"
                     if bar_low is not None and bar_low <= stop:
                         self._close(stop, "tk stop", timeframe)
+                        self._tk_kayip_t = float(
+                            candles[-1].open_time) if candles else 0.0
                         return f"TICK: stop ({_px(stop)})"
                     if bar_low is None and price <= stop:
                         # Canli tik (bar araligi yok): tick stopu asti.
@@ -2228,9 +2309,13 @@ class PaperTrader:
                 else:
                     if acilis >= stop:
                         self._close(acilis, "tk stop", timeframe)
+                        self._tk_kayip_t = float(
+                            candles[-1].open_time) if candles else 0.0
                         return f"TICK: stop ({_px(acilis)})"
                     if bar_high is not None and bar_high >= stop:
                         self._close(stop, "tk stop", timeframe)
+                        self._tk_kayip_t = float(
+                            candles[-1].open_time) if candles else 0.0
                         return f"TICK: stop ({_px(stop)})"
                     if bar_high is None and price >= stop:
                         self._close(price, "tk stop", timeframe)
@@ -2277,6 +2362,21 @@ class PaperTrader:
                     (legv < 0 and c_[-1] > sma200):
                 return None
 
+        # Duzeltici kogular: stop-sonrasi bekletme + ayni-leg tekrar
+        # girisin engellemesi (canli HBAR cogor teshisi: stop -> ters
+        # yon giris -> stop zinciri ve ayni cebe cift giris).
+        pause = getattr(self, "tk_pause_bars", 0) or 0
+        if pause > 0 and len(candles) >= 2:
+            tf_ms = max(1.0, float(candles[-1].open_time -
+                                   candles[-2].open_time))
+            son_kayip = getattr(self, "_tk_kayip_t", 0.0) or 0.0
+            if son_kayip and float(candles[-1].open_time) - son_kayip \
+                    < pause * tf_ms:
+                        return None                     # bekle (silenc-i)
+        if getattr(self, "tk_leg_flip", False) and \
+                legv == getattr(self, "_tk_son_leg", None):
+            return None                                 # ayni yone tekrar girme
+
         acilis = float(candles[-1].open)
         if legv > 0:
             # LONG: pasif AL limit altin cebe icinde (tk_fill)
@@ -2296,6 +2396,7 @@ class PaperTrader:
                 if q is not None:
                     q.tk_tp = L * (1.0 + self.tk_tp)
                     q.tk_stop = L * (1.0 - self.tk_sl)
+                self._tk_son_leg = legv
                 return "TICK: LONG limit doldu (maker)"
         else:
             # SHORT: pasif SAT limit altin cebe icinde (tk_fill)
@@ -2313,6 +2414,7 @@ class PaperTrader:
                 if q is not None:
                     q.tk_tp = L * (1.0 - self.tk_tp)
                     q.tk_stop = L * (1.0 + self.tk_sl)
+                self._tk_son_leg = legv
                 return "TICK: SHORT limit doldu (maker)"
         return None
 

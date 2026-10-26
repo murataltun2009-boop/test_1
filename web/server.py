@@ -469,9 +469,12 @@ def create_app(service: MarketService, store: SignalStore,
                        f"%{paper.tk_sl*100:.0f} · fib θ 0,44-0,678) — "
                        f"gunde ~6-8 islem, olcumde 3/3 pencere pozitif")
             else:
-                kar = (f"YOGUN (tp %{paper.tk_tp*100:.0f} · SL "
-                       f"%{paper.tk_sl*100:.0f} · fib θ 0-0,85 · "
-                       f"fill 0,40) — gunde ~15-25 islem, az az kazanc")
+                kar = (f"YOGUN (tp %{paper.tk_tp*100:.1f} · SL "
+                       f"%{paper.tk_sl*100:.1f} · fib θ 0-0,85 · "
+                       f"fill 0,40 · yarim-kar klip · stop-sonrasi "
+                       f"3 bar bekle) — gunde ~15-25 islem; cogu "
+                       f"coinde 3-gunluk pencerede negatif, trendli "
+                       f"coindet POZITIF (ERA/ENA olcum)")
             dur = "" if paper.running else \
                 " · SIMULASYON DURAKLATILMIS — islem acilmasi icin " \
                 "Trade Başla'ya bas"

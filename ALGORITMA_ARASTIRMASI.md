@@ -804,3 +804,33 @@ Not: yogun mod coin-coin buyuk dagilim gosteriyor; HBAR haric tek
 cekim kazananlar pencere kaydiginda donuyor. BTC hook (secici) sadece
 BTCUSDT'de; BTC icin grafik dilimi 5m OLMALI (1m'de yogun mod
 kapanma; secikici 5m +150$/3 pencere).
+
+### CANLI HBAR DEBUG - tik yogun cogor teshisi (2026-10-26, 36 pozisyon)
+Kullanici canli verisi: 22K / 14Z / -133.9$.
+  * Kazanc ort +12.7 (TP%2), kayip ort -28 (SL%3 taker): asimetri 2.2x
+  * Breakeven WR %69.5; gercek %61 -> -134$. Motor matematigi calisti,
+    EGMONOMI kaybetti.
+Cogor desenleri: (1) stop -> HEMEN ters-yon giris -> stop (azap
+degirmeni canli); (2) ayni cebe arka-arkaya cift giris (komisyon
+israfi); (3) kayiplarin TAMAMI SL yendi - orta cikis yok.
+
+Duzeltici KNOB'lar (core/paper.py _tk; config PAPER_TK_PAUSE_BARS /
+PAPER_TK_BE / PAPER_TK_BE_TRIG / PAPER_TK_BE_LOCK / PAPER_TK_LEG_FLIP):
+  * PAUSE k bar: stop-sonrasi giris yok. Tek basinda etkisiz (motor
+    pencerelerinde hizli cogor nadir; canlida gelir).
+  * BE-klip trig 0.5 + LOCK: TP'ye kaci yol + geri donen dalgadan
+    yarim-kar klip (honest bar-dolum, maker). HBAR -300 -> -180$.
+  * LEG_FLIP: ayni-leg yeniden giris engeli. HOZUR karisik (ERA'da
+    yikici): default kapali.
+  * SL kisaltma: WR-esigi dusurur ama stop sayisini artirir - bir mesaja.
+
+36 varyant x 4 coin (research_tk8/9/10, 6x500 pencere):
+  HBAR en iyi: tp%2.5 sl%3 be_lock0.5 pause3 -> -70$ (baseline -300)
+  ADA: tp%3 (sl3, lock .5) -> +27.9$ tek pozitif kombinasyon
+  DOGE/SOL: hepsi negatif. YOGUN MOD COCU COINDE 3 GUNLUK PENCEREDE
+  NEGATIF — sadece (ERA +271..+292, ENA +394/+563 flip ile) pozitif.
+
+URETIM: dense hook = tp0.0025 sl0.003 be(trig.5 lock.5) pause3
+flip0. BTC secici hook korunur. Kulaniciya acik soyle: yogun mod
+regim-dayanikli DEGIL; 1 gunluk pencere-kazi-pandiklara itibar etme
+ kayit: HBAR +37 (tek cekim) sonra 6 pencere -180..-300.
