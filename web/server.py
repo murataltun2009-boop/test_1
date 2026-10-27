@@ -390,7 +390,7 @@ def create_app(service: MarketService, store: SignalStore,
                 #  calisir, sinyal dizisi gerekmez.)
                 sig = service.paper_signals(tf) \
                     if paper.mode in ("signal", "signal_long",
-                                      "signal_exit") else None
+                                      "signal_exit", "tk2") else None
                 bt = await asyncio.to_thread(paper.backtest, candles, tf, sig)
                 service._emit_log(
                     "info", "simulator",
@@ -486,6 +486,21 @@ def create_app(service: MarketService, store: SignalStore,
                 "warning", "simulator",
                 f"TİK modu UYGULANAMADI (motor mode={paper.mode}) — "
                 f"server kodu eski olabilir, restart gerekli")
+        elif data.get("mode") == "tk2" and paper.mode == "tk2":
+            # TIK kuralinin 1h grafik versiyonu: yildiz = bilesik skor
+            # serisi (grafikteki ayni yildizlar), giris TAMAMEN LIMIT.
+            tf_now = str(data.get("timeframe") or "")
+            uyari = ""
+            if tf_now and tf_now != "1h":
+                uyari = (f" · DIKKAT: secili dilim {tf_now} — TİK2 "
+                         "yalnizca 1h'de giris acar")
+            service._emit_log(
+                "info", "simulator",
+                f"TİK2 (1h yıldız) aktif — sembol {paper.symbol} · "
+                f"TP %{paper.tk_tp*100:.1f} · SL %{paper.tk_sl*100:.1f} · "
+                f"yeşil yıldız→LONG · kırmızı yıldız→SHORT · gri "
+                f"yıldız→TERS pozisyon · girişler LIMIT (maker) · "
+                f"yarım-kâr klip açık{uyari}")
         service.force_mode_refresh()
         return JSONResponse({"ok": True, "state": paper.state(_paper_price())})
 

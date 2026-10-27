@@ -834,3 +834,34 @@ URETIM: dense hook = tp0.0025 sl0.003 be(trig.5 lock.5) pause3
 flip0. BTC secici hook korunur. Kulaniciya acik soyle: yogun mod
 regim-dayanikli DEGIL; 1 gunluk pencere-kazi-pandiklara itibar etme
  kayit: HBAR +37 (tek cekim) sonra 6 pencere -180..-300.
+
+### TIK2 — 1h yildiz-kararli tamamen-limit scalper (2026-10-27)
+Kullanici kurali (1h grafigin yildizlarina bakilarak):
+  * yesil yildiz (AL / GUCLO AL) -> LONG ac
+  * kirmizi yildiz (SAT / GUCLO SAT) -> SHORT ac
+  * gri yildiz (NOTR) -> TERS pozisyona gec
+  * girişler LIMIT (maker) — maliyet dusuk; flip taker (zaruri).
+
+Uygulama (core/paper.py `_tk2`, mode "tk2"; config PAPER_TK2_TP/SL):
+  * Yildiz = komple skor sinyal serisi (res.signals; chart ile ayni).
+  * TIK cikis altyapisi yeniden: TP klip/BE klip/SL stop.
+  * ARM: yildiz anindaki fiyata pasif limit; dolum dokunma aninda
+    maker; dolmazsa yeni barda fiyata yeniden armlanir.
+  * Girisi yalnizca 1h diliminde (diger dilimler pasif).
+  * BE klip trig 0.5 + lock 0.5 acik (1h goldsunda kayip klip).
+
+OLCUM KRITIK: bir kez "bedava yaris" deligi yakaladin — 1h momentum
+bacagi TP'yi TEK barda asti; honest model "dokunma yok" deyip
+pozisyonu +5.8% bedava birakti (UNI pencere-4 +11.883$ FIZIK DISI).
+Fix: TP resting pass (fiyat TP'yi gectiyse resting emir maker
+doldurulmus sayilir, TP fiyatindan klips) -> ayni pencere +10.5$.
+
+TP/SL ekonomisi (tools/research_tk13, 8 coin x 5 pencere):
+  tp3/sl4 -3528$ | tp4/sl4 -474$ | TP5/sl4 +2005$ (25/40 pencere) |
+  tp4/sl5 -2414$ | tp6/sl5 +519$  -> URETIM tp %0.5 / sl %0.4.
+
+Uretim hook (10 pencere dogrulama, research_tk12, tp5/sl4):
+  UNI +286 (3/6) HBAR +382 (3/6) ADA -129 (3/6) ENA +216 (3/6)
+  DOGE +656 (4/6) BTC -130 (3/6) SOL +176 (3/6) ETH +548 (3/6)
+  WR ~%60-65; breakeven ~%46 -> kenar gercek. Pencere-kaymasina
+  dikkat: 90/90 test + islem frekansi ~35-40/pencere (2 haftalik).

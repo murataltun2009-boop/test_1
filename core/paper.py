@@ -374,6 +374,16 @@ class PaperTrader:
         # israfi). False = kapali.
         self.tk_leg_flip = bool(getattr(
             config, "PAPER_TK_LEG_FLIP", False))
+        # ---- TIK2 (1h yildiz-kararli tamamen-limit scalper) ----
+        # Karar grafik yildizlarindan gelir (bilesik skor sinyali):
+        # yesil -> LONG, kirmizi -> SHORT, gri (NÖTR) -> ters yon.
+        # Girisler LIMIT (maker); yalnizca 1h diliminde giris.
+        self.tk2_tp = float(getattr(config, "PAPER_TK2_TP", 0.003))
+        self.tk2_sl = float(getattr(config, "PAPER_TK2_SL", 0.004))
+        self.tk2_hedef = 0            # +1 LONG / -1 SHORT / 0 bekle
+        self.tk2_son_sig = ""         # son ISLENMIS sinyal etiketi
+        self.tk2_pend = None          # (yon, seviye) beklemedeki limit
+        self.tk2_pend_bar = 0         # arm edildigi bar acilis zamani
         self._bars_held = 0
         self._last_bar_time = 0
         # Son LONG'dan bu yana ulasilan en yuksek fiyat. SHORT karari
@@ -459,7 +469,7 @@ class PaperTrader:
             self.short_rule = short_rule
         if mode in ("range", "signal", "signal_long", "signal_exit",
                     "ma_only", "osc_only", "trend", "muro", "1m", "ppt",
-                    "tk"):
+                    "tk", "tk2"):
             if mode != self.mode:
                 # Mod degisti: onceki sinyal gecersiz.
                 self.last_signal = None
@@ -504,6 +514,24 @@ class PaperTrader:
                 self.tk_be_lock = 0.5
                 self.tk_pause_bars = 3
                 self.tk_leg_flip = False
+        if mode == "tk2":
+            # TIK2 — 1h grafigin yildiz karari (kullanici istegi:
+            # kirmizi -> SHORT, gri -> ters pozisyon, yesil -> LONG,
+            # girisler LIMIT/maker). TP/SL/klip TIK cikis altyapisini
+            # asagiya dogru yeniden kullanir; giris fib-leg'ten DEGIL,
+            # yildiz sinyalinden gelir. 1h mumlari 1m'den gurultulu
+            # oldugu icin TP/SL genis tutulur (olcumle daraltilir).
+            self.tk_on = True               # _tk girisi kapali, cikis acik
+            self.tk_tp = float(getattr(config, "PAPER_TK2_TP", 0.003))
+            self.tk_sl = float(getattr(config, "PAPER_TK2_SL", 0.004))
+            # yarim-kar klip: TP'ye yari yol + geri donen dalgadan
+            # yarim-kar klip (TIM cikalar; honest bar-dolum).
+            self.tk_be = True
+            self.tk_be_trig = 0.5
+            self.tk_be_lock = 0.5
+            # NÖTR-flip yildiz kurali gurultu yapmak: stop-sonrasi
+            # bekleme kapali (yildiz degisimi zaten yon kesistir).
+            self.tk_pause_bars = 0
         if min_hold is not None and 0 <= int(min_hold) <= 500:
             self.min_hold_bars = int(min_hold)
         if risk_pct is not None and 0 < float(risk_pct) <= 0.50:
@@ -842,6 +870,9 @@ class PaperTrader:
                 self._guc_scope() and signal in ("AL", "SAT"):
             signal = "NÖTR"
 
+        if self.mode == "tk2":
+            return self._tk2(price, candles, timeframe,
+                             bar_low, bar_high, signal)
         if self.mode == "tk":
             return self._tk(price, candles, timeframe,
                             bar_low, bar_high)
@@ -1855,7 +1886,7 @@ class PaperTrader:
                                                      "signal_exit",
                                                      "ma_only", "osc_only",
                                                      "trend", "muro", "1m",
-                                                     "ppt"):
+                                                     "ppt", "tk2"):
                     # Sinyal listesi YOKSA ve karar modu sinyal tabanliysa
                     # burada analiz yapip signal listesini kendimiz uretiriz.
                     #
@@ -2221,8 +2252,16 @@ class PaperTrader:
             # --- TP: resting limit (maker) ---
             if tp > 0:
                 if p.side == LONG:
-                    if bar_high is not None and bar_low is not None:
+                    if bar_low is not None and bar_high is not None:
                         if bar_low <= tp <= bar_high:
+                            self._close(tp, "tk hedefe ulaşıldı",
+                                        timeframe, maker=True)
+                            return "TICK: hedef klip (maker)"
+                        elif self.mode == "tk2" and price >= tp:
+                            # TK2 resting-limit pass: fiyat TP'yi
+                            # gecti (gap/momentum) — resting emir
+                            # kitabin tepesinde kalir ve isten
+                            # bölüm makketi süpürür -> maker dolumu.
                             self._close(tp, "tk hedefe ulaşıldı",
                                         timeframe, maker=True)
                             return "TICK: hedef klip (maker)"
@@ -2233,6 +2272,12 @@ class PaperTrader:
                 else:
                     if bar_high is not None and bar_low is not None:
                         if bar_low <= tp <= bar_high:
+                            self._close(tp, "tk hedefe ulaşıldı",
+                                        timeframe, maker=True)
+                            return "TICK: hedef klip (maker)"
+                        elif self.mode == "tk2" and price <= tp:
+                            # TK2 resting-limit pass (SHORT: fiyat TP
+                            # altina gecti) — maker dolumu.
                             self._close(tp, "tk hedefe ulaşıldı",
                                         timeframe, maker=True)
                             return "TICK: hedef klip (maker)"
@@ -2326,6 +2371,10 @@ class PaperTrader:
         # ------------------------------------------------------------------
         # 2) SETUP + PASIF GIRIS (altin cebe dokunu)
         # ------------------------------------------------------------------
+        # TIK2 fib-leg girişi KULLANMAZ: yon yildiz sinyalinden (_tk2).
+        # Yalnizca 1) numarali cikis altyapisi (TP/BE/SL) ortak.
+        if self.mode == "tk2":
+            return None
         if len(candles) < 10 or not self.tk_on:
             return None
         h = [c.high for c in candles]
@@ -2416,6 +2465,108 @@ class PaperTrader:
                     q.tk_stop = L * (1.0 + self.tk_sl)
                 self._tk_son_leg = legv
                 return "TICK: SHORT limit doldu (maker)"
+        return None
+
+    def _tk2(self, price: float, candles: list, timeframe: str,
+             bar_low: Optional[float], bar_high: Optional[float],
+             signal: Optional[str]) -> Optional[str]:
+        """TICK2 — 1h yildiz-kararli tamamen-LIMIT scalper (maker).
+
+        KULLANICI KURALI (2026-10-27): TIK karar mekanizmasinin 1 saatlik
+        grafigindeki yildizlar yonu belirler:
+          * yesil yildiz   (AL / GÜÇLÜ AL)    -> LONG ac
+          * kirmizi yildiz (SAT / GÜÇLÜ SAT)  -> SHORT ac
+          * gri yildiz     (NÖTR)             -> TERS pozisyona gec
+        En son yildiz karari TASINIR (hedef): ayni yone sinyal tekrari
+        davranis uretmez; NÖTR mevcut hedefi tersine cevirir.
+
+        DILIM KOŞULU: yeni giris yalnizca timeframe == "1h" iken acilir;
+        baska dilim seciliyse yalnizca acik pozisyon yonetilir ve beklemedeki
+        limit onaylanmaz.
+
+        MALIYET: girişler pasif LIMIT (maker ucreti). Dovuz modeli TIK
+        ile ayni dürüst dolum: emir yalnizca fiyat seviyeye dokunurken
+        dolu (bar: acilis seviyenin ustunde + low/high dokunma; canli
+        tik: acilis ustunde + tick dokunma). Ters-yon flip MARKET'tir
+        (taker, zaruri: bekleyen limit ters yon kapatamaz).
+        """
+        # 1) pozisyon yonetimi (TP klip / BE klip / SL stop) — TIK ile
+        #    ayni makine (_tk'in giris bolumu TIK2'de kapali).
+        mesaj = self._tk(price, candles, timeframe, bar_low, bar_high)
+
+        # 2) yildiz karari: SADECE SINYAL DEGISIMINDE.
+        sig = str(signal or "").strip()
+        if sig and sig != self.tk2_son_sig:
+            self.tk2_son_sig = sig
+            if sig in ("AL", "GÜÇLÜ AL"):
+                self.tk2_hedef = 1
+                self.tk2_pend = None            # yeni karara yeniden arm
+            elif sig in ("SAT", "GÜÇLÜ SAT"):
+                self.tk2_hedef = -1
+                self.tk2_pend = None
+            elif sig == "NÖTR":                 # gri yildiz: TERSINE
+                if self.tk2_hedef != 0:
+                    self.tk2_hedef = -self.tk2_hedef
+                    self.tk2_pend = None
+
+        p = self.position
+        if p is not None:
+            if self.tk2_hedef != 0 and \
+                    p.side != (LONG if self.tk2_hedef > 0 else SHORT):
+                # TERS POZISYONA GEC: hedef degisti, pozisyon ters tarafta.
+                # Market kapat (taker), karsi giris limit ARM'lenir.
+                self._close(price, "TK2: ters yildiz flip",
+                            timeframe, reset_signal=False)
+                return "TK2: ters pozisyona geçildi (taker flip)"
+            return mesaj                          # ayni yonde: yonetim
+
+        # 3) yeni giris yalnizca 1h diliminde.
+        if timeframe != "1h" or self.tk2_hedef == 0 or len(candles) < 10:
+            return None
+
+        acilis = float(candles[-1].open) if candles else price
+
+        # 4) beklemedeki limitin dolumu (dostum model: acilis seviyenin
+        #    USTUNDE kalmali — yani resting pasif emir; dokunma dolum).
+        if self.tk2_pend is not None:
+            yon, L = self.tk2_pend
+            if yon > 0:
+                doldu = bool(bar_low is not None and
+                             acilis >= L and bar_low <= L) or \
+                        bool(bar_low is None and acilis >= L and
+                             price <= L)
+            else:
+                doldu = bool(bar_high is not None and
+                             acilis <= L and bar_high >= L) or \
+                        bool(bar_high is None and acilis <= L and
+                             price >= L)
+            if doldu:
+                self._open(LONG if yon > 0 else SHORT, L,
+                           "TK2: yıldız limit (maker)",
+                           timeframe, candles, maker=True)
+                q = self.position
+                if q is not None:
+                    if yon > 0:
+                        q.tk_tp = L * (1.0 + self.tk_tp)
+                        q.tk_stop = L * (1.0 - self.tk_sl)
+                    else:
+                        q.tk_tp = L * (1.0 - self.tk_tp)
+                        q.tk_stop = L * (1.0 + self.tk_sl)
+                self.tk2_pend = None
+                return "TK2: yıldız limit doldu (maker)"
+            # Dolum yoksa yeni barda seviyeyi guncel fiyata tasi
+            # (kovalamaca ARM): limit pasifligi bozulmaz, dolum yine
+            # dokunma anindadir.
+            if candles and self.tk2_pend_bar != int(candles[-1].open_time):
+                self.tk2_pend = (yon, price)
+                self.tk2_pend_bar = int(candles[-1].open_time)
+            return None
+
+        # 5) ARM: yildiz anindaki fiyata pasif limit kon.
+        if self.tk2_pend is None:
+            self.tk2_pend = (self.tk2_hedef, price)
+            self.tk2_pend_bar = int(candles[-1].open_time) \
+                if candles else 0
         return None
 
     def _close(self, price: float, reason: str, timeframe: str,
