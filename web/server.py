@@ -586,43 +586,21 @@ def create_app(service: MarketService, store: SignalStore,
         # calistigini (eski surecte sessiz yok-sayma tehlikesi) ve
         # simulasyonun duraklatip duraklatmadigini acikla.
         if data.get("mode") == "tk" and paper.mode == "tk":
-            if "BTC" in paper.symbol:
-                kar = (f"SECIKICI (tp %{paper.tk_tp*100:.0f} · SL "
-                       f"%{paper.tk_sl*100:.0f} · fib θ 0,44-0,678) — "
-                       f"gunde ~6-8 islem, olcumde 3/3 pencere pozitif")
-            else:
-                kar = (f"YOGUN (tp %{paper.tk_tp*100:.1f} · SL "
-                       f"%{paper.tk_sl*100:.1f} · fib θ 0-0,85 · "
-                       f"fill 0,40 · yarim-kar klip · stop-sonrasi "
-                       f"3 bar bekle) — gunde ~15-25 islem; cogu "
-                       f"coinde 3-gunluk pencerede negatif, trendli "
-                       f"coindet POZITIF (ERA/ENA olcum)")
             dur = "" if paper.running else \
                 " · SIMULASYON DURAKLATILMIS — islem acilmasi icin " \
                 "Trade Başla'ya bas"
             service._emit_log(
                 "info", "simulator",
-                f"TİK modu aktif — sembol {paper.symbol} · {kar}{dur}")
+                f"TİK (yıldız limit) aktif — sembol {paper.symbol} · "
+                f"TP %{paper.tk_tp*100:.1f} · SL %{paper.tk_sl*100:.1f} · "
+                f"yeşil yıldız→LONG · kırmızı yıldız→SHORT · gri "
+                f"yıldız→TERS pozisyon · aç/kapa LIMIT (maker) · "
+                f"yarım-kâr klip{dur}")
         elif data.get("mode") == "tk" and paper.mode != "tk":
             service._emit_log(
                 "warning", "simulator",
                 f"TİK modu UYGULANAMADI (motor mode={paper.mode}) — "
                 f"server kodu eski olabilir, restart gerekli")
-        elif data.get("mode") == "tk2" and paper.mode == "tk2":
-            # TIK kuralinin 1h grafik versiyonu: yildiz = bilesik skor
-            # serisi (grafikteki ayni yildizlar), giris TAMAMEN LIMIT.
-            tf_now = str(data.get("timeframe") or "")
-            uyari = ""
-            if tf_now and tf_now != "1h":
-                uyari = (f" · DIKKAT: secili dilim {tf_now} — TİK2 "
-                         "yalnizca 1h'de giris acar")
-            service._emit_log(
-                "info", "simulator",
-                f"TİK2 (1h yıldız) aktif — sembol {paper.symbol} · "
-                f"TP %{paper.tk_tp*100:.1f} · SL %{paper.tk_sl*100:.1f} · "
-                f"yeşil yıldız→LONG · kırmızı yıldız→SHORT · gri "
-                f"yıldız→TERS pozisyon · girişler LIMIT (maker) · "
-                f"yarım-kâr klip açık{uyari}")
         service.force_mode_refresh()
         return JSONResponse({"ok": True, "state": paper.state(_paper_price())})
 
