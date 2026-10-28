@@ -378,6 +378,8 @@ class PaperTrader:
         # bagli: yesil->LONG, kirmizi->SHORT, gri->TERS) ----
         self.tk_sig_son = ""          # son ISLENMIS yildiz etiketi
         self.tk_hedef = 0             # +1 LONG / -1 SHORT / 0 bekle
+        self.tk_hedef_kaynak = ""     # hedefi kuran yildiz etiketi
+        #   (AL/GÜÇLÜ AL/SAT/GÜÇLÜ SAT/NÖTR — gri akislar icin tek-gecerlik)
         self.tk_pend_close = None     # flip kapanis dokunma seviyesi
         self.tk_pend_entry = None     # (yon, seviye) giris limit ARM
         self.tk_pend_bar = 0          # ARM edildigi bar acilis zamani
@@ -2253,7 +2255,24 @@ class PaperTrader:
         yukselen = bool(kap_mum is not None and
                         getattr(kap_mum, "close", kap_mum.open) >= kap_mum.open)
         if yeni is not None and yeni != self.tk_hedef:
-            if self.tk_confirm > 1 and self.tk_hedef != 0 and \
+            if sig == "NÖTR":
+                # GRI YILDIZ (kullanici kurali): gri, onceki pozisyonun
+                # TERSINE cevirir — yalnizca ACIK pozisyon iken ve
+                # gri yildiz SABITLENMIS ise (onceki kapali barin
+                # yildizi da gri: 2 gri bar). Pozisyon yokken gri tek
+                # basina islem yapmaz (kirmizi/yesil yildiz bekler;
+                # "kirmizi ve yesil yildiz olmadan ac/kapa yok").
+                # Ayni gri dizisi yalnizca BIR kez cevirir (kaynak
+                # NÖTR ise tekrar sallanma yasak).
+                if (self.tk_confirm > 1 and
+                        self._tk_hist_y2 != "NÖTR") or \
+                        p is None or \
+                        self.tk_hedef_kaynak == "NÖTR":
+                    pass
+                else:
+                    self.tk_hedef = yeni
+                    self.tk_hedef_kaynak = "NÖTR"
+            elif self.tk_confirm > 1 and self.tk_hedef != 0 and \
                     onceki != yeni:
                 # SABITLEME: yeni yon yalnizca SON kapali barda gorundu;
                 # bir onceki kapali bar ayni yonde DEGIL — yildiz
@@ -2269,6 +2288,7 @@ class PaperTrader:
                 pass
             else:
                 self.tk_hedef = yeni
+                self.tk_hedef_kaynak = sig
 
         # --- 1 dk bekleme: son ac/kapa (giris, flip kapanis, stop)
         # sonrasindaki sure; sure dolana kadar yeni acilis/kapanis yok.
@@ -2509,15 +2529,28 @@ class PaperTrader:
             return None
         yon = self.tk_hedef
 
-        # TAZE YILDIZ-HDEF UYUMU (pozisyon-yok girişleri): yıldız
-        # hedefle aynı yönde DEĞİLSE giris YOK — hedef ya confirm
-        # (2-bar sabitleme) ya da mum-yıldız uyuşmazlığı bekliyor
-        # demektir. Kullanici kurali: yildiz sabitlenmeden islem
-        # acilmaz. Confirm/uyusma gate'i hedefi guncellediginde
-        # burasi zaten uyumlu olur; yildiz-karşıtı giris engellenir.
-        if yeni is not None and yeni != self.tk_hedef:
+        # TAZE YILDIZ-HDEF UYUMU (pozisyon-yok girisleri): kirmizi/
+        # yesil yildiz hedef ile ayni yonde DEGILSE giris YOK — hedef
+        # ya confirm (2-bar sabitleme) ya da mum-yildiz uyusmazligi
+        # bekliyor demektir (kullanici kurali: sabitlenmeyen yildizla
+        # islem acilmaz). Gri yildiz yalnizca hedefi ayni gri-cevirme
+        # kurduysa (TERS giris) girise izinlidir.
+        if sig == "NÖTR":
+            if self.tk_hedef_kaynak != "NÖTR":
+                self.tk_pend_entry = None
+                return None
+        elif yeni is not None and yeni != self.tk_hedef:
             self.tk_pend_entry = None
             return None
+
+        # MUM YONU (kullanici kurali: "kirmizi mum atarken long
+        # acmak cok mantiksiz"): giris yonu ile KAPALI bar ayni yonde
+        # olmali. Istisna: NÖTR kaynakli TERS giris — gri karari mum
+        # yonunden bagimsizdir.
+        if (yon > 0 and not yukselen) or (yon < 0 and yukselen):
+            if not (sig == "NÖTR" and self.tk_hedef_kaynak == "NÖTR"):
+                self.tk_pend_entry = None
+                return None
 
         # Yildiz degistiyse bekleyen eski-yon ARM gecersiz (ters acilma).
         if self.tk_pend_entry is not None and self.tk_pend_entry[0] != yon:

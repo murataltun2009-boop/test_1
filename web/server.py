@@ -480,7 +480,11 @@ def create_app(service: MarketService, store: SignalStore,
                 f"KAPANINCA sabitlenir, {getattr(paper,'tk_confirm',2)} "
                 f"kapali bar ayni yonda olmadan pozisyon degismez · "
                 f"yıldız-mum çelişkisinde (yeşil yıldızlı kırmızı mum "
-                f"veya tersi) pozisyon degistirmeden beklenir{dur}")
+                f"veya tersi) pozisyon degistirmeden beklenir · gri "
+                f"yıldız yalnizca ACIK pozisyonun tersine cevirir "
+                f"(2 gri bar gerek; pozisyon yokken gri ile islem "
+                f"yok) · giris, kapali mum ile yildiz ayni yonde "
+                f"olmali{dur}")
         elif data.get("mode") == "tk" and paper.mode != "tk":
             service._emit_log(
                 "warning", "simulator",
@@ -609,7 +613,11 @@ def create_app(service: MarketService, store: SignalStore,
                 f"KAPANINCA sabitlenir, {getattr(paper,'tk_confirm',2)} "
                 f"kapali bar ayni yonda olmadan pozisyon degismez · "
                 f"yıldız-mum çelişkisinde (yeşil yıldızlı kırmızı mum "
-                f"veya tersi) pozisyon degistirmeden beklenir{dur}")
+                f"veya tersi) pozisyon degistirmeden beklenir · gri "
+                f"yıldız yalnizca ACIK pozisyonun tersine cevirir "
+                f"(2 gri bar gerek; pozisyon yokken gri ile islem "
+                f"yok) · giris, kapali mum ile yildiz ayni yonde "
+                f"olmali{dur}")
         elif data.get("mode") == "tk" and paper.mode != "tk":
             service._emit_log(
                 "warning", "simulator",

@@ -1186,9 +1186,10 @@ if ("serviceWorker" in navigator) {
           + "her işlem sonrası 1 dk bekleme (kâr bankası dahil); "
           + "kâr bankası: açık pozisyon kârı bakiyenin %2,5'ine "
           + "(+25$ @1000) ulaşınca cüzdana yazılır (limit/maker); "
-          + "yıldız-mum çelişkisinde (yeşil yıldızlı kırmızı mum veya "
-          + "tersi) pozisyon değiştirmeden beklenir; aksiyon "
-          + "yalnızca sabitlenmiş yıldızla (mum kapanışı + "
+          + "gri yıldız yalnızca açık pozisyonu tersine çevirir "
+          + "(2 gri bar; pozisyon yokken gri ile işlem yok); "
+          + "giriş, kapalı mum yıldızla aynı yönde olmalı; "
+          + "aksiyon yalnızca sabitlenmiş yıldızla (mum kapanışı + "
           + "2 kapalı bar aynı yön)"
         : "") + " · grafik yıldızları güncelleniyor");
     paperCall("/api/paper/config");

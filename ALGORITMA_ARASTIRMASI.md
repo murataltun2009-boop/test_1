@@ -1077,3 +1077,48 @@ uyusmazlik gate + giris-uyum gate + banka muhru):
   (fiyat-bank) ~ -3030$. Uyusmazlik gate + giris-uyum gate islem
   sayisini dusurup chop kaybini buyuk olcude kiriti. Kalan negatif
   UNI/BTC/ETH/ADA'da cilizin kendisi; canli veri ile tekrar bakilir.
+
+### TK gri-yildiz TERS kurali + mum-yonu giris gate (2026-10-28, oturum 7)
+KULLANICI ISTENGEMLERI:
+  * Pozisyon kapandiktan sonra bekleme suresi doldugunda EVVELKI
+    SABIT YILDIZ yönünden devam (res = ayni yonde yeniden giris).
+  * Onceki yildiz GRI ise griden onceki pozisyonun TERSINI al.
+  * "kirmizi mum atarken long acmak cok mantiksiz" — giris mum
+    yonuyle ayni yonde olmali.
+  * "grafikte kirmizi ve yesil yildiz olmadan poziyon ac kapa
+    yapma" — gri yildiz tek basina (pozisyon yokken) islem yapmaz.
+
+UYGULAMA (core/paper.py _tk):
+  1) tk_hedef_kaynak eklendi: hedefi hangi yildiz etiketi kurdu,
+     kayit tutulur (gri dizisi TEK GECERLILIK icin gereki).
+  2) GRI KURALI: NÖTR hedefi yalnizca (a) ACIK pozisyon varken,
+     (b) gri 2 ARDISIK KAPALI bar SABITLENMISken (confirm=2 kurali),
+     (c) bu gri dizisi zaten cevirmemisse -> TERSINE cevirir
+     (SHORT<->LONG).哼 Pozisyon yokken gri hicbir sey yapmaz.
+  3) POZISYON-YOK GIRIS gate'i genisletildi:
+     - taze yildiz hedefle ayni yonde DEGILSE giris yok
+       (sabitlenme/mum-uyusma bekleniyor);
+     - KIRMIZI mumda LONG giris YOK, YESIL mumda SHORT giris YOK
+       (giris kapali mum ile ayni yonde olmali);
+     - istisna: hedefi gri-cevirme kurduysa (kaynak=NÖTR) TERS giris
+       mum yonunden bagimsiz (gri karari TERS istegi).
+  4) Res/devam: pozisyon kapandiktan (banka/flip/stop) sonra bekleme
+     sure dolunca motor son sabit yildiz yönünden giris kurar
+     (yildiz+kirmizi/yesil mum ayni yonda ise).
+
+DOGRULAMA (tk_sanity tum adimlar OK + test paper 90/90):
+  yesil->LONG · yesil yildiz kirmizi mumda koru · tek kirmizi flip
+  yok · 2. kirmizi flip + bekleme + SHORT · banka muhr · poz yokken
+  gri dokunmaz · YESIL mumda SAT giris engellendi · kirmizi mumda
+  giris · yesil yildiz kirmizi mumda SHORT korunur · gri 2 bar ->
+  TERS cevirme (SHORT->LONG) · gri girisi tek gecerli (3. gri
+  yeniden cevirmiyor).
+
+OLCUM (research_tk14, 6x500, 1m; confirm=2 + para-bank %2.5 +
+tum gate'ler):
+  DOGE +41.6   HBAR -168.1  UNI -0.3  BTC -263.5
+  ETH -16.2    ENA +507.0  ADA +56.0    TOPLAM ~ +157.3$
+  KARSILASTIRMA dizi: -3600 (oturum 5) -> -235 (oturum 6) -> +157.
+  4/7 coin pozitif; BTC/HBAR/ETH chop'ta hafif negatif. Banka +
+  kapilar birlikte ilk kez net pozitif — canli dogrulama icin
+  30-40 islem kaydi bekli.
