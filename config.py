@@ -389,6 +389,9 @@ PAPER_TK_FILL = 0.55             # altin cebe giris konumu (0.55 en iyi)
 PAPER_TK_TREND = False           # SMA200 uyumu (olcumde etkisiz)
 # ---- TIK duzeltici (canli cogor teshisi, research_tk8-10 olcumu) ------
 PAPER_TK_AFTER_SEC = 60           # her ac/kapadan sonra bekleme (SNAKIYE — kullanici kurali)
+PAPER_TK_SAR = True               # stop kaybinda pozisyonu TERS yonde ac (stop->ters; dususte short yakala)
+PAPER_TK_SAR_MEAN = 10            # SAR trend filtresi: son N kapali bar kapanis ortalamasi
+PAPER_TK_SAR_MINPCT = 0.004       # SAR girisi icin fiyat-ortalama magdıri (%0.2; chop sinirdi ret)
 PAPER_TK_CONFIRM_BARS = 2         # yildiz sabitlemesi: son K kapali bar ayni yon olmali (1=kapali)
 PAPER_TK_BANK_PCT = 0.025         # acik pozisyon kari bakiyenin bu kadarini gecince cuzdana yaz (+25$ @1000)
 PAPER_TK_PAUSE_BARS = 0          # stop-sonrasi K bar giris yok (yogun: 3)

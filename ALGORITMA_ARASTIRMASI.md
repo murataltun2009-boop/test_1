@@ -1122,3 +1122,43 @@ tum gate'ler):
   4/7 coin pozitif; BTC/HBAR/ETH chop'ta hafif negatif. Banka +
   kapilar birlikte ilk kez net pozitif — canli dogrulama icin
   30-40 islem kaydi bekli.
+
+### TK stop->ters (SAR) + trend filtresi — ENA dusus yakalama (oturum 8, 2026-10-29)
+KULLANICI ISTEGI: ENA'da LONG sinyalinden sonra 0.2141 -> 0.2094
+dususunde hic short/nort yildiz cikmadigi icin motor dususu
+yakalayamamis, long'a geri girişlerle kayip biriktirmis.
+"En azindan nort durumu yakalamali, pozisyonu tersine cevirmeli."
+
+CANLI VERI (kullanicinin ENA kayitlari, 7 islem):
+  SHORT -29.17 | LONG -31.55 | LONG -31.86 | LONG -32.41 |
+  LONG +22.98 | LONG +22.49 | LONG -32.86
+  NET -112.38$ + komisyon ~-36$ = ~-148$ — chop bandinda long
+  zinciri (besi ard arda ~%0.3 stop) ve tek short (dip cevresinde)
+  bitti. Banka gize +22$ istisna. Veri: blanket TERS acilim
+  chop'ta ziyan (motorun oturum-7 olcum uyumu ile ayni).
+
+UYGULAMA (core/paper.py _tk_sar_ac, config PAPER_TK_SAR/SAR_MEAN/SAR_MINPCT):
+  1) STOP->TERS: SL stop kaybinda pozisyon ters yonde acilir
+     (maker, TP/SL yeniden kurulur), hedef ve tk_hedef_kaynak=STOP
+     ters kaydedilir — taze yildiz eski yonde olse bile pozisyon-yok
+     girisi eski yonde ZINCIR OLAZ (giris kapisi taze yildiz-hedef
+     uyumu ister). Dusus boyunca motor short tutuyor.
+  2) TREND FILTRESI (canli veri adam yaniti): ters acilim yalnizca
+     yeni yon fiyat <- son N=10 kapali bar kapanis ortalamasinin
+     10%0.4-altindaysa (SHORT) veya ustundeyse (LONG) gecerli;
+     aksi halce DUZ stop (flat) — chop whipsaw alti pahali
+     (blanket SAR olcümü: toplam -1329$).
+     Knoplar: PAPER_TK_SAR (true), PAPER_TK_SAR_MEAN=10,
+     PAPER_TK_SAR_MINPCT=0.004.
+
+AYAR ITINERAMI (research_tk14, 6x500, 1m):
+  SAR yok (oturum 7)        : toplam +157  ENA +507
+  SAR blanket (filtre yok)  : toplam -1329 ENA -296
+  SAR MEAN=10               : toplam -515  ENA +363
+  SAR MEAN=5                : toplam -678  ENA +119
+  SAR MEAN=20               : toplam -826  ENA +331
+  SAR MEAN=10+MINPCT=0.2%   : toplam -406  ENA +400
+  SAR MEAN=10+MINPCT=0.4%   : toplam +158  ENA +536  <- secileni
+ dogrulama: tk_sanity tum adimlar OK (giris rozizma/ gri / bank / SAR
+ TERS / dususte bank / takili AL'de giris yok / SAT+kirmizi giris);
+ test_paper 90/90.

@@ -484,7 +484,9 @@ def create_app(service: MarketService, store: SignalStore,
                 f"yıldız yalnizca ACIK pozisyonun tersine cevirir "
                 f"(2 gri bar gerek; pozisyon yokken gri ile islem "
                 f"yok) · giris, kapali mum ile yildiz ayni yonde "
-                f"olmali{dur}")
+                f"olmali · stop kaybinda trend teyitli ise pozisyon "
+                f"tersine cevrilir (stop→ters; {getattr(paper,'tk_sar_mean',10)} "
+                f"bar ortalamasi ± %{getattr(paper,'tk_sar_minpct',0.004)*100:.1f} hafiyeli){dur}")
         elif data.get("mode") == "tk" and paper.mode != "tk":
             service._emit_log(
                 "warning", "simulator",
@@ -617,7 +619,9 @@ def create_app(service: MarketService, store: SignalStore,
                 f"yıldız yalnizca ACIK pozisyonun tersine cevirir "
                 f"(2 gri bar gerek; pozisyon yokken gri ile islem "
                 f"yok) · giris, kapali mum ile yildiz ayni yonde "
-                f"olmali{dur}")
+                f"olmali · stop kaybinda trend teyitli ise pozisyon "
+                f"tersine cevrilir (stop→ters; {getattr(paper,'tk_sar_mean',10)} "
+                f"bar ortalamasi ± %{getattr(paper,'tk_sar_minpct',0.004)*100:.1f} hafiyeli){dur}")
         elif data.get("mode") == "tk" and paper.mode != "tk":
             service._emit_log(
                 "warning", "simulator",

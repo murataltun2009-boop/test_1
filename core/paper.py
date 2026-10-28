@@ -387,6 +387,10 @@ class PaperTrader:
         self.tk_after_ms = float(getattr(
             config, "PAPER_TK_AFTER_SEC", 60)) * 1000.0
         self.tk_confirm = int(getattr(config, "PAPER_TK_CONFIRM_BARS", 2))
+        self.tk_sar = bool(getattr(config, "PAPER_TK_SAR", True))
+        self.tk_sar_mean = int(getattr(config, "PAPER_TK_SAR_MEAN", 10))
+        self.tk_sar_minpct = float(
+            getattr(config, "PAPER_TK_SAR_MINPCT", 0.002))
         self.tk_bank_pct = float(getattr(config, "PAPER_TK_BANK_PCT", 0.025))
         self._tk_hist_bar = 0         # son kapali bar zaman mhr
         self._tk_hist_y1 = ""         # son kapali barin yildizi
@@ -2197,6 +2201,52 @@ class PaperTrader:
             return -self.tk_hedef if self.tk_hedef != 0 else 0
         return None
 
+    def _tk_sar_ac(self, price: float, timeframe: str, candles: list) -> None:
+        """STOP->TERS (kullanici kurali, 2026-10-29): stop kaybindan
+        sonra pozisyon ters yonde acilir YALNIZCA dusus/ustu TRENDLI
+        ise: fiyat son N kapali barin kapanis ortalamasinin o yonun
+        karsisinda (veri mesafesi PAPER_TK_SAR_MINPCT kadar) degilse
+        ters acilis REDDEDILIR (chop'ta whipsaw maliyeti -> duz stop).
+        Orn. ENA dususunde AL yildizi takili kalir; motor yine de ters
+        pozisyon acar ve dususu yakalar. Hedef ters kaydedilir — taze
+        yildiz eski yonde olsa da pozisyon-yok girisi eski yonde
+        ZINCIR olamaz."""
+        if not getattr(self, "tk_sar", False):
+            return
+        if self.tk_hedef == 0:
+            return
+        yeni_yon = -self.tk_hedef
+        # TREND FILTRESI: yeni yon = SHORT ise fiyat ortalamanin
+        # (minpct hafiyeyi) ALTINDA olmali; LONG ise USTUNDE olmali.
+        c = _kapali_mumlar(candles)
+        if c:
+            n = min(int(getattr(self, "tk_sar_mean", 10) or 10),
+                    len(c))
+            ort = sum(float(x.close) for x in c[-n:]) / float(n)
+            h_up = 1.0 + float(getattr(self, "tk_sar_minpct", 0.002) or 0.0)
+            if yeni_yon > 0 and price <= ort * h_up:
+                return            # ortalama ustu mesafede long: dusus devam
+            if yeni_yon < 0 and price >= ort / h_up:
+                return            # ortalama alti mesafede short: ust devam
+        self.tk_hedef = yeni_yon
+        self.tk_hedef_kaynak = "STOP"
+        fiyat = float(price)
+        self._open(LONG if self.tk_hedef > 0 else SHORT, fiyat,
+                   "TK: stop→terse çevir (maker)", timeframe, candles,
+                   maker=True)
+        q = self.position
+        if q is not None:
+            if self.tk_hedef > 0:
+                q.tk_tp = fiyat * (1.0 + self.tk_tp) \
+                    if self.tk_tp > 0 else 0.0
+                q.tk_stop = fiyat * (1.0 - self.tk_sl)
+            else:
+                q.tk_tp = fiyat * (1.0 - self.tk_tp) \
+                    if self.tk_tp > 0 else 0.0
+                q.tk_stop = fiyat * (1.0 + self.tk_sl)
+        self.tk_pend_entry = None
+        self.tk_pend_close = None
+
     def _tk(self, price: float, candles: list, timeframe: str,
             bar_low: Optional[float], bar_high: Optional[float],
             signal: Optional[str]) -> Optional[str]:
@@ -2433,18 +2483,24 @@ class PaperTrader:
                         self._tk_kayip_t = float(
                             candles[-1].open_time) if candles else 0.0
                         self._tk_son_islem_t = float(bar_t)
+                        if not bekle:
+                            self._tk_sar_ac(acilis, timeframe, candles)
                         return f"TICK: stop ({_px(acilis)})"
                     if bar_low is not None and bar_low <= stop:
                         self._close(stop, "tk stop", timeframe)
                         self._tk_kayip_t = float(
                             candles[-1].open_time) if candles else 0.0
                         self._tk_son_islem_t = float(bar_t)
+                        if not bekle:
+                            self._tk_sar_ac(stop, timeframe, candles)
                         return f"TICK: stop ({_px(stop)})"
                     if bar_low is None and price <= stop:
                         # Canli tik (bar araligi yok): tick stopu asti.
                         self._close(price, "tk stop", timeframe)
                         self._tk_son_islem_t = float(bar_t)
                         self.tk_pend_close = None
+                        if not bekle:
+                            self._tk_sar_ac(price, timeframe, candles)
                         return f"TICK: stop ({_px(price)})"
                 else:
                     if acilis >= stop:
@@ -2452,17 +2508,23 @@ class PaperTrader:
                         self._tk_kayip_t = float(
                             candles[-1].open_time) if candles else 0.0
                         self._tk_son_islem_t = float(bar_t)
+                        if not bekle:
+                            self._tk_sar_ac(acilis, timeframe, candles)
                         return f"TICK: stop ({_px(acilis)})"
                     if bar_high is not None and bar_high >= stop:
                         self._close(stop, "tk stop", timeframe)
                         self._tk_kayip_t = float(
                             candles[-1].open_time) if candles else 0.0
                         self._tk_son_islem_t = float(bar_t)
+                        if not bekle:
+                            self._tk_sar_ac(stop, timeframe, candles)
                         return f"TICK: stop ({_px(stop)})"
                     if bar_high is None and price >= stop:
                         self._close(price, "tk stop", timeframe)
                         self._tk_son_islem_t = float(bar_t)
                         self.tk_pend_close = None
+                        if not bekle:
+                            self._tk_sar_ac(price, timeframe, candles)
                         return f"TICK: stop ({_px(price)})"
 
             # --- YILDIZ FLIP (mismatch-driven): pozisyon yonu

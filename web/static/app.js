@@ -1189,6 +1189,8 @@ if ("serviceWorker" in navigator) {
           + "gri yıldız yalnızca açık pozisyonu tersine çevirir "
           + "(2 gri bar; pozisyon yokken gri ile işlem yok); "
           + "giriş, kapalı mum yıldızla aynı yönde olmalı; "
+          + "stop kaybında trend teyitliyse (10 bar ortalaması "
+          + "±%0,4 hafiyeli) pozisyon tersine çevrilir (stop→ters); "
           + "aksiyon yalnızca sabitlenmiş yıldızla (mum kapanışı + "
           + "2 kapalı bar aynı yön)"
         : "") + " · grafik yıldızları güncelleniyor");
