@@ -1034,3 +1034,46 @@ OLCUM (research_tk14, 6x500, confirm=2 + para-bank):
   giris zinciri komisyon sisiyor. Caninwu goruntuye bakip
   gerekiyorsa: (a) esigi buyut, (b) banka sonrasinda girise YENI
   sabit yildiz beklet, (c) PAPER_TK_BANK_PCT=0 ile banka kapali.
+
+### TK mum-yildiz uyusmazlik gate + banka muhr (2026-10-28, oturum 6)
+KULLANICI ISTENMEYENI (duzeltme istegi):
+  * "Yildiz yesil olup kirmizi mum uzerinde cikiyor, bu SHORT
+    pozisyonda LONG kalmasina sebep oluyor" — yildiz-mum celiskisinde
+    flip YAPILMAMALI (bekle).
+  * "Kar satisi oldugunda 1 dakika beklemeyi yap" — banka kapanisi da
+    1 dk beklemeye GIRSIN (oturum 5'teki "girmesin" kuralini hareket
+    gecerli kildi).
+
+UYGULAMA (core/paper.py _tk):
+  1) MUM-YILDIZ UYUSMAZLIGI GATE (hedef-gunceleme blogunda):
+     confirm (2-bar istikrar) gectikten sonra YON DEGISIKLIGI
+     ancak sabitlenmis yildizin mumu ile yildiz AYNI yondeyse
+     islenir. yesil yildiz + kirmizi mum -> bekle; kirmizi yildiz +
+     yesil mum -> bekle. isaretler (close >= open).
+  2) BASKA GERCEK HATA NASIL BULUNDU (debug): SHORT stop olduktan
+     sonra yildiz yesile donup (henuz sabitlenmeden) motor hedef
+     -1 ile POZISYON YOK dalinda YESEL yildiz varken SHORT aciyordu.
+     POSISYON-YOK girisine "taze yildiz-hedef uyum" gate eklendi:
+     yeni != tk_hedef ise giris YOK. Sabitlemedigis yildiz ile
+     giris artik mumkun degil (kullanicinin "yildiz sabitlenmeden
+     islem acma" talebinin son parcasi).
+  3) BANKA MUHRU: banka kapanisi _tk_son_islem_t'ye mohur basar
+     (bar_t) — sonraki giris 1 dk beklemede. Banka tetiklenmesi
+     beklemeye zaten girmez (stop/banka herzaman serbest).
+
+DOGRULAMA (tk_sanity, tum adimlar OK):
+  yesil yildiz->LONG · yesil yildiz+kirmizi mum: LONG kalir ·
+  tek kirmizi yildiz: flip yok · 2. kirmizi: flip kapanis ·
+  beklemede giris yok · sure sonrasi SHORT giris ·
+  yesil yildiz kirmizi mumda SHORT korunur (gate) ·
+  banka +17$ cuzdana, muhr basar, sure sonrasi kontrollu giris.
+  test_paper: 90/90 gecti.
+
+OLCUM (research_tk14, 6x500, 1m; confirm=2 + para-bank %2.5 +
+uyusmazlik gate + giris-uyum gate + banka muhru):
+  DOGE +146 (113 islem)  HBAR -35  UNI -242  BTC -157  ETH -141
+  ENA +371  ADA -177   TOPLAM ~ -235$
+  KARSILASTIRMA: oturum 5 (muhr/gate yok) ~ -3600$, oturum 4
+  (fiyat-bank) ~ -3030$. Uyusmazlik gate + giris-uyum gate islem
+  sayisini dusurup chop kaybini buyuk olcude kiriti. Kalan negatif
+  UNI/BTC/ETH/ADA'da cilizin kendisi; canli veri ile tekrar bakilir.

@@ -473,12 +473,14 @@ def create_app(service: MarketService, store: SignalStore,
                 f"TP %{paper.tk_tp*100:.1f} (kapalı) · SL "
                 f"%{paper.tk_sl*100:.1f} · yeşil yıldız→LONG · kırmızı "
                 f"yıldız→SHORT · gri yıldız→TERS pozisyon · aç/kapa "
-                f"LIMIT (maker) · her işlem sonrası 1 dk bekleme · "
-                f"kar bankası: biriken kâr bakiyenin "
-                f"%{getattr(paper,'tk_bank_pct',0.025)*100:.1f}'ine "
-                f"ulaşınca cuzdana yazılır · yıldız mumu KAPANINCA "
-                f"sabitlenir, {getattr(paper,'tk_confirm',2)} kapali "
-                f"bar ayni yonda olmadan pozisyon degismez{dur}")
+                f"LIMIT (maker) · her işlem sonrası 1 dk bekleme "
+                f"(kâr bankası dahil) · kar bankası: biriken kâr "
+                f"bakiyenin %{getattr(paper,'tk_bank_pct',0.025)*100:.1f}"
+                f"'ine ulaşınca cuzdana yazılır · yıldız mumu "
+                f"KAPANINCA sabitlenir, {getattr(paper,'tk_confirm',2)} "
+                f"kapali bar ayni yonda olmadan pozisyon degismez · "
+                f"yıldız-mum çelişkisinde (yeşil yıldızlı kırmızı mum "
+                f"veya tersi) pozisyon degistirmeden beklenir{dur}")
         elif data.get("mode") == "tk" and paper.mode != "tk":
             service._emit_log(
                 "warning", "simulator",
@@ -600,12 +602,14 @@ def create_app(service: MarketService, store: SignalStore,
                 f"TP %{paper.tk_tp*100:.1f} (kapalı) · SL "
                 f"%{paper.tk_sl*100:.1f} · yeşil yıldız→LONG · kırmızı "
                 f"yıldız→SHORT · gri yıldız→TERS pozisyon · aç/kapa "
-                f"LIMIT (maker) · her işlem sonrası 1 dk bekleme · "
-                f"kar bankası: biriken kâr bakiyenin "
-                f"%{getattr(paper,'tk_bank_pct',0.025)*100:.1f}'ine "
-                f"ulaşınca cuzdana yazılır · yıldız mumu KAPANINCA "
-                f"sabitlenir, {getattr(paper,'tk_confirm',2)} kapali "
-                f"bar ayni yonda olmadan pozisyon degismez{dur}")
+                f"LIMIT (maker) · her işlem sonrası 1 dk bekleme "
+                f"(kâr bankası dahil) · kar bankası: biriken kâr "
+                f"bakiyenin %{getattr(paper,'tk_bank_pct',0.025)*100:.1f}"
+                f"'ine ulaşınca cuzdana yazılır · yıldız mumu "
+                f"KAPANINCA sabitlenir, {getattr(paper,'tk_confirm',2)} "
+                f"kapali bar ayni yonda olmadan pozisyon degismez · "
+                f"yıldız-mum çelişkisinde (yeşil yıldızlı kırmızı mum "
+                f"veya tersi) pozisyon degistirmeden beklenir{dur}")
         elif data.get("mode") == "tk" and paper.mode != "tk":
             service._emit_log(
                 "warning", "simulator",

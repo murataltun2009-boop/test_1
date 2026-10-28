@@ -2247,12 +2247,25 @@ class PaperTrader:
             self._tk_hist_y1 = sig     # ayni bar taze okuma (emniyet)
         yeni = self._tk_yon(sig)
         onceki = self._tk_yon(self._tk_hist_y2)
+        # MUM Yonu: sabitlenmis yildizin mumu; yesil yildiz kirmizi mum
+        # uzerinde veya tersi celiskili gorseldir.
+        kap_mum = kap_c[-1] if kap_c else None
+        yukselen = bool(kap_mum is not None and
+                        getattr(kap_mum, "close", kap_mum.open) >= kap_mum.open)
         if yeni is not None and yeni != self.tk_hedef:
             if self.tk_confirm > 1 and self.tk_hedef != 0 and \
                     onceki != yeni:
                 # SABITLEME: yeni yon yalnizca SON kapali barda gorundu;
                 # bir onceki kapali bar ayni yonde DEGIL — yildiz
                 # oturmus degil, pozisyon dokunulmaz.
+                pass
+            elif yeni != 0 and not (
+                    (yeni > 0 and yukselen) or
+                    (yeni < 0 and not yukselen)):
+                # MUM-YILDIZ UYUSMASI (kullanici kurali): yesil yildiz
+                # kirmizi mumun uzerinde cikti (veya tersi) — celiskili
+                # durumda pozisyon degistirmeden bekle; mum uzasana
+                # kadar yildiz ile mum AYNI yone dönmeli.
                 pass
             else:
                 self.tk_hedef = yeni
@@ -2281,8 +2294,9 @@ class PaperTrader:
             # ise +25$; yanlis anlamilan fiyat-% degil) gectiginde
             # pozisyon KAPANIR ve kazanc cuzdana yazilir. Cikis LIMIT
             # (maker): resting emir seviyeye DOKUNDUKCA/gectikce
-            # dolar — taker ucret yok. BEKLEME MHR GIRMEZ; sonraki
-            # giris yildiz kurallariyla kontrollu olur.
+            # dolar — taker ucret yok. KULLANICI KURALI (2026-10-28):
+            # banka kapanisi da 1 dk bekleme muhrunu BASAR — kazanc
+            # yazildiktan sonra kisa gozlem suresi.
             kb = float(getattr(self, "tk_bank_pct", 0.025) or 0.0)
             if kb > 0 and p.qty > 0:
                 esik = self.balance * kb          # para cinsinden esik
@@ -2299,6 +2313,10 @@ class PaperTrader:
                                 timeframe, maker=True)
                     self.tk_pend_entry = None
                     self.tk_pend_close = None
+                    # KULLANICI KURALI (2026-10-28): banka kapanisi da
+                    # 1 dk beklemeye girer — diger pozisyonun hareketi
+                    # gozlemlenir.
+                    self._tk_son_islem_t = float(bar_t)
                     return (f"TK: kâr bankası +{esik:.0f}$ cüzdana "
                             f"yazıldı (maker)")
 
@@ -2490,6 +2508,16 @@ class PaperTrader:
             self.tk_pend_entry = None
             return None
         yon = self.tk_hedef
+
+        # TAZE YILDIZ-HDEF UYUMU (pozisyon-yok girişleri): yıldız
+        # hedefle aynı yönde DEĞİLSE giris YOK — hedef ya confirm
+        # (2-bar sabitleme) ya da mum-yıldız uyuşmazlığı bekliyor
+        # demektir. Kullanici kurali: yildiz sabitlenmeden islem
+        # acilmaz. Confirm/uyusma gate'i hedefi guncellediginde
+        # burasi zaten uyumlu olur; yildiz-karşıtı giris engellenir.
+        if yeni is not None and yeni != self.tk_hedef:
+            self.tk_pend_entry = None
+            return None
 
         # Yildiz degistiyse bekleyen eski-yon ARM gecersiz (ters acilma).
         if self.tk_pend_entry is not None and self.tk_pend_entry[0] != yon:
