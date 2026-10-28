@@ -474,8 +474,10 @@ def create_app(service: MarketService, store: SignalStore,
                 f"%{paper.tk_sl*100:.1f} · yeşil yıldız→LONG · kırmızı "
                 f"yıldız→SHORT · gri yıldız→TERS pozisyon · aç/kapa "
                 f"LIMIT (maker) · her işlem sonrası 1 dk bekleme · "
-                f"yıldız mumu KAPANINCA sabitlenir (anlık yıldız aç/kapa "
-                f"yapmaz){dur}")
+                f"kâr bankası +%{getattr(paper,'bank_pct',0)*100:.0f} "
+                f"(beklemesiz) · yıldız mumu KAPANINCA sabitlenir, "
+                f"{getattr(paper,'tk_confirm',2)} kapali bar ayni yonda "
+                f"olmadan pozisyon degismez{dur}")
         elif data.get("mode") == "tk" and paper.mode != "tk":
             service._emit_log(
                 "warning", "simulator",
@@ -598,8 +600,10 @@ def create_app(service: MarketService, store: SignalStore,
                 f"%{paper.tk_sl*100:.1f} · yeşil yıldız→LONG · kırmızı "
                 f"yıldız→SHORT · gri yıldız→TERS pozisyon · aç/kapa "
                 f"LIMIT (maker) · her işlem sonrası 1 dk bekleme · "
-                f"yıldız mumu KAPANINCA sabitlenir (anlık yıldız aç/kapa "
-                f"yapmaz){dur}")
+                f"kâr bankası +%{getattr(paper,'bank_pct',0)*100:.0f} "
+                f"(beklemesiz) · yıldız mumu KAPANINCA sabitlenir, "
+                f"{getattr(paper,'tk_confirm',2)} kapali bar ayni yonda "
+                f"olmadan pozisyon degismez{dur}")
         elif data.get("mode") == "tk" and paper.mode != "tk":
             service._emit_log(
                 "warning", "simulator",

@@ -958,3 +958,53 @@ FIX (service._signal_for_mode, yalnizca mode=="tk"):
 
 TEST: settle testi (olusan bar SAT gezinirken motor AL okur;
 kirmizi mum kapana kadar aksiyon yok) gecti; 90/90 gecti.
+
+### TK +2% kâr bankasi + 2-bar yildiz sabitleme (2026-10-28, oturum 4)
+KULLANICI ISTENGEMLERI:
+  1) Acik pozisyonun kari +%2'yi gectiginde kazanci cuzdana yaz,
+     pozisyonu KAPAT; bu kapanis 1-dk bekleme kuralina GIRMESIN.
+  2) Kirmizi yildiz sabitlenmeden short aciliyor — "yildiz
+     sabitlenmeyen islem acma"; yuksek kar eriyor.
+
+UYGULAMA:
+  * Banka TK'ya eklendi (_tk pozisyon blogu basi; evrensel
+    PAPER_BANK_PCT=0.02 ile ayni semantik, maker dolum).
+    Kapanis etiketi "TK: kar bankasi +%2 (maker)". MODELLIK NOT:
+    banka kapanisi _tk_son_islem_t muhurlemez — bekleme atlanir;
+    ayni tik'te yildiz hala gecerliyse hemen yeniden giris acilabilir
+    (kullanici kurali).
+  * Sabitleme CONFIRM (PAPER_TK_CONFIRM_BARS=2): yildiz tarihi
+    bar-bazli tutulur (_kapali_mumlar ile son 2 kapali barin yildizi).
+    Yon degisikligi yalnizca son 2 kapali bar AYNI yondeyse islenir.
+    Tek mumluk yildiz (yesil->kirmizi direk gecis) bekleme yapar;
+    NÖTR->kirmizi dizisi de istikrar saysin diye NÖTR ters kandinal
+    haritalanir (gri=TERS kurali). SETTLE (mum kapan maths) ile
+    birlikte: anlik yildiz.folden mum kapanmadi + 2 bar ayni yon
+    olmadan flip yok.
+
+OLCUM (research_tk14, 6x500, 1m, tp kapali):
+                confirm=2      confirm=1      (bankasiz, sadece
+                +banka         +banka         referans, onceki oturum)
+  DOGE          -247           -11            -55
+  HBAR          -475           -316           -302
+  UNI           -756           -481           +113
+  BTC           -458           -172           +33
+  ETH           -435           -79            +74
+  ENA           -297           +115           +424
+  ADA           -650           +64            +129
+  TOPLAM        ~-3030         ~-1050         ~+420
+
+YORUM: (a) 2-bar sabitleme her flip'i 1 bar geciktirip ters yonde
+ek pozisyon tutuyor -> chop'taki flip maliyeti artiyor ve toplami
+dusuru. (b) Banka chop'ta pahali: +2% fiyat hareketinde bankalanan
+pozisyonun ayni yildizla aninda yeniden girisi, geri donen dalgada
+stopla teselli ucreti yapiyor (dogrulama: bankasiz confirm=2 olcumu
+-1026; bankali -3030).
+KARAR: Ikisida KULLANICI ISTEĞI olarak KURULUDU (banda + confirm=2
+varsayilanla). Kulanici canli actikca:
+  * kirsa yildiz hala yeterince erken geciliyor hissi varsa
+    PAPER_TK_CONFIRM_BARS++ degil... — belirli serbertlik yok, dogru
+    veriyle canilida K/Ze olcume baglanmali.
+  * Banka cok pahaliysa cozum: banka sonrasi girisine YENI sabit
+    yildar bekleme kurali (ayni yildiz icin yeniden girma yok) —
+    olcumle karar vertiler.

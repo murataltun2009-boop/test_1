@@ -1183,8 +1183,10 @@ if ("serviceWorker" in navigator) {
       (tik
         ? " · TİK yıldız kuralı: yeşil yıldız→LONG, kırmızı yıldız→"
           + "SHORT, gri yıldız→TERS pozisyon; aç/kapa LIMIT (maker); "
-          + "her işlem sonrası 1 dk bekleme; pozisyon aksiyonu yalnızca "
-          + "mumu kapanmış (sabitlenmiş) yıldızla — anlık yıldız ile aç/kapa yok"
+          + "her işlem sonrası 1 dk bekleme (kâr bankası hariç); "
+          + "açık pozisyon kârı +%2'yi geçince cüzdana yazılır; "
+          + "aksiyon yalnızca sabitlenmiş yıldızla (mum kapanışı + "
+          + "2 kapalı bar aynı yön) — anlık yıldız ile aç/kapa yok"
         : "") + " · grafik yıldızları güncelleniyor");
     paperCall("/api/paper/config");
   });

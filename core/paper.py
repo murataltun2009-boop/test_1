@@ -384,6 +384,11 @@ class PaperTrader:
         self._tk_son_islem_t = 0.0    # son ac/kapa bar zamani (1 dk bekleme)
         self.tk_after_ms = float(getattr(
             config, "PAPER_TK_AFTER_SEC", 60)) * 1000.0
+        self.tk_confirm = int(getattr(config, "PAPER_TK_CONFIRM_BARS", 2))
+        self._tk_hist_bar = 0         # son kapali bar zaman mhr
+        self._tk_hist_y1 = ""         # son kapali barin yildizi
+        self._tk_hist_bar2 = 0        # onceki kapali bar zaman mhr
+        self._tk_hist_y2 = ""         # onceki kapali barin yildizi
         self._bars_held = 0
         self._last_bar_time = 0
         # Son LONG'dan bu yana ulasilan en yuksek fiyat. SHORT karari
@@ -2177,6 +2182,18 @@ class PaperTrader:
                     self.mode in ("ma_only", "osc_only", "signal",
                                   "signal_long", "signal_exit", "range"))
 
+    def _tk_yon(self, v: str):
+        """Yildiz etiketini yon kardinaline cevirir.
+        AL/GÜÇLÜ AL -> +1, SAT/GÜÇLÜ SAT -> -1, NÖTR -> mevcut hedefin
+        tersi (gri=TERS kurali), bileseni bilinmiyorsa None."""
+        if v in ("AL", "GÜÇLÜ AL"):
+            return 1
+        if v in ("SAT", "GÜÇLÜ SAT"):
+            return -1
+        if v == "NÖTR":
+            return -self.tk_hedef if self.tk_hedef != 0 else 0
+        return None
+
     def _tk(self, price: float, candles: list, timeframe: str,
             bar_low: Optional[float], bar_high: Optional[float],
             signal: Optional[str]) -> Optional[str]:
@@ -2208,16 +2225,36 @@ class PaperTrader:
         # ------------------------------------------------------------------
         # 0) YILDIZ KARARI — durum HER ZAMAN guncellenir (bekleme
         #    bittigi an pozisyon en guncel yildizla esitlenir).
+        #    SABITLEME (PAPER_TK_CONFIRM_BARS): pozisyon degisikligi
+        #    yalnizca son K kapali barin yildizlari AYNI yondeyse yapilir.
+        #    Yildiz tarihi bar bazli tutulur (tık icerisinde yildiz
+        #    zaten degismez; SETTLE ile motor kapali barin yildizini
+        #    okur). Tek mumluk yildiz tohunlari aksiyon uretmez.
         # ------------------------------------------------------------------
         sig = str(signal or "").strip()
-        if sig and sig != self.tk_sig_son:
+        if sig:
             self.tk_sig_son = sig
-            if sig in ("AL", "GÜÇLÜ AL"):
-                self.tk_hedef = 1
-            elif sig in ("SAT", "GÜÇLÜ SAT"):
-                self.tk_hedef = -1
-            elif sig == "NÖTR" and self.tk_hedef != 0:
-                self.tk_hedef = -self.tk_hedef        # gri: TERSINE
+        kap_c = _kapali_mumlar(candles)
+        kap_t = int(kap_c[-1].open_time) if kap_c else 0
+        if kap_t and kap_t != self._tk_hist_bar:
+            # yeni bar kapandi: davasi Onceki kapali yildiza gecir
+            self._tk_hist_bar2 = self._tk_hist_bar
+            self._tk_hist_y2 = self._tk_hist_y1
+            self._tk_hist_bar = kap_t
+            self._tk_hist_y1 = sig
+        elif sig and sig != self._tk_hist_y1:
+            self._tk_hist_y1 = sig     # ayni bar taze okuma (emniyet)
+        yeni = self._tk_yon(sig)
+        onceki = self._tk_yon(self._tk_hist_y2)
+        if yeni is not None and yeni != self.tk_hedef:
+            if self.tk_confirm > 1 and self.tk_hedef != 0 and \
+                    onceki != yeni:
+                # SABITLEME: yeni yon yalnizca SON kapali barda gorundu;
+                # bir onceki kapali bar ayni yonde DEGIL — yildiz
+                # oturmus degil, pozisyon dokunulmaz.
+                pass
+            else:
+                self.tk_hedef = yeni
 
         # --- 1 dk bekleme: son ac/kapa (giris, flip kapanis, stop)
         # sonrasindaki sure; sure dolana kadar yeni acilis/kapanis yok.
@@ -2236,6 +2273,28 @@ class PaperTrader:
             tp = getattr(p, "tk_tp", 0.0)
             stop = getattr(p, "tk_stop", 0.0)
             acilis = float(candles[-1].open) if candles else price
+
+            # --- EVRENSEL KAR BANKASI (+%X, cüzdana yazim) — kullanici
+            # kurali: tum modlarda ayni banka. TK buradan gecmedigi
+            # icin buraya ayrıca ekledik. KULANICI KURALI: banka
+            # kapanisi 1 dk beklemeye GIRMEZ — ayni yildiz gecerli
+            # oldugu surece ayni tik'te hemen yeniden giris acilabilir.
+            lock = float(getattr(self, "bank_pct", 0.0) or 0.0)
+            if lock > 0:
+                if p.side == LONG:
+                    lock_px = p.entry * (1.0 + lock)
+                    vurdu = (bar_high is not None and bar_high >= lock_px) \
+                        or price >= lock_px
+                else:
+                    lock_px = p.entry * (1.0 - lock)
+                    vurdu = (bar_low is not None and bar_low <= lock_px) \
+                        or price <= lock_px
+                if vurdu:
+                    self._close(lock_px, f"kâr bankası +%{lock*100:.0f}",
+                                timeframe, maker=True)
+                    self.tk_pend_entry = None
+                    self.tk_pend_close = None
+                    return f"TK: kâr bankası +%{lock*100:.0f} (maker)"
 
             # --- TP: resting limit (maker) ---
             if tp > 0:
