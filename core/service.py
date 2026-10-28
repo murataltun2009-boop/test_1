@@ -743,6 +743,19 @@ class MarketService:
             return karar[-1] if karar else None
         if mode == "muro":
             return self._muro_action(res, candles)
+        if mode == "tk":
+            # YILDIZ SETTLE (2026-10-28 kullanici kurali): yildiz OLUSAN
+            # bar icinde belirip kaybolabilir (tik ruzgarlari); pozisyon
+            # ac/kapa yalnizca KAPANMIS barin yildizina baglanir —
+            # "kirmizi mumun sabitlenmesini bekle". Yildiz HESABI
+            # (res.signals) dokunulmadi; motor okumasi kapanmis bara
+            # cekildi (trend/1m/ppt modlarindaki kapali-mum kuralinin
+            # aynisi). Grafik yildizlari degismez.
+            sigs = list(res.signals)
+            cs = _kapali_mumlar(candles or [])
+            if not sigs or len(cs) < 30 or len(sigs) < len(cs):
+                return None
+            return sigs[len(cs) - 1].value
         if mode not in ("ma_only", "osc_only"):
             return res.signal.value
 

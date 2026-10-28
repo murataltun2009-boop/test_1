@@ -933,3 +933,28 @@ OLCUM (research_tk14, 6x500 pencere, 1m, TP kapali):
   DOGE -55$ HBAR -302$ — toplam ~+420$. Canli oncesi:
   mismatch mekanizmasi + 60 sn bekleme， pozisyonlar grafik
   yildizlarina BIREBIR hizali.
+
+### TK yildiz SETTLE kurali (2026-10-28, oturum 3)
+KULLANICI ISTEGI: "yesil/kirmizi/gri yildiz TAM OTURMADAN pozisyona ac/
+kapa yapma; yildiz sabitlensin once. Ozellikle long->short gecerken
+kirmizi mumun SABITLENMESINI bekle."
+
+防水NEMI: 1m'de yildiz OLUSAN bar icinde belirip kaybolabiliyor (analiz
+0,5 sn'de bir yenileniyor; skor esik uzerinde gezinebiliyor). Motor
+canlida res.signal.value (OLUSAN bar dahil) okuyordu -> anlik yildiz
+ile pozisyon zararli flip.
+
+FIX (service._signal_for_mode, yalnizca mode=="tk"):
+  * Motor okumasi KAPANMIS bara cekildi:
+    sig = res.signals[len(_kapali_mumlar(candles)) - 1]
+  * Yildiz HESABI (res.signals) ve GRAFIK yildizlari dokunulmadi —
+    sadece motorun okudugu nokta sabitlenen cifra cekildi. Trend/1m/
+    ppt modlarindaki "sinyal yalnizca kapanmis bardan" kuralinin
+    aynisi.
+  * Sonuc: kirmizi mum KAPANINCA long->short; anlik yildiz (mum
+    icinde cikip kaybolan) hicbir aksiyon uretmez; 1-dk bekleme +
+    mismatch-driven esitleme ile birlikte yildiz/pozsiyon uyumu
+    tam.
+
+TEST: settle testi (olusan bar SAT gezinirken motor AL okur;
+kirmizi mum kapana kadar aksiyon yok) gecti; 90/90 gecti.
