@@ -22,7 +22,7 @@
 // v6: yon titremesi duzeltmesi (kapali bar sinyali + 5 dk bekleme)
 //     + trend modunda kar kilitleme
 // v7: 1m dilimi, stop sonrasi reclaim, optimum nokta giris filtresi
-const VERSION = "ta-v18";
+const VERSION = "ta-v19";
 const SHELL = "shell-" + VERSION;
 
 const PRECACHE = [

@@ -474,10 +474,11 @@ def create_app(service: MarketService, store: SignalStore,
                 f"%{paper.tk_sl*100:.1f} · yeşil yıldız→LONG · kırmızı "
                 f"yıldız→SHORT · gri yıldız→TERS pozisyon · aç/kapa "
                 f"LIMIT (maker) · her işlem sonrası 1 dk bekleme · "
-                f"kâr bankası +%{getattr(paper,'bank_pct',0)*100:.0f} "
-                f"(beklemesiz) · yıldız mumu KAPANINCA sabitlenir, "
-                f"{getattr(paper,'tk_confirm',2)} kapali bar ayni yonda "
-                f"olmadan pozisyon degismez{dur}")
+                f"kar bankası: biriken kâr bakiyenin "
+                f"%{getattr(paper,'tk_bank_pct',0.025)*100:.1f}'ine "
+                f"ulaşınca cuzdana yazılır · yıldız mumu KAPANINCA "
+                f"sabitlenir, {getattr(paper,'tk_confirm',2)} kapali "
+                f"bar ayni yonda olmadan pozisyon degismez{dur}")
         elif data.get("mode") == "tk" and paper.mode != "tk":
             service._emit_log(
                 "warning", "simulator",
@@ -600,10 +601,11 @@ def create_app(service: MarketService, store: SignalStore,
                 f"%{paper.tk_sl*100:.1f} · yeşil yıldız→LONG · kırmızı "
                 f"yıldız→SHORT · gri yıldız→TERS pozisyon · aç/kapa "
                 f"LIMIT (maker) · her işlem sonrası 1 dk bekleme · "
-                f"kâr bankası +%{getattr(paper,'bank_pct',0)*100:.0f} "
-                f"(beklemesiz) · yıldız mumu KAPANINCA sabitlenir, "
-                f"{getattr(paper,'tk_confirm',2)} kapali bar ayni yonda "
-                f"olmadan pozisyon degismez{dur}")
+                f"kar bankası: biriken kâr bakiyenin "
+                f"%{getattr(paper,'tk_bank_pct',0.025)*100:.1f}'ine "
+                f"ulaşınca cuzdana yazılır · yıldız mumu KAPANINCA "
+                f"sabitlenir, {getattr(paper,'tk_confirm',2)} kapali "
+                f"bar ayni yonda olmadan pozisyon degismez{dur}")
         elif data.get("mode") == "tk" and paper.mode != "tk":
             service._emit_log(
                 "warning", "simulator",

@@ -385,6 +385,7 @@ class PaperTrader:
         self.tk_after_ms = float(getattr(
             config, "PAPER_TK_AFTER_SEC", 60)) * 1000.0
         self.tk_confirm = int(getattr(config, "PAPER_TK_CONFIRM_BARS", 2))
+        self.tk_bank_pct = float(getattr(config, "PAPER_TK_BANK_PCT", 0.025))
         self._tk_hist_bar = 0         # son kapali bar zaman mhr
         self._tk_hist_y1 = ""         # son kapali barin yildizi
         self._tk_hist_bar2 = 0        # onceki kapali bar zaman mhr
@@ -2274,27 +2275,32 @@ class PaperTrader:
             stop = getattr(p, "tk_stop", 0.0)
             acilis = float(candles[-1].open) if candles else price
 
-            # --- EVRENSEL KAR BANKASI (+%X, cüzdana yazim) — kullanici
-            # kurali: tum modlarda ayni banka. TK buradan gecmedigi
-            # icin buraya ayrıca ekledik. KULANICI KURALI: banka
-            # kapanisi 1 dk beklemeye GIRMEZ — ayni yildiz gecerli
-            # oldugu surece ayni tik'te hemen yeniden giris acilabilir.
-            lock = float(getattr(self, "bank_pct", 0.0) or 0.0)
-            if lock > 0:
+            # --- KAR BANKASI (cuzdana yazim) — kullanici kurali
+            # (2026-10-28 duzeltme): acik pozisyonun PARA cinsinden
+            # kari bakiyenin PAPER_TK_BANK_PCT kadrini (bakiye 1000$
+            # ise +25$; yanlis anlamilan fiyat-% degil) gectiginde
+            # pozisyon KAPANIR ve kazanc cuzdana yazilir. Cikis LIMIT
+            # (maker): resting emir seviyeye DOKUNDUKCA/gectikce
+            # dolar — taker ucret yok. BEKLEME MHR GIRMEZ; sonraki
+            # giris yildiz kurallariyla kontrollu olur.
+            kb = float(getattr(self, "tk_bank_pct", 0.025) or 0.0)
+            if kb > 0 and p.qty > 0:
+                esik = self.balance * kb          # para cinsinden esik
                 if p.side == LONG:
-                    lock_px = p.entry * (1.0 + lock)
-                    vurdu = (bar_high is not None and bar_high >= lock_px) \
-                        or price >= lock_px
+                    seviye = p.entry + esik / p.qty
+                    vurdu = (bar_high is not None and
+                             bar_high >= seviye) or price >= seviye
                 else:
-                    lock_px = p.entry * (1.0 - lock)
-                    vurdu = (bar_low is not None and bar_low <= lock_px) \
-                        or price <= lock_px
+                    seviye = p.entry - esik / p.qty
+                    vurdu = (bar_low is not None and
+                             bar_low <= seviye) or price <= seviye
                 if vurdu:
-                    self._close(lock_px, f"kâr bankası +%{lock*100:.0f}",
+                    self._close(seviye, "TK: kâr bankası (maker)",
                                 timeframe, maker=True)
                     self.tk_pend_entry = None
                     self.tk_pend_close = None
-                    return f"TK: kâr bankası +%{lock*100:.0f} (maker)"
+                    return (f"TK: kâr bankası +{esik:.0f}$ cüzdana "
+                            f"yazıldı (maker)")
 
             # --- TP: resting limit (maker) ---
             if tp > 0:

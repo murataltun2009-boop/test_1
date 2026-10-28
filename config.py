@@ -390,6 +390,7 @@ PAPER_TK_TREND = False           # SMA200 uyumu (olcumde etkisiz)
 # ---- TIK duzeltici (canli cogor teshisi, research_tk8-10 olcumu) ------
 PAPER_TK_AFTER_SEC = 60           # her ac/kapadan sonra bekleme (SNAKIYE — kullanici kurali)
 PAPER_TK_CONFIRM_BARS = 2         # yildiz sabitlemesi: son K kapali bar ayni yon olmali (1=kapali)
+PAPER_TK_BANK_PCT = 0.025         # acik pozisyon kari bakiyenin bu kadarini gecince cuzdana yaz (+25$ @1000)
 PAPER_TK_PAUSE_BARS = 0          # stop-sonrasi K bar giris yok (yogun: 3)
 PAPER_TK_BE = False              # yarim-kar klip (yogun hook acar)
 PAPER_TK_BE_TRIG = 0.5           # TP mesafesinin bu kadarini gecince aktif

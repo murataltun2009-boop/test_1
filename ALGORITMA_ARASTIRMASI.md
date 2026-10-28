@@ -1008,3 +1008,29 @@ varsayilanla). Kulanici canli actikca:
   * Banka cok pahaliysa cozum: banka sonrasi girisine YENI sabit
     yildar bekleme kurali (ayni yildiz icin yeniden girma yok) —
     olcumle karar vertiler.
+
+### TK kâr bankasi DÜZELTMESI — para bazli esik (2026-10-28, oturum 5)
+KULLANICI DUZELTMESI: onceki "+%2 fiyat bankasi" YANLIS anlasilmisti.
+Dogru kural: ACIK POZISYONUN PARA CINSINDEN KARI bakiyenin
+PAPER_TK_BANK_PCT kadrini gectiginde (varsayilan %2.5; bakiye 1000$
+-> +25$) pozisyon KAPATILIR ve kazanc CUZDANA yazilir. Cikis LIMIT
+(maker) — resting emir seviyeye dokundukca/gectikce dolar, taker
+ucret yok. Sonraki giris yildiz kurallariyla KONTROLLU.
+
+YANLISTOR: kulanici testinde "+2% kâr oluyordu ama cuzdana atmiyor"
+diye rapor etti — eski esik FIYAT-%2 (10x kaldiracta +20% marj =
+nadir vuru) idi; yeni esik BAKIYE-%2.5 (por-cinsinden) — tikta
+guvenilir vuru.
+
+Knoblar (config.py):
+  PAPER_TK_BANK_PCT    : bakiye oran esigi (0 = banka KAPALI)
+  PAPER_TK_CONFIRM_BARS: yildiz sabitleme kapali bar sayisi
+  PAPER_TK_AFTER_SEC   : islem sonrasi bekleme (banka istisna)
+
+OLCUM (research_tk14, 6x500, confirm=2 + para-bank):
+  DOGE -395 HBAR -327 UNI -845 BTC -573 ETH -574 ENA -397 ADA -486
+  TOPLAM ~ -3600 (bankasiz confirm=2: ~ -1026)
+  NOT: 1m chorup pencelerinde para-esik bankasi + aninda yeniden
+  giris zinciri komisyon sisiyor. Caninwu goruntuye bakip
+  gerekiyorsa: (a) esigi buyut, (b) banka sonrasinda girise YENI
+  sabit yildiz beklet, (c) PAPER_TK_BANK_PCT=0 ile banka kapali.
