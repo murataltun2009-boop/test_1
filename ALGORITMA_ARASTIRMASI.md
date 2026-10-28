@@ -865,3 +865,30 @@ Uretim hook (10 pencere dogrulama, research_tk12, tp5/sl4):
   DOGE +656 (4/6) BTC -130 (3/6) SOL +176 (3/6) ETH +548 (3/6)
   WR ~%60-65; breakeven ~%46 -> kenar gercek. Pencere-kaymasina
   dikkat: 90/90 test + islem frekansi ~35-40/pencere (2 haftalik).
+
+### TK tamamen yeniden yazildi — yildiz-kararli ac/kapa (2026-10-28)
+Kullanici kurali: TIK karar mekanizmasi 1m DOGE'da yildizlari guzel
+yakaliyor fakat giris acmiyordu. Istenen: yildiz HESAPLAMASI ayni kal;
+ac/kapa kurali yildiz gecisine baglanr:
+  * yesil yildiz (AL/GUCLO AL) -> uzun pozisyon ac, yildiz degisene KAL
+  * kirmizi (SAT/GUCLO SAT) -> kisa pozisyon ac, yolda kal
+  * gri (NOTR) -> mevcut pozisyonun TERSINE gec (flip)
+  * ac+kapa LIMIT (maker) — komisyon az
+
+Seed uygulama (paper.py `_tk` yeniden yazin):
+  * boyle: res.signals (komple skor yдldız) — chart ile ayni.
+  * ARM: yildiz anindaki fiyata pasif limit; dolum dokunurken maker;
+    dolmayinca yeni barda ARM fiyata guncellenir (kovalamaca ARM).
+  * FLIP: yildiz gecisi kapan ARM — close da LIMIT (maker); do
+    dalgsan SL (taker) once ceker (koruyucu).
+  * TP/BE KLIP KAPALI (kullanici: pozisyon yildiz degisene kadar
+    kalsin). BORELLEM dikkat: tp close verdigini goruldu —
+    tk_tp=0 iken q.tk_tp=L yazilmis ve K0/Z36 (tum islem komisyona
+    kaybetmsiler) — FIX: tp=0 iken attr sifir.
+  * SL: 0.5% BTC / 0.3% diger; stop-sonrasi 3 bar giris yok.
+
+OLCUM (research_tk14, 5 pencere DOGE 1m, tp kapali):
+  DOGE -22$ (3/6) ETH +19$ (3/6) ADA +21$ (2/6) BTC -68$ (2/6)
+  UNI -107$ ENA -239$ HBAR -367$ — WHOBUM: komisyon-beraberlik;
+  rumble ekonoi yildiz frekansina bagli; pozisyonlar artik yildiz
+  gecisiyle kapaniyor (istenen goruntü gerçek хват).

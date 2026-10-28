@@ -393,12 +393,6 @@ PAPER_TK_BE = False              # yarim-kar klip (yogun hook acar)
 PAPER_TK_BE_TRIG = 0.5           # TP mesafesinin bu kadarini gecince aktif
 PAPER_TK_BE_LOCK = 0.0           # klip seviyesi = ucresiz BE (yogun: 0.5)
 PAPER_TK_LEG_FLIP = False        # ayni-leg tekrar giris engeli
-# ---- TIK2: 1h yildiz-kararli limit scalper (kullanici kurali) --------
-# Yesil yildiz -> LONG, kirmizi -> SHORT, gri (NÖTR) -> ters pozisyon.
-# Girisler LIMIT (maker); yalnizca 1h diliminde giris. TP/SL 1h guzlugu.
-PAPER_TK2_TP = 0.005             # TP %0.50 (olcum tools/research_tk13: en iyi)
-PAPER_TK2_SL = 0.004             # SL %0.40 (taker stop)
-# ---- EVRENSEL KURALLAR (tüm modlar, kullanıcı kuralı) ----------------
 # 1) KÂR BANKASI: açık pozisyon KENDİ giriş fiyatına göre +%2 kârda
 #    nakde çevrilir; kâr cüzdanda kalır, sonra sinyal yeniden
 #    değerlendirilip en uygun yönde devam edilir.

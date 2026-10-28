@@ -390,7 +390,129 @@ def create_app(service: MarketService, store: SignalStore,
                 #  calisir, sinyal dizisi gerekmez.)
                 sig = service.paper_signals(tf) \
                     if paper.mode in ("signal", "signal_long",
-                                      "signal_exit", "tk2") else None
+                                      "signal_exit", "tk") else None
+                bt = await asyncio.to_thread(paper.backtest, candles, tf, sig)
+                service._emit_log(
+                    "info", "simulator",
+                    f"Geriye dönük test ({len(candles)} {tf} mum, "
+                    f"{paper.mode} modu, {bt['elapsed_ms']} ms): "
+                    f"{bt['trades']} işlem "
+                    f"({bt['wins']} kazanç / {bt['losses']} kayıp) · "
+                    f"net {bt['profit']:+,.2f} ({bt['return_pct']:+.2f}%)")
+                service._emit_log(
+                    "info", "simulator",
+                    f"Hesap bugünkü durumda: bakiye {bt['balance']:,.2f} · "
+                    f"equity {bt['equity']:,.2f}. Artık CANLI devam ediyor.")
+            else:
+                service._emit_log(
+                    "warning", "simulator",
+                    f"Geriye dönük test atlandı: {tf} için yalnızca "
+                    f"{len(candles)} mum hazır (coin yeni yükleniyor olabilir).")
+        paper.running = True
+
+        if not want_bt:
+            return JSONResponse({"ok": True,
+                                 "state": paper.state(_paper_price()),
+                                 "backtest": None, "mode": "live"})
+        service._emit_log("info", "simulator",
+                          f"Kaldıraç simülatörü BAŞLADI · "
+                          f"{paper.leverage:g}x · teminat %{paper.wallet_fraction*100:.0f} · "
+                          f"komisyon %{paper.fee_rate*100:.3f}")
+        return JSONResponse({"ok": True, "state": paper.state(_paper_price()),
+                             "backtest": bt})
+
+    async def api_paper_stop(request: Request) -> Response:
+        err = _need_paper()
+        if err:
+            return err
+        paper.running = False
+        service._emit_log("info", "simulator",
+                          "Kaldıraç simülatörü duraklatıldı "
+                          "(açık pozisyon korunuyor).")
+        return JSONResponse({"ok": True, "state": paper.state(_paper_price())})
+
+    async def api_paper_reset(request: Request) -> Response:
+        err = _need_paper()
+        if err:
+            return err
+        was_running = paper.running
+        paper.reset(service.settings.symbol)
+        paper.running = was_running
+        service._emit_log("info", "simulator", "Simülatör sıfırlandı.")
+        return JSONResponse({"ok": True, "state": paper.state(_paper_price())})
+
+    async def api_paper_config(request: Request) -> Response:
+        err = _need_paper()
+        if err:
+            return err
+        data = await request.json()
+        paper.configure(
+            balance=_num(data.get("balance")),
+            leverage=_num(data.get("leverage")),
+            fee_rate=_num(data.get("fee_rate")),
+            wallet_fraction=_num(data.get("wallet_fraction")),
+            lookback=int(_num(data.get("lookback")) or 0) or None,
+            confirm=data.get("confirm"),
+            short_rule=data.get("short_rule"),
+            mode=data.get("mode"),
+            min_hold=int(_num(data.get("min_hold")) or 0),
+            risk_pct=_num(data.get("risk_pct")),
+            lock_pct=_num(data.get("lock_pct")),
+            pull_atr=_num(data.get("pull_atr")),
+        )
+        # TIK modu onayi: kullaniciya motorun GERCEKTEN tik ile
+        # calistigini (eski surecte sessiz yok-sayma tehlikesi) ve
+        # simulasyonun duraklatip duraklatmadigini acikla.
+        if data.get("mode") == "tk" and paper.mode == "tk":
+            dur = "" if paper.running else \
+                " · SIMULASYON DURAKLATILMIS — islem acilmasi icin " \
+                "Trade Başla'ya bas"
+            service._emit_log(
+                "info", "simulator",
+                f"TİK (yıldız limit) aktif — sembol {paper.symbol} · "
+                f"TP %{paper.tk_tp*100:.1f} · SL %{paper.tk_sl*100:.1f} · "
+                f"yeşil yıldız→LONG · kırmızı yıldız→SHORT · gri "
+                f"yıldız→TERS pozisyon · aç/kapa LIMIT (maker) · "
+                f"yarım-kâr klip{dur}")
+        elif data.get("mode") == "tk" and paper.mode != "tk":
+            service._emit_log(
+                "warning", "simulator",
+                f"TİK modu UYGULANAMADI (motor mode={paper.mode}) — "
+                f"server kodu eski olabilir, restart gerekli")
+        service.force_mode_refresh()
+
+        # "Gecmisten baslat": once grafikteki tum mumlar tekrar edilir,
+        # boylece "simdiye kadar ne kadar kazanirdi" olculmus olur;
+        # ardindan canli akis AYNI hesapla devam eder.
+        want_bt = data.get("backtest", True)
+        bt = None
+        if not want_bt:
+            # ---- "Trade Basla": YALNIZCA CANLI -----------------------------
+            # Hesap verilen USDT ile sifirlanir; gecmis oynatilmaz.
+            # Boylece kullanici yalnizca o andan sonraki kâr/zarari izler.
+            paper.start_live()
+            service._emit_log(
+                "info", "simulator",
+                f"CANLI İŞLEM BAŞLADI · {paper.leverage:g}x · teminat "
+                f"%{paper.wallet_fraction*100:.0f} · komisyon "
+                f"%{paper.fee_rate*100:.3f} · bakiye {paper.balance:,.2f} · "
+                f"{paper.mode} modu")
+        elif want_bt:
+            # Dilimi ISTEMCIDEN al. Sunucudaki active_timeframe'e güvenmek
+            # riskli: dilim degisimi WebSocket, baslatma REST ile gelir;
+            # ikisi araya girerse yanlis dilimin gecmisi test edilir
+            # (tarayicida bir adim geriden gittiği ölçüldü).
+            tf = str(data.get("timeframe") or "")
+            if tf not in service.settings.timeframes:
+                tf = service.settings.active_timeframe
+            candles = service.paper_candles(tf)
+            if len(candles) > (paper.lookback + 1):
+                # Sinyal bakan modlar gecmise ait sinyal dizisine ihtiyac duyar.
+                # ("signal", "signal_long", "signal_exit" — aralik modu fiyatla
+                #  calisir, sinyal dizisi gerekmez.)
+                sig = service.paper_signals(tf) \
+                    if paper.mode in ("signal", "signal_long",
+                                      "signal_exit", "tk") else None
                 bt = await asyncio.to_thread(paper.backtest, candles, tf, sig)
                 service._emit_log(
                     "info", "simulator",

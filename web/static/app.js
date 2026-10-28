@@ -1135,7 +1135,7 @@ if ("serviceWorker" in navigator) {
     // Trend/MURO modu da SHORT kuralini kullanmaz: yon tamamen
     // gostergeden gelir. Bu yuzden secici kapatilir.
     var trend = (mode === "trend" || mode === "muro" || mode === "ppt" ||
-                 mode === "tk" || mode === "tk2");
+                 mode === "tk");
     var muro = (mode === "muro");
     var kilit = tek || trend;
     el.ruleWrap.style.display = kilit ? "none" : "";
@@ -1170,7 +1170,6 @@ if ("serviceWorker" in navigator) {
     // TIK: olculmus optimum parametreler SUNUCUDA otomatik uygulanir
     // (kaynak: tools/research_tk*.py). Kullanici iste: "hesapla, elle oynama".
     var tik = (el.pMode.value === "tk");
-    var tik2 = (el.pMode.value === "tk2");
     // Secilen algoritma ANINDA uygulanir: /api/paper/config sunucuda
     // configure + force_mode_refresh calistirir -> grafik AL/SAT yildizlari
     // secilen modun karar serisine gecer (pozisyon BASLATILMAZ, running
@@ -1182,13 +1181,8 @@ if ("serviceWorker" in navigator) {
           + "(mult 3,5 · pull 1,0 ATR · risk %3 · kilit %2)"
         : "") +
       (tik
-        ? " · ölçümlü tik parametreleri otomatik (TP %3 · SL %5 · "
-          + "tamamen limit/maker) — BTC 5m / SOL 1m önerilir"
-        : "") +
-      (tik2
-        ? " · TİK2: 1h diliminde yıldız kararı — yeşil yıldız→LONG, "
-          + "kırmızı yıldız→SHORT, gri yıldız→TERS pozisyon; "
-          + "girişler LIMIT (maker). Yalnızca 1h'de işlem açar!"
+        ? " · TİK yıldız kuralı: yeşil yıldız→LONG, kırmızı yıldız→"
+          + "SHORT, gri yıldız→TERS pozisyon; aç/kapa LIMIT (maker)"
         : "") + " · grafik yıldızları güncelleniyor");
     paperCall("/api/paper/config");
   });
