@@ -1182,7 +1182,8 @@ if ("serviceWorker" in navigator) {
         : "") +
       (tik
         ? " · TİK yıldız kuralı: yeşil yıldız→LONG, kırmızı yıldız→"
-          + "SHORT, gri yıldız→TERS pozisyon; aç/kapa LIMIT (maker)"
+          + "SHORT, gri yıldız→TERS pozisyon; aç/kapa LIMIT (maker); "
+          + "her işlem sonrası 1 dk bekleme"
         : "") + " · grafik yıldızları güncelleniyor");
     paperCall("/api/paper/config");
   });

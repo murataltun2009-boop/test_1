@@ -381,6 +381,9 @@ class PaperTrader:
         self.tk_pend_close = None     # flip kapanis dokunma seviyesi
         self.tk_pend_entry = None     # (yon, seviye) giris limit ARM
         self.tk_pend_bar = 0          # ARM edildigi bar acilis zamani
+        self._tk_son_islem_t = 0.0    # son ac/kapa bar zamani (1 dk bekleme)
+        self.tk_after_ms = float(getattr(
+            config, "PAPER_TK_AFTER_SEC", 60)) * 1000.0
         self._bars_held = 0
         self._last_bar_time = 0
         # Son LONG'dan bu yana ulasilan en yuksek fiyat. SHORT karari
@@ -809,7 +812,7 @@ class PaperTrader:
                 signal in ("AL", "SAT"):
             signal = "NÖTR"
 
-        if self.corr_on and self.position is None:
+        if self.corr_on and self.mode != "tk" and self.position is None:
             if self._bars_held < self._corr_until:
                 return None
             if self._corr_arm:
@@ -2179,38 +2182,52 @@ class PaperTrader:
             signal: Optional[str]) -> Optional[str]:
         """TICK — yildiz-kararli tamamen-LIMIT long/short scalper.
 
-        KULLANICI KURALI (2026-10-28): karar mekanizmasinin grafikte
-        urettigi yildiz etiketi (bilesik skor serisi — hesaplamaya
-        DOKUNULMADI) degistikce pozisyon degisir:
-          * yesil yildiz   (AL / GÜÇLÜ AL)   -> LONG ac, kal
-          * kirmizi yildiz (SAT / GÜÇLÜ SAT) -> SHORT ac, kal
-          * gri yildiz     (NÖTR)            -> TERS pozisyona gec
-        Acilis VE kapanis emirleri pasif LIMIT (maker) — ucretli az.
+        KULLANICI KURALI (2026-10-28):
+          * yesil yildiz (AL/GÜÇLÜ AL)     -> LONG ac, yildiz
+            degisene kadar kal
+          * kirmizi yildiz (SAT/GÜÇLÜ SAT) -> SHORT ac, yolda kal
+          * gri yildiz (NÖTR)              -> TERS pozisyona gec
+          * ac/kapa LIMIT (maker)
+          * HER ac/kapadan sonra 1 DAKIKA bekle (PAPER_TK_AFTER_SEC):
+            yeni acilis/kapanis engellenir; koruyucu SL yine calisir.
 
-        DURUST DOLUM (eski TIK modeliyle ayni):
-          * limit YALNIZCA bar sevıyeye DOKUNURKEN dolu; acilis zaten
-            seviyenin otekindeyse marketable olurdu -> SKIP + yeni
-            barda ARM fiyata yenilenir (kovalamaca; pasiflik sag).
-
-        K gordugu gibi: TP resting-limit pass (fiyat TP'yi asarsa
-        resting emir maker doldurmus sayilir — bedava yaris deliği yok.
+        SENKRON DÜZELTMESI (2026-10-28 canli teshis):
+          * Pozisyon-yildiz esitligi her tikte kontrol edilir
+            (mismatch-driven): sinyal olayi kacirilsa bile pozisyon
+            son yildizla esitlenir. "Yesil yildizda pozisyon yok /
+            ters pozisyon acilmis" tesadufu kapanir.
+          * Canli tik modunda (bar_low=None) giris/kapanis ANINDA
+            konur (limit seviyesi = anlik fiyat, maker); geriye-
+            donuk testte bar modu dokunma dolumu korunur.
+          * Yildiz degistiginde bekleyen bayat ARM dusurulur — eski
+            yonun limiti ters pozisyon acamaz.
         """
         p = self.position
+        bar_t = int(candles[-1].open_time) if candles else 0
 
         # ------------------------------------------------------------------
-        # 0) YILDIZ KARARI — yalnizca SINYAL DEGISIMINDE
+        # 0) YILDIZ KARARI — durum HER ZAMAN guncellenir (bekleme
+        #    bittigi an pozisyon en guncel yildizla esitlenir).
         # ------------------------------------------------------------------
         sig = str(signal or "").strip()
-        degisti = False
         if sig and sig != self.tk_sig_son:
             self.tk_sig_son = sig
-            degisti = True
             if sig in ("AL", "GÜÇLÜ AL"):
                 self.tk_hedef = 1
             elif sig in ("SAT", "GÜÇLÜ SAT"):
                 self.tk_hedef = -1
             elif sig == "NÖTR" and self.tk_hedef != 0:
                 self.tk_hedef = -self.tk_hedef        # gri: TERSINE
+
+        # --- 1 dk bekleme: son ac/kapa (giris, flip kapanis, stop)
+        # sonrasindaki sure; sure dolana kadar yeni acilis/kapanis yok.
+        son_islem = float(getattr(self, "_tk_son_islem_t", 0.0) or 0.0)
+        bekle = son_islem > 0 and \
+            (float(bar_t) - son_islem) < float(self.tk_after_ms)
+
+        hedef_yani = LONG if self.tk_hedef > 0 else SHORT
+        esit = bool(p is not None and self.tk_hedef != 0 and
+                    p.side == hedef_yani)
 
         # ------------------------------------------------------------------
         # 1) ACIK POZISYON: TP klip / BE klip / SL stop + yildiz flip
@@ -2312,115 +2329,148 @@ class PaperTrader:
                         self._close(acilis, "tk stop", timeframe)
                         self._tk_kayip_t = float(
                             candles[-1].open_time) if candles else 0.0
+                        self._tk_son_islem_t = float(bar_t)
                         return f"TICK: stop ({_px(acilis)})"
                     if bar_low is not None and bar_low <= stop:
                         self._close(stop, "tk stop", timeframe)
                         self._tk_kayip_t = float(
                             candles[-1].open_time) if candles else 0.0
+                        self._tk_son_islem_t = float(bar_t)
                         return f"TICK: stop ({_px(stop)})"
                     if bar_low is None and price <= stop:
                         # Canli tik (bar araligi yok): tick stopu asti.
                         self._close(price, "tk stop", timeframe)
+                        self._tk_son_islem_t = float(bar_t)
+                        self.tk_pend_close = None
                         return f"TICK: stop ({_px(price)})"
                 else:
                     if acilis >= stop:
                         self._close(acilis, "tk stop", timeframe)
                         self._tk_kayip_t = float(
                             candles[-1].open_time) if candles else 0.0
+                        self._tk_son_islem_t = float(bar_t)
                         return f"TICK: stop ({_px(acilis)})"
                     if bar_high is not None and bar_high >= stop:
                         self._close(stop, "tk stop", timeframe)
                         self._tk_kayip_t = float(
                             candles[-1].open_time) if candles else 0.0
+                        self._tk_son_islem_t = float(bar_t)
                         return f"TICK: stop ({_px(stop)})"
                     if bar_high is None and price >= stop:
                         self._close(price, "tk stop", timeframe)
+                        self._tk_son_islem_t = float(bar_t)
+                        self.tk_pend_close = None
                         return f"TICK: stop ({_px(price)})"
 
-            # --- YILDIZ FLIP: hedef ters taraftaysa kapan ARM ---
-            # Kapanis da LIMIT (maker): resting close fiyata DOKUNURKEN
-            # doldu; dolmadıysa yeni barda fiyata yenilenir.
-            if degisti:
-                if self.tk_hedef != 0 and \
-                        p.side == (LONG if self.tk_hedef > 0 else SHORT):
-                    self.tk_pend_close = None          # ayni yon: flip iptal
+            # --- YILDIZ FLIP (mismatch-driven): pozisyon yonu
+            # yildizla uyusmuyorsa kapan. Canli tik: ANINDA (maker);
+            # bar modu: ARM + dokunma dolum (dürüst olcum).
+            # ----------------------------------------------------------
+            if not esit and self.tk_hedef != 0:
+                if bar_high is not None:
+                    if self.tk_pend_close is None and not bekle:
+                        self.tk_pend_close = price
+                        self.tk_pend_bar = bar_t
+                elif not bekle:          # canli tik: aninda kapan
+                    self._close(price, "TK: yıldız flip kapanış (maker)",
+                                timeframe, reset_signal=False, maker=True)
+                    self.tk_pend_close = None
                     self.tk_pend_entry = None
-                else:
-                    self.tk_pend_close = price
-                    self.tk_pend_bar = int(candles[-1].open_time) \
-                        if candles else 0
-            if self.tk_pend_close is not None:
+                    self._tk_son_islem_t = float(bar_t)
+                    return "TK: yıldız flip kapanış (maker)"
+            if self.tk_pend_close is not None and not bekle:
+                if esit:
+                    # Whipsaw: yildiz kote geri dondu ve pozisyon yine
+                    # yildizla esit — kapatirma emri IPITAL (bayat
+                    # kapanis ayni-yon pozisyonu ucretle saga sola
+                    # acamaz; eski kodda da bu iptal vardi).
+                    self.tk_pend_close = None
+                    return None               # pozisyon yasar
+                elif bar_high is None:          # canli tik: aninda kapan
+                    self._close(price, "TK: yıldız flip kapanış (maker)",
+                                timeframe, reset_signal=False, maker=True)
+                    self.tk_pend_close = None
+                    self.tk_pend_entry = None
+                    self._tk_son_islem_t = float(bar_t)
+                    return "TK: yıldız flip kapanış (maker)"
                 Lc = self.tk_pend_close
-                acilis_c = float(candles[-1].open) if candles else price
+                acilis_c = float(candles[-1].open)
                 if p.side == LONG:      # kapan = SELL limit ust seviye
-                    doldu = bool(bar_high is not None and
-                                 acilis_c <= Lc and bar_high >= Lc) or \
-                            bool(bar_high is None and
-                                 acilis_c <= Lc and price >= Lc)
+                    doldu = bool(bar_low is not None and bar_high is not None
+                                 and acilis_c <= Lc and bar_high >= Lc)
                 else:                   # kapan = BUY limit alt seviye
-                    doldu = bool(bar_low is not None and
-                                 acilis_c >= Lc and bar_low <= Lc) or \
-                            bool(bar_low is None and
-                                 acilis_c >= Lc and price <= Lc)
+                    doldu = bool(bar_low is not None and bar_high is not None
+                                 and acilis_c >= Lc and bar_low <= Lc)
                 if doldu:
                     self._close(Lc, "TK: yıldız flip kapanış (maker)",
                                 timeframe, reset_signal=False, maker=True)
                     self.tk_pend_close = None
                     self.tk_pend_entry = (self.tk_hedef, Lc)
-                    self.tk_pend_bar = int(candles[-1].open_time) \
-                        if candles else 0
+                    self.tk_pend_bar = bar_t
+                    self._tk_son_islem_t = float(bar_t)
                     return "TK: yıldız flip kapanış (maker)"
-                if candles and self.tk_pend_bar != \
-                        int(candles[-1].open_time):
-                    self.tk_pend_close = price
-                    self.tk_pend_bar = int(candles[-1].open_time)
+                if bar_t != self.tk_pend_bar:
+                    self.tk_pend_close = price     # yeni barda fiyata
+                    self.tk_pend_bar = bar_t
             # pozisyon yasar: diger kontrol yok (tk bundan ibaret)
             return None
 
         # ------------------------------------------------------------------
-        # 2) POZISYON YOK: yildiz limit ARM + honest dolum
+        # 2) POZISYON YOK: yildiza giris — canli tik ANINDA, bar modu ARM
         # ------------------------------------------------------------------
         self.tk_pend_close = None            # kapanacak pozisyon yok
-        if len(candles) < 10 or self.tk_hedef == 0:
+        if len(candles) < 10 or self.tk_hedef == 0 or bekle:
+            # Beklemede ARM dus: bekleme bitince TAZE fiyattan konur
+            # (bayat limit ile ters yon/uzak dolum engeli).
+            self.tk_pend_entry = None
             return None
+        yon = self.tk_hedef
+
+        # Yildiz degistiyse bekleyen eski-yon ARM gecersiz (ters acilma).
+        if self.tk_pend_entry is not None and self.tk_pend_entry[0] != yon:
+            self.tk_pend_entry = None
+
+        if bar_low is None or bar_high is None:
+            # CANLI TIK: giris ANINDA — yildizla uyum garanti; limit
+            # seviyesi anlik fiyat (maker).
+            self._open(LONG if yon > 0 else SHORT, price,
+                       "TK: yıldız limit (maker)",
+                       timeframe, candles, maker=True)
+            q = self.position
+            if q is not None:
+                if yon > 0:
+                    # TP kapaliysa (tk_tp<=0) attr SIFIR kalmali:
+                    # tp=entry yazilirsa TP giris fiyatina ceker ve
+                    # pozisyon komisyona kaybeder (olcum 2026-10-28).
+                    q.tk_tp = price * (1.0 + self.tk_tp) \
+                        if self.tk_tp > 0 else 0.0
+                    q.tk_stop = price * (1.0 - self.tk_sl)
+                else:
+                    q.tk_tp = price * (1.0 - self.tk_tp) \
+                        if self.tk_tp > 0 else 0.0
+                    q.tk_stop = price * (1.0 + self.tk_sl)
+            self.tk_pend_entry = None
+            self._tk_son_islem_t = float(bar_t)
+            return "TK: yıldız limit doldu (maker)"
+
+        # --- BAR MODU (geriye-donuk test): beklemedeki limitin dolumu
+        # (dostum: dokunma dolum) ---
         acilis = float(candles[-1].open)
-        bar_t = int(candles[-1].open_time)
-
-        # Duzeltici: stop-sonrasi K bar giris yok (yogun hook: 3 bar).
-        pause = getattr(self, "tk_pause_bars", 0) or 0
-        if pause > 0 and len(candles) >= 2:
-            tf_ms = max(1.0, float(candles[-1].open_time -
-                                   candles[-2].open_time))
-            son_kayip = getattr(self, "_tk_kayip_t", 0.0) or 0.0
-            if son_kayip and float(candles[-1].open_time) - son_kayip \
-                    < pause * tf_ms:
-                self.tk_pend_entry = None     # beklemede ARM dus
-                return None
-
-        # --- beklemedeki limitin dolumu (dostum: dokunma dolum) ---
         if self.tk_pend_entry is not None:
-            yon, L = self.tk_pend_entry
-            if yon > 0:
+            yon2, L = self.tk_pend_entry
+            if yon2 > 0:
                 doldu = bool(bar_low is not None and
-                             acilis >= L and bar_low <= L) or \
-                        bool(bar_low is None and acilis >= L and
-                             price <= L)
+                             acilis >= L and bar_low <= L)
             else:
                 doldu = bool(bar_high is not None and
-                             acilis <= L and bar_high >= L) or \
-                        bool(bar_high is None and acilis <= L and
-                             price >= L)
+                             acilis <= L and bar_high >= L)
             if doldu:
-                self._open(LONG if yon > 0 else SHORT, L,
+                self._open(LONG if yon2 > 0 else SHORT, L,
                            "TK: yıldız limit (maker)",
                            timeframe, candles, maker=True)
                 q = self.position
                 if q is not None:
-                    if yon > 0:
-                        # TP kapaliysa (tk_tp<=0) attr SIFIR kalmali:
-                        # tp=entry yazilirsa TP giris fiyatina ceker
-                        # ve pozisyon komisyona kaybeder (olcum
-                        # 2026-10-28: DOGE K0/Z36 — tumu tp-pass).
+                    if yon2 > 0:
                         q.tk_tp = L * (1.0 + self.tk_tp) \
                             if self.tk_tp > 0 else 0.0
                         q.tk_stop = L * (1.0 - self.tk_sl)
@@ -2429,16 +2479,17 @@ class PaperTrader:
                             if self.tk_tp > 0 else 0.0
                         q.tk_stop = L * (1.0 + self.tk_sl)
                 self.tk_pend_entry = None
+                self._tk_son_islem_t = float(bar_t)
                 return "TK: yıldız limit doldu (maker)"
             # Dolum yoksa yeni barda fiyata tasi: limit pasifligi
             # bozulmaz; dolum yine dokunma anindadir.
             if bar_t != self.tk_pend_bar:
-                self.tk_pend_entry = (yon, price)
+                self.tk_pend_entry = (yon2, price)
                 self.tk_pend_bar = bar_t
             return None
 
         # --- ARM: yildiz anindaki fiyata pasif limit kon ---
-        self.tk_pend_entry = (self.tk_hedef, price)
+        self.tk_pend_entry = (yon, price)
         self.tk_pend_bar = bar_t
         return None
 
@@ -2474,9 +2525,11 @@ class PaperTrader:
         ))
         self.position = None
 
-        # DUZELTICI (seri kilidi): zarar biten islemden sonra K bar
-        # yeni GIRIS yok. Gate _on_price basinda ( pozisyon yokken ).
-        if self.corr_on and net < 0:
+        # TK modu disinda: zarar sonrasi 8-bar giris engeli + zarar-yonu
+        # ARM'i. TK'da bu engel canlida "yesil yildizda pozisyon acilmama"
+        # yapti (4/4 kayip oturumunda her zarardan sonra 8 dk aylik);
+        # TK kendi 60-sn bekleme kurallini kullaniyor (tk_after_ms).
+        if self.corr_on and self.mode != "tk" and net < 0:
             if self.corr_pause_bars > 0:
                 self._corr_until = self._bars_held + int(self.corr_pause_bars)
             if self.corr_arm_on:

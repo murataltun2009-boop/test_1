@@ -892,3 +892,44 @@ OLCUM (research_tk14, 5 pencere DOGE 1m, tp kapali):
   UNI -107$ ENA -239$ HBAR -367$ — WHOBUM: komisyon-beraberlik;
   rumble ekonoi yildiz frekansina bagli; pozisyonlar artik yildiz
   gecisiyle kapaniyor (istenen goruntü gerçek хват).
+
+
+### TK canli senkron fix + 1 dk bekleme (2026-10-28, oturum 2)
+KULLANICI SIKAYETI: canlida yildizlar ile pozisyonlar uymuyor; "yesil
+yildiz ciktiginda hic pozisyon acmamis yada ters pozisyon acmis";
+4/4 kayip (SHORT -16.01 / LONG -8.12 / SHORT -2.16 / LONG -13.28,
+komisyon 12.63$). Ek istek: her ac/kapadan sonra 1 dk bekle.
+
+KOK NEDENLER (canli = on_price(bar_low/balbar_high=None) TIK modu):
+  1) CORR ZARAR-SONRASI GATE (`PAPER_CORR_PAUSE_BARS=8`): _close()
+     icinde net<0 -> _corr_until=_bars_held+8; kapsam kontrolu YOKTU.
+     TK dahil her modda her zarardan sonra 8 BAR (1m'de 8 dk) giris
+     yasak -> "yesil yildiz var, pozisyon yok". 4/4 kayip oturumunda
+     her zarardan sonra engel devredeydi. FIX: gate artik TK modunda
+     atlanir (`self.mode != "tk"`) — TK kendi 60-sn kullaniyor.
+  2) TIK dolum sarti eski mum ACILISI (60 sn bayat) ile yapiliyordu;
+     bar acilisi ARM fiyatinin ters tarafindaysa dolum o bar icinde
+     imkanlagi: ARM son una kadar dolmuyordu. FIX: canli tik modunda
+     giris/kapanis ANINDA (limit seviyesi = anlik fiyat, maker);
+     gerib donor testte bar modu dokunma dolumu korunur.
+  3) Bayat ARM: yildiz degistiginde bekleyen eski-yon limit ters
+     pozisyon acabiliyordu. FIX: yon uyumsuzlugunda ARM dusurulur.
+  4) Flip kapanisi bar-kilitte gecikiyordu (kirmizi yildizda LONG
+     kalmis goruntusu). FIX: mismatch-driven kapanis + tık anında.
+
+YENI KURALLAR (paper.py _tk):
+  * Pozisyon-yildiz esitligi HER TIKTE kontrol edilir
+    (mismatch-driven): sinyal olayi kacirilsa bile pozisyon son
+    yildizla esitlenir -> ACKL, glosser belirtesinde pozisyon
+    her zaman son yildizin tarafinda acik.
+  * HER ac/kapadan sonra 1 dk bekle (PAPER_TK_AFTER_SEC=60):
+    yeni acilis/kapanis engellenir; koruyucu SL yine calisir.
+    Bekleme bitince pozisyon kalintisi esitlenir.
+  * Whipsaw iptali: yildiz geri donduyse (RED->GRI->RED) bayat
+    kapatirma emri iptal — ayni yonde ucret-israf kapanisi yok.
+
+OLCUM (research_tk14, 6x500 pencere, 1m, TP kapali):
+  UNI +113$ ETH +74$ ADA +129$ ENA +424$ BTC +33$
+  DOGE -55$ HBAR -302$ — toplam ~+420$. Canli oncesi:
+  mismatch mekanizmasi + 60 sn bekleme， pozisyonlar grafik
+  yildizlarina BIREBIR hizali.

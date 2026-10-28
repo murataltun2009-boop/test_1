@@ -470,10 +470,10 @@ def create_app(service: MarketService, store: SignalStore,
             service._emit_log(
                 "info", "simulator",
                 f"TİK (yıldız limit) aktif — sembol {paper.symbol} · "
-                f"TP %{paper.tk_tp*100:.1f} · SL %{paper.tk_sl*100:.1f} · "
-                f"yeşil yıldız→LONG · kırmızı yıldız→SHORT · gri "
-                f"yıldız→TERS pozisyon · aç/kapa LIMIT (maker) · "
-                f"yarım-kâr klip{dur}")
+                f"TP %{paper.tk_tp*100:.1f} (kapalı) · SL "
+                f"%{paper.tk_sl*100:.1f} · yeşil yıldız→LONG · kırmızı "
+                f"yıldız→SHORT · gri yıldız→TERS pozisyon · aç/kapa "
+                f"LIMIT (maker) · her işlem sonrası 1 dk bekleme{dur}")
         elif data.get("mode") == "tk" and paper.mode != "tk":
             service._emit_log(
                 "warning", "simulator",
@@ -592,10 +592,10 @@ def create_app(service: MarketService, store: SignalStore,
             service._emit_log(
                 "info", "simulator",
                 f"TİK (yıldız limit) aktif — sembol {paper.symbol} · "
-                f"TP %{paper.tk_tp*100:.1f} · SL %{paper.tk_sl*100:.1f} · "
-                f"yeşil yıldız→LONG · kırmızı yıldız→SHORT · gri "
-                f"yıldız→TERS pozisyon · aç/kapa LIMIT (maker) · "
-                f"yarım-kâr klip{dur}")
+                f"TP %{paper.tk_tp*100:.1f} (kapalı) · SL "
+                f"%{paper.tk_sl*100:.1f} · yeşil yıldız→LONG · kırmızı "
+                f"yıldız→SHORT · gri yıldız→TERS pozisyon · aç/kapa "
+                f"LIMIT (maker) · her işlem sonrası 1 dk bekleme{dur}")
         elif data.get("mode") == "tk" and paper.mode != "tk":
             service._emit_log(
                 "warning", "simulator",
