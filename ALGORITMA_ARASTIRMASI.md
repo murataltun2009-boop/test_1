@@ -1209,3 +1209,29 @@ DOGRULAMA: tk_sanity tum adimlar OK (13: yukari dizilimde SAT ile
 SHORT yok, AL ile LONG; 14: dusus diziliminde LONG aninda SHORT'a
 cevrilir, kaynak CIZGI; 15: dususte AL SHORT'u bozamaz); test_paper
 90/90. sw ta-v23.
+
+### TK cizgi KESISIMI referansi (oturum 10, 2026-10-30)
+KULLANICI KURALI (netlestirme): "kirmizi>yesil>turuncu: kirmizi ile
+yesilin ILK KESISTIGI nokta short cikis / long giris; yesil>kirmizi>
+turuncu: ilk kesisme long cikis / short giris noktasi."
+
+UYGULAMA: ribbon artik tam dizilim yerine EMA20 (hizli/kirmizi) ile
+EMA50 (yavas/yesil) KESISIMINI tetik alir:
+  EMA20 > EMA50 -> +1: SHORT kapanir, LONG acilir
+  EMA20 < EMA50 -> -1: LONG kapanir, SHORT acilir
+Kesisim aninda pozisyon ters cevrilir (maker); hedef "CIZGI"
+kaynagiyla sabitlenir. EMA200 (turuncu) yon filtresi olarak
+kullanilmaz (kullanici siralamasinda her iki rejimde de altta).
+Knop: PAPER_TK_RIBBON_MODE = "cross" | "cross200" | "stack".
+
+OLCUM (research_tk14, 6x500, 1m, ayni gun arka arkaya):
+  cross (EMA20/50, secilen): toplam +3954, islem 68-138
+      DOGE 320 HBAR 759 UNI 823 BTC 481 ETH -10 ENA 1338 ADA 243
+  cross200 (+EMA200 tarafi) : toplam +3377, islem 85-139
+  stack (EMA20>50>200)      : toplam +4551, islem 82-160
+Not: cross islem sayisini ~%35 azaltir (komisyon avantaji); stack
+net getirisi daha yuksek ama kesismeden gec tetikler. Kullanici
+kurali kesisme oldugu icin cross varsayilan; istenirse
+PAPER_TK_RIBBON_MODE="stack" ile eski davranisa donulur.
+
+DOGRULAMA: tk_sanity tum adimlar OK; test_paper 90/90. sw ta-v24.

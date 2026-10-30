@@ -144,31 +144,46 @@ def _ema_last(closes: list, n: int) -> Optional[float]:
     return e
 
 
-def _ma_ribbon(candles: list) -> int:
-    """GRAFIK CIZGI SIRASI (kullanici kurali, 2026-10-29).
+def _ma_ribbon(candles: list, mode: str = "cross") -> int:
+    """GRAFIK CIZGI KESISIMI (kullanici kurali, 2026-10-30).
 
-    Grafikteki renkli ortalamalar trend yonune gore siralanir:
-      * yukselis: hizli cizgi en ustte (kirmizi > yesil > sari)
-      * dusus   : yavas cizgi en ustte (mavi > sari > turuncu)
-    Bizim panelde bu cizgiler EMA20 (hizli), EMA50 (orta), EMA200
-    (yavas) olarak cizilir. Kural, KAPALI mumlardan hesaplanir:
-      EMA20 > EMA50 > EMA200 -> +1 (yalniz LONG)
-      EMA20 < EMA50 < EMA200 -> -1 (yalniz SHORT)
-      karisik / isinma        ->  0 (kilit yok, eski yildiz kurali)
-    Yildiz hesabina DOKUNMAZ; yalniz ac/kapa yonunu kilitler.
+    Referans, hizli cizgi (kirmizi=EMA20) ile yavas cizginin
+    (yesil=EMA50) ILK KESISTIGI noktadir:
+      * kirmizi yesilin USTUNE cikti  -> +1: SHORT cikis, LONG giris
+      * yesil kirmizinin USTUNE cikti -> -1: LONG cikis, SHORT giris
+    `mode`:
+      "cross"    : yalniz EMA20/EMA50 kesisimi (ilk kesisme noktasi)
+      "cross200" : kesisim + hizli cizgi EMA200'un dogru tarafinda
+      "stack"    : tam dizilim EMA20>EMA50>EMA200 (eski, gec kalir)
+    Yildiz hesabina DOKUNMAZ.
     """
     c = _kapali_mumlar(candles)
-    if len(c) < 200:
+    n = len(c)
+    if n < 60:
         return 0
     closes = [float(x.close) for x in c]
     e20 = _ema_last(closes, 20)
     e50 = _ema_last(closes, 50)
-    e200 = _ema_last(closes, 200)
-    if e20 is None or e50 is None or e200 is None:
+    if e20 is None or e50 is None:
         return 0
-    if e20 > e50 > e200:
+    yon = 1 if e20 > e50 else (-1 if e20 < e50 else 0)
+    if yon == 0:
+        return 0
+    if mode == "cross":
+        return yon
+    if n < 200:
+        return 0
+    e200 = _ema_last(closes, 200)
+    if e200 is None:
+        return 0
+    if mode == "cross200":
+        # Hizli cizgi uzun ortalamanin dogru tarafinda olmali.
+        return yon if ((yon > 0 and e20 > e200) or
+                       (yon < 0 and e20 < e200)) else 0
+    # "stack": tam dizilim
+    if yon > 0 and e20 > e50 > e200:
         return 1
-    if e20 < e50 < e200:
+    if yon < 0 and e20 < e50 < e200:
         return -1
     return 0
 
@@ -437,6 +452,8 @@ class PaperTrader:
         self.tk_ribbon = bool(getattr(config, "PAPER_TK_RIBBON", True))
         self.tk_ribbon_flip = bool(
             getattr(config, "PAPER_TK_RIBBON_FLIP", True))
+        self.tk_ribbon_mode = str(
+            getattr(config, "PAPER_TK_RIBBON_MODE", "cross"))
         self._tk_rib_bar = 0          # ribbon onbellegi: kapanan bar
         self._tk_rib_val = 0          # +1 / -1 / 0
         self.tk_bank_pct = float(getattr(config, "PAPER_TK_BANK_PCT", 0.025))
@@ -2317,7 +2334,7 @@ class PaperTrader:
         bar = int(c[-1].open_time) if c else 0
         if bar != self._tk_rib_bar:
             self._tk_rib_bar = bar
-            self._tk_rib_val = _ma_ribbon(candles)
+            self._tk_rib_val = _ma_ribbon(candles, self.tk_ribbon_mode)
         return self._tk_rib_val
 
     def _tk_rib_flip(self, px: float, timeframe: str, candles: list,
@@ -2361,10 +2378,10 @@ class PaperTrader:
           * kirmizi yildiz (SAT/GÜÇLÜ SAT) -> SHORT ac, yolda kal
           * gri yildiz (NÖTR)              -> TERS pozisyona gec
           * ac/kapa LIMIT (maker)
-          * GRAFIK CIZGI SIRASI (MA ribbon, EMA20>EMA50>EMA200):
-            yukselis diziliminde yalniz LONG, ters dizilimde yalniz
-            SHORT; pozisyon trende ters dustuyse aninda trend yonune
-            cevrilir (yildiz yalnizca zamanlama verir).
+          * GRAFIK CIZGI KESISIMI (EMA20/EMA50, kullanici kurali):
+            kirmizi yesili yukari kestiginde SHORT kapanir LONG
+            acilir; asagi kestiginde LONG kapanir SHORT acilir.
+            Pozisyon trende ters dustuyse aninda cevrilir.
           * HER ac/kapadan sonra 1 DAKIKA bekle (PAPER_TK_AFTER_SEC):
             yeni acilis/kapanis engellenir; koruyucu SL yine calisir.
 
