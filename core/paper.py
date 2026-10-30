@@ -133,6 +133,46 @@ def _kapali_mumlar(candles: list) -> list:
     return list(candles[:-1])
 
 
+def _ema_last(closes: list, n: int) -> Optional[float]:
+    """Kapanis listesinin SON degeri icin EMA(n) (SMA tohumlu)."""
+    if n <= 0 or not closes or len(closes) < n:
+        return None
+    k = 2.0 / (n + 1.0)
+    e = sum(closes[:n]) / float(n)
+    for x in closes[n:]:
+        e = float(x) * k + e * (1.0 - k)
+    return e
+
+
+def _ma_ribbon(candles: list) -> int:
+    """GRAFIK CIZGI SIRASI (kullanici kurali, 2026-10-29).
+
+    Grafikteki renkli ortalamalar trend yonune gore siralanir:
+      * yukselis: hizli cizgi en ustte (kirmizi > yesil > sari)
+      * dusus   : yavas cizgi en ustte (mavi > sari > turuncu)
+    Bizim panelde bu cizgiler EMA20 (hizli), EMA50 (orta), EMA200
+    (yavas) olarak cizilir. Kural, KAPALI mumlardan hesaplanir:
+      EMA20 > EMA50 > EMA200 -> +1 (yalniz LONG)
+      EMA20 < EMA50 < EMA200 -> -1 (yalniz SHORT)
+      karisik / isinma        ->  0 (kilit yok, eski yildiz kurali)
+    Yildiz hesabina DOKUNMAZ; yalniz ac/kapa yonunu kilitler.
+    """
+    c = _kapali_mumlar(candles)
+    if len(c) < 200:
+        return 0
+    closes = [float(x.close) for x in c]
+    e20 = _ema_last(closes, 20)
+    e50 = _ema_last(closes, 50)
+    e200 = _ema_last(closes, 200)
+    if e20 is None or e50 is None or e200 is None:
+        return 0
+    if e20 > e50 > e200:
+        return 1
+    if e20 < e50 < e200:
+        return -1
+    return 0
+
+
 def _bar_acilisi(candles: list, price: float) -> float:
     """Mevcut barin acilis fiyati (yoksa mevcut fiyat).
 
@@ -391,6 +431,14 @@ class PaperTrader:
         self.tk_sar_mean = int(getattr(config, "PAPER_TK_SAR_MEAN", 10))
         self.tk_sar_minpct = float(
             getattr(config, "PAPER_TK_SAR_MINPCT", 0.002))
+        # ---- GRAFIK CIZGI SIRASI (MA ribbon) kilidi ----
+        # EMA20>EMA50>EMA200 (yukselis dizilimi) iken yalniz LONG,
+        # ters dizilimde yalniz SHORT. Yildiz hesabi degismez.
+        self.tk_ribbon = bool(getattr(config, "PAPER_TK_RIBBON", True))
+        self.tk_ribbon_flip = bool(
+            getattr(config, "PAPER_TK_RIBBON_FLIP", True))
+        self._tk_rib_bar = 0          # ribbon onbellegi: kapanan bar
+        self._tk_rib_val = 0          # +1 / -1 / 0
         self.tk_bank_pct = float(getattr(config, "PAPER_TK_BANK_PCT", 0.025))
         self._tk_hist_bar = 0         # son kapali bar zaman mhr
         self._tk_hist_y1 = ""         # son kapali barin yildizi
@@ -1873,7 +1921,11 @@ class PaperTrader:
                     signals = self._build_signal_series(
                         _kapali_mumlar(candles), timeframe)
                 for i in range(start, n):
-                    window = candles[i - start + 1:i + 1]
+                    # Pencere: karar modlari son `lookback` bari kullanir;
+                    # TK cizgi sirasi (EMA200) icin 260 barlik isinma
+                    # gecmisi verilir (yoksa ribbon hic hesaplanamaz).
+                    w0 = max(0, i - max(self.lookback, 260) + 1)
+                    window = candles[w0:i + 1]
                     sig = signals[i] if signals and i < len(signals) else None
                     self._on_price(candles[i].close, window, timeframe, sig,
                                    candles[i].low, candles[i].high)
@@ -2216,6 +2268,11 @@ class PaperTrader:
         if self.tk_hedef == 0:
             return
         yeni_yon = -self.tk_hedef
+        # CIZGI SIRASI: trende ters SAR acilmaz (yukselis diziliminde
+        # SHORT, dusus diziliminde LONG ters cevirme reddedilir).
+        rib = self._tk_ribbon(candles)
+        if rib != 0 and yeni_yon != rib:
+            return
         # TREND FILTRESI: yeni yon = SHORT ise fiyat ortalamanin
         # (minpct hafiyeyi) ALTINDA olmali; LONG ise USTUNDE olmali.
         c = _kapali_mumlar(candles)
@@ -2247,6 +2304,52 @@ class PaperTrader:
         self.tk_pend_entry = None
         self.tk_pend_close = None
 
+    def _tk_ribbon(self, candles: list) -> int:
+        """Grafik cizgi sirasi (MA ribbon) kilidi — bar basi onbellek.
+
+        +1: EMA20>EMA50>EMA200 (yukselis dizilimi) -> yalniz LONG
+        -1: EMA20<EMA50<EMA200 (dusus dizilimi)   -> yalniz SHORT
+         0: karisik/isinma -> eski yildiz kurali gecerli
+        """
+        if not getattr(self, "tk_ribbon", False):
+            return 0
+        c = _kapali_mumlar(candles)
+        bar = int(c[-1].open_time) if c else 0
+        if bar != self._tk_rib_bar:
+            self._tk_rib_bar = bar
+            self._tk_rib_val = _ma_ribbon(candles)
+        return self._tk_rib_val
+
+    def _tk_rib_flip(self, px: float, timeframe: str, candles: list,
+                     yon: int) -> str:
+        """Trende TERS pozisyonu kapatip trend yonunde yeniden acar.
+
+        Kullanici kurali: yukselis diziliminde "hep long modunda tut",
+        dusus diziliminde short. Yildiz ters kalsa bile pozisyon
+        trendden kopmaz; hedef "ÇİZGİ" kaynagi ile trende sabitlenir.
+        Cikis ve giris LIMIT (maker) sayilir.
+        """
+        yon = 1 if yon > 0 else -1
+        px = float(px)
+        self._close(px, "TK: çizgi trendi döndü (maker)", timeframe,
+                    reset_signal=False, maker=True)
+        self.tk_hedef = yon
+        self.tk_hedef_kaynak = "ÇİZGİ"
+        self._open(LONG if yon > 0 else SHORT, px,
+                   "TK: çizgi trendi (maker)", timeframe, candles,
+                   maker=True)
+        q = self.position
+        if q is not None:
+            if yon > 0:
+                q.tk_tp = px * (1.0 + self.tk_tp) if self.tk_tp > 0 else 0.0
+                q.tk_stop = px * (1.0 - self.tk_sl)
+            else:
+                q.tk_tp = px * (1.0 - self.tk_tp) if self.tk_tp > 0 else 0.0
+                q.tk_stop = px * (1.0 + self.tk_sl)
+        self.tk_pend_entry = None
+        self.tk_pend_close = None
+        return "TK: çizgi trendi döndü — ters pozisyon (maker)"
+
     def _tk(self, price: float, candles: list, timeframe: str,
             bar_low: Optional[float], bar_high: Optional[float],
             signal: Optional[str]) -> Optional[str]:
@@ -2258,6 +2361,10 @@ class PaperTrader:
           * kirmizi yildiz (SAT/GÜÇLÜ SAT) -> SHORT ac, yolda kal
           * gri yildiz (NÖTR)              -> TERS pozisyona gec
           * ac/kapa LIMIT (maker)
+          * GRAFIK CIZGI SIRASI (MA ribbon, EMA20>EMA50>EMA200):
+            yukselis diziliminde yalniz LONG, ters dizilimde yalniz
+            SHORT; pozisyon trende ters dustuyse aninda trend yonune
+            cevrilir (yildiz yalnizca zamanlama verir).
           * HER ac/kapadan sonra 1 DAKIKA bekle (PAPER_TK_AFTER_SEC):
             yeni acilis/kapanis engellenir; koruyucu SL yine calisir.
 
@@ -2274,6 +2381,15 @@ class PaperTrader:
         """
         p = self.position
         bar_t = int(candles[-1].open_time) if candles else 0
+
+        # GRAFIK CIZGI SIRASI (MA ribbon): +1 yukselis, -1 dusus, 0 notr.
+        # Kapanan barlardan hesaplanir; yildiz hesabina DOKUNMAZ.
+        # Ribbon aktifken HEDEF trende sabitlenir: yildiz yalnizca
+        # zamanlama verir, yonu degistiremez (kullanici kurali).
+        rib = self._tk_ribbon(candles)
+        if rib != 0 and self.tk_hedef != rib:
+            self.tk_hedef = rib
+            self.tk_hedef_kaynak = "ÇİZGİ"
 
         # ------------------------------------------------------------------
         # 0) YILDIZ KARARI — durum HER ZAMAN guncellenir (bekleme
@@ -2304,7 +2420,7 @@ class PaperTrader:
         kap_mum = kap_c[-1] if kap_c else None
         yukselen = bool(kap_mum is not None and
                         getattr(kap_mum, "close", kap_mum.open) >= kap_mum.open)
-        if yeni is not None and yeni != self.tk_hedef:
+        if rib == 0 and yeni is not None and yeni != self.tk_hedef:
             if sig == "NÖTR":
                 # GRI YILDIZ (kullanici kurali): gri, onceki pozisyonun
                 # TERSINE cevirir — yalnizca ACIK pozisyon iken ve
@@ -2345,6 +2461,10 @@ class PaperTrader:
         son_islem = float(getattr(self, "_tk_son_islem_t", 0.0) or 0.0)
         bekle = son_islem > 0 and \
             (float(bar_t) - son_islem) < float(self.tk_after_ms)
+
+        # GRAFIK CIZGI SIRASI (MA ribbon): +1 yukselis, -1 dusus, 0 notr.
+        # Kapanan barlardan hesaplanir; yildiz hesabina dokunmaz.
+        rib = self._tk_ribbon(candles)
 
         hedef_yani = LONG if self.tk_hedef > 0 else SHORT
         esit = bool(p is not None and self.tk_hedef != 0 and
@@ -2527,6 +2647,23 @@ class PaperTrader:
                             self._tk_sar_ac(price, timeframe, candles)
                         return f"TICK: stop ({_px(price)})"
 
+            # --- GRAFIK CIZGI SIRASI (MA ribbon) — kullanici kurali
+            # (2026-10-29): yukselis diziliminde (EMA20>EMA50>EMA200)
+            # "hep long modunda tut", dusus diziliminde short. Pozisyon
+            # trende ters dustuyse yildiz ne derse desin ANINDA trend
+            # yonune cevrilir — dususte short yakalanir, yukseliste
+            # long korunur. 1 dk bekleme bu cevirmeyi de kapsar.
+            if self.tk_ribbon_flip and rib != 0 and not bekle:
+                istenen = LONG if rib > 0 else SHORT
+                if p.side != istenen:
+                    # Karar KAPANMIS barin kapanisinda verilir; dolum
+                    # ayni fiyattan (maker) — acilis fiyatindan girmek
+                    # geriye-donuk testte ileri-bakis olurdu.
+                    msg = self._tk_rib_flip(float(price), timeframe,
+                                            candles, rib)
+                    self._tk_son_islem_t = float(bar_t)
+                    return msg
+
             # --- YILDIZ FLIP (mismatch-driven): pozisyon yonu
             # yildizla uyusmuyorsa kapan. Canli tik: ANINDA (maker);
             # bar modu: ARM + dokunma dolum (dürüst olcum).
@@ -2590,6 +2727,13 @@ class PaperTrader:
             self.tk_pend_entry = None
             return None
         yon = self.tk_hedef
+
+        # CIZGI SIRASI KAPISI (kullanici kurali): dizilim yukari iken
+        # SHORT, asagi iken LONG giris yok — trend yonunde kalinir.
+        # Yildiz ters yonde kalsa bile trende karsi pozisyon acilmaz.
+        if rib != 0 and (yon > 0) != (rib > 0):
+            self.tk_pend_entry = None
+            return None
 
         # TAZE YILDIZ-HDEF UYUMU (pozisyon-yok girisleri): kirmizi/
         # yesil yildiz hedef ile ayni yonde DEGILSE giris YOK — hedef

@@ -1162,3 +1162,50 @@ AYAR ITINERAMI (research_tk14, 6x500, 1m):
  dogrulama: tk_sanity tum adimlar OK (giris rozizma/ gri / bank / SAR
  TERS / dususte bank / takili AL'de giris yok / SAT+kirmizi giris);
  test_paper 90/90.
+
+### TK grafik cizgi sirasi (MA ribbon) trend kilidi (oturum 9, 2026-10-30)
+KULLANICI ISTEGI: "Yukselis trendinde grafikteki renkli cizgiler
+kirmizi>yesil>sari dizilirken hep LONG tut; dususte mavi en ustte,
+altinda sari/turuncu iken SHORT ac. Bu kurallari indikatore ekleyip
+long/short giris-cikis noktalarini ayarla."
+
+CANLI GECE VERISI (28.10): 75 islem (37K/38Z), net -109,07$,
+komisyon 296,08$ (brut ~+187$). Islemlerin cogu chop bandinda
+(0,1960-0,2015) stop/banka donusu; yon filtre edilmedigi icin hem
+long hem short zinciri kurulmus.
+
+UYGULAMA (core/paper.py _ma_ribbon/_tk_ribbon/_tk_rib_flip):
+  * Ribbon = KAPALI mumlardan EMA20 / EMA50 / EMA200 dizilimi:
+      EMA20 > EMA50 > EMA200 -> +1 (yalniz LONG)
+      EMA20 < EMA50 < EMA200 -> -1 (yalniz SHORT)
+      karisik/isinma          ->  0 (eski yildiz kurali)
+    Yildiz hesabina (res.signals) DOKUNULMADI; yildiz yalnizca
+    zamanlama verir, yon trende kilitlenir.
+  * GIRIS KAPISI: dizilim yukari iken SHORT, asagi iken LONG girisi
+    yok (trende karsi pozisyon acilmaz).
+  * TRENDE TERS POZISYON: aninda kapatilip trend yonunde yeniden
+    acilir (maker); hedef "CIZGI" kaynagi ile sabitlenir. Boylece
+    yildiz (orn. ENA'da AL) takili kalsa bile dusus yakalanir.
+  * STOP->TERS (SAR) de trende ters yonde calismaz (ribbon kapisi).
+  * Knoplar: PAPER_TK_RIBBON=True, PAPER_TK_RIBBON_FLIP=True.
+
+BACKTEST ALTYAPISI DUZELTMESI (kritik): geriye-donuk test motora
+yalnizca `lookback`=20 bar veriyordu; EMA200 hic hesaplanamiyor,
+ribbon olcumu sessizce 0 cikiyordu. Pencere artik 260 barlik isinma
+gecmisiyle besleniyor (karar modlari yine son 20 bari kullanir).
+
+OLCUM (research_tk14, 6x500, 1m, ayni gun arka arkaya):
+  ribbon KAPALI            : toplam +3673  (DOGE 387, HBAR 521,
+                             UNI 840, BTC 22, ETH 218, ENA 1259, ADA 426)
+  ribbon ACIK + FLIP acik  : toplam +4551  (DOGE 513, HBAR 555,
+                             UNI 799, BTC 395, ETH 361, ENA 1476, ADA 453)
+  ribbon ACIK + FLIP kapali: toplam +4612  (islem sayisi biraz daha az;
+                             FLIP acik secildi — kullanici kurali "hep
+                             trend yonunde tut", fark ~%1,3)
+  Not: onceki oturumun +158 rakami 20-bar pencere kisitindan
+  etkilenmisti; rakamlar bugunku veriyle yeniden uretildi.
+
+DOGRULAMA: tk_sanity tum adimlar OK (13: yukari dizilimde SAT ile
+SHORT yok, AL ile LONG; 14: dusus diziliminde LONG aninda SHORT'a
+cevrilir, kaynak CIZGI; 15: dususte AL SHORT'u bozamaz); test_paper
+90/90. sw ta-v23.

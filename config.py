@@ -391,7 +391,9 @@ PAPER_TK_TREND = False           # SMA200 uyumu (olcumde etkisiz)
 PAPER_TK_AFTER_SEC = 60           # her ac/kapadan sonra bekleme (SNAKIYE — kullanici kurali)
 PAPER_TK_SAR = True               # stop kaybinda pozisyonu TERS yonde ac (stop->ters; dususte short yakala)
 PAPER_TK_SAR_MEAN = 10            # SAR trend filtresi: son N kapali bar kapanis ortalamasi
-PAPER_TK_SAR_MINPCT = 0.004       # SAR girisi icin fiyat-ortalama magdıri (%0.2; chop sinirdi ret)
+PAPER_TK_SAR_MINPCT = 0.004       # SAR girisi icin fiyat-ortalama mesafesi (%0.4; chop sinirda ret)
+PAPER_TK_RIBBON = True            # grafik cizgi sirasi: EMA20>EMA50>EMA200 LONG, tersi SHORT kilidi
+PAPER_TK_RIBBON_FLIP = True       # trende ters pozisyonu aninda trend yonune cevir
 PAPER_TK_CONFIRM_BARS = 2         # yildiz sabitlemesi: son K kapali bar ayni yon olmali (1=kapali)
 PAPER_TK_BANK_PCT = 0.025         # acik pozisyon kari bakiyenin bu kadarini gecince cuzdana yaz (+25$ @1000)
 PAPER_TK_PAUSE_BARS = 0          # stop-sonrasi K bar giris yok (yogun: 3)
