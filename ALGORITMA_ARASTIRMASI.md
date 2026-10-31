@@ -1316,3 +1316,49 @@ Not: bp3.5 en iyi mutlak + en dusuk pencere kaybi; islem sayisi
 
 DOGRULAMA: test_tk_fix 18/18 (deadband + confirm senaryolari dahil);
 tk_sanity 15 adim OK; test_paper 90/90. sw ta-v26.
+
+### TK 3. tur: pullback limit girisi + trend zorunlulugu (oturum 11c)
+CANLI (2. tur sonrasi): 3 islem (0K/3Z), net -45,13$, komisyon 8,28$.
+Uc kayip da ~%0,31 ters hareket: SHORT 0,1906->0,1912, LONG
+0,1925->0,1919, SHORT 0,1910->0,1916. Girisler donus tepelerine denk
+geliyor; stop girisden hemen sonra tetikleniyor.
+
+TESHIS: yildiz/EMA kesisiminin verdiGi sinyal fiyati hareketin
+TUKENMIS ucudur. Aninda girmek en kotu fiyati veriyor (27 islemlik
+seride de ayni desen: girisler donus tepelerinde).
+
+DUZELTME (yildiz hesabi DEGISMEDI; res.signals yalnizca okunur):
+  * PAPER_TK_ENTRY_OFFSET = -0.0005 — giris artik ANINDA degil:
+    sinyal fiyatinin %0,05 GERISINE pasif limit (pullback) konur.
+    Fiyat geri dokunursa daha iyi fiyattan dolar, dokunmazsa giris
+    olmaz (tukenmis harekete girilmez). Limit KOVALANMAZ (seviye
+    sabit). Pozitif deger = breakout tetigi (olculdu, zararli),
+    0 = eski aninda davranis.
+  * PAPER_TK_REQUIRE_TREND = True — EMA20/EMA50 ayrisMAMISSA (olu
+    bant icinde, rib=0) yildiz tek basina giris acmaz; yatay bant
+    chop'un ana kaynagiydi.
+  * PAPER_TK_RIB_DEADBAND 0.0002 -> 0.0005 (%0,05).
+  * Bar modu dolum kodu: off<0 LIMIT (dokunma), off>0 STOP tetigi,
+    off==0 eski davranis; yalniz off==0'da limit yeni barda fiyata
+    tasinir (pullback/stop tetigi sabit kalir).
+
+OLCUM (research_tk19, 8x500 / 6x500, bp3.5 cf2 REQ, 7 coin, 1m):
+  off  0 (eski)   : 8w +3262 (424 islem, %46, en kotu -120)
+                    6w +1554 (%43, -120)
+  off -0.02%      : 8w +3021 (381, %47, -63) / 6w +1669 (%45, -63)
+  off -0.03%      : 8w +2653 (340, %46, -63) / 6w +1321 (%44, -63)
+  off -0.05% (sec): 8w +2555 (278, %49, -45) / 6w +1478 (%47, -45)
+  off -0.10%      : 8w +1735 (130, %56, -55) / 6w +1257 (%56, -55)
+Not: mutlak $ off=0'da en yuksek; ancak pullback kazanma oranini
++3-5 puan, islem basi ortalamayi +%15-20 artiriyor, en kotu pencere
+kaybini ~2,5x kisiyor ve komisyonu ~%35 dusuruyor (272 vs 424 islem).
+Kullanici sikayeti "ters pozisyon noktalari + zarar > kar" oldugu
+icin -0.05% secildi.
+
+VARSAYILAN DOGRULAMA (yalniz config, ayni gun): 8w +2402$ (272 islem,
+%49, en kotu -66) / 6w +1272$ (170 islem, %46, -66). Onceki varsayilan:
+8w +3080 (522 islem, %44, -149) / 6w +1673 (323 islem, %45, -51).
+
+DOGRULAMA: test_tk_fix 25/25 (pullback dolum/kovalamama + trend
+zorunlulugu senaryolari dahil); tk_sanity 15 adim OK; test_paper
+90/90. sw ta-v27. UI metinleri (server.py, app.js) senkron.

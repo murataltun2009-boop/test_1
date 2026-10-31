@@ -468,7 +468,7 @@ class PaperTrader:
         #   * confirm: yeni yon ancak bu kadar KAPALI bar ayni kaldiysa
         #     gecerli (onceki yon korunur).
         self.tk_rib_deadband = float(
-            getattr(config, "PAPER_TK_RIB_DEADBAND", 0.0002))
+            getattr(config, "PAPER_TK_RIB_DEADBAND", 0.0005))
         self.tk_rib_confirm = int(
             getattr(config, "PAPER_TK_RIB_CONFIRM", 2))
         self._tk_rib_hist: list = []
@@ -477,7 +477,10 @@ class PaperTrader:
         # sinyal yonunde ilerlemezse giris olmaz -> tukenmis donus
         # tepelerine alim/satim elenir).
         self.tk_entry_offset = float(
-            getattr(config, "PAPER_TK_ENTRY_OFFSET", 0.0))
+            getattr(config, "PAPER_TK_ENTRY_OFFSET", -0.0005))
+        # Trend yoksa (rib==0) yildiz tek basina giris acmasin.
+        self.tk_require_trend = bool(
+            getattr(config, "PAPER_TK_REQUIRE_TREND", True))
         self._tk_rib_bar = 0          # ribbon onbellegi: kapanan bar
         self._tk_rib_val = 0          # +1 / -1 / 0
         self.tk_bank_pct = float(getattr(config, "PAPER_TK_BANK_PCT", 0.035))
@@ -612,6 +615,9 @@ class PaperTrader:
                 config, "PAPER_TK_RIB_CONFIRM", self.tk_rib_confirm))
             self.tk_entry_offset = float(getattr(
                 config, "PAPER_TK_ENTRY_OFFSET", self.tk_entry_offset))
+            self.tk_require_trend = bool(getattr(
+                config, "PAPER_TK_REQUIRE_TREND",
+                self.tk_require_trend))
             if "BTC" in self.symbol:
                 self.tk_theta_max = 0.678          # (legacy: cikis only)
                 self.tk_theta_min = 0.44
@@ -2881,6 +2887,14 @@ class PaperTrader:
             self.tk_pend_entry = None
             return None
 
+        # TREND ZORUNLULUGU (chop filtresi, 2026-10-31): rib==0 ise
+        # (EMA'lar ayrismamis / olu bant) yildiz tek basina giris
+        # acamaz. Canli desen: yatay bantta girisler donus tepelerine
+        # denk geliyordu; trend yoksa beklemek kayiptan iyidir.
+        if getattr(self, "tk_require_trend", False) and rib == 0:
+            self.tk_pend_entry = None
+            return None
+
         # TAZE YILDIZ-HDEF UYUMU (pozisyon-yok girisleri): kirmizi/
         # yesil yildiz hedef ile ayni yonde DEGILSE giris YOK — hedef
         # ya confirm (2-bar sabitleme) ya da mum-yildiz uyusmazligi
@@ -2911,13 +2925,15 @@ class PaperTrader:
         if bar_low is None or bar_high is None:
             # CANLI TIK.
             # tk_entry_offset == 0: ANINDA giris (eski davranis).
-            # >0: yildiz yonunde offset kadar OTEDE stop-tetik bekle.
-            # Fiyat sinyal yonunde ilerlemezse giris OLMAZ; boylece
-            # tukenmis donus tepelerine alim/satim (ters pozisyon
-            # noktalari) elenir. Tetik ayni sinyal boyunca sabit kalir.
-            off = max(0.0, float(getattr(self, "tk_entry_offset", 0.0)))
+            # >0: yildiz yonunde offset kadar OTEDE stop-tetik bekle
+            #     (tukenmis donus tepelerine giris elenir).
+            # <0: yildiz yonunun TERSINE offset kadar geride limit
+            #     koy (pullback: ayni sinyal, daha iyi fiyat).
+            # Tetik ayni sinyal boyunca sabit kalir (kovalama yok).
+            off = float(getattr(self, "tk_entry_offset", 0.0))
+            off = max(-0.5, min(0.5, off))
             gir = float(price)
-            if off > 0:
+            if off != 0:
                 if self.tk_pend_entry is None or \
                         self.tk_pend_entry[0] != yon:
                     trig = price * (1.0 + off) if yon > 0 \
@@ -2926,7 +2942,10 @@ class PaperTrader:
                     self.tk_pend_bar = bar_t
                     return None
                 yon2, L = self.tk_pend_entry
-                vurdu = (price >= L) if yon2 > 0 else (price <= L)
+                if off > 0:      # breakout (momentum) tetigi
+                    vurdu = (price >= L) if yon2 > 0 else (price <= L)
+                else:            # pullback (daha iyi fiyat) limiti
+                    vurdu = (price <= L) if yon2 > 0 else (price >= L)
                 if not vurdu:
                     return None
                 gir = float(L)                 # tetikten dolum
@@ -2951,19 +2970,29 @@ class PaperTrader:
             return "TK: yıldız limit doldu (maker)"
 
         # --- BAR MODU (geriye-donuk test): beklemedeki limitin dolumu
-        # (dostum: dokunma dolum). tk_entry_offset>0 ise STOP-TETIK:
-        # fiyat sinyal yonunde offset kadar ilerleyince dolar.
+        # (dostum: dokunma dolum). offset>0 STOP-TETIK (breakout),
+        # offset<0 LIMIT-TETIK (pullback: daha iyi fiyattan giris),
+        # offset==0 aninda giris.
         acilis = float(candles[-1].open)
-        off = max(0.0, float(getattr(self, "tk_entry_offset", 0.0)))
+        off = float(getattr(self, "tk_entry_offset", 0.0))
+        off = max(-0.5, min(0.5, off))
         if self.tk_pend_entry is not None:
             yon2, L = self.tk_pend_entry
-            if off > 0:
+            if off > 0:                     # STOP (breakout) tetigi
                 if yon2 > 0:
                     doldu = bool(bar_high is not None and bar_high >= L)
                     fill = max(acilis, L)
                 else:
                     doldu = bool(bar_low is not None and bar_low <= L)
                     fill = min(acilis, L)
+            elif off < 0:                   # LIMIT (pullback)
+                if yon2 > 0:
+                    doldu = bool(bar_low is not None and
+                                 acilis >= L and bar_low <= L)
+                else:
+                    doldu = bool(bar_high is not None and
+                                 acilis <= L and bar_high >= L)
+                fill = L
             elif yon2 > 0:
                 doldu = bool(bar_low is not None and
                              acilis >= L and bar_low <= L)
@@ -2989,10 +3018,14 @@ class PaperTrader:
                 self.tk_pend_entry = None
                 self._tk_son_islem_t = float(bar_t)
                 return "TK: yıldız limit doldu (maker)"
-            # Dolum yoksa LIMIT modunda yeni barda fiyata tasi:
-            # limit pasifligi bozulmaz; dolum yine dokunma anindadir.
-            # STOP modunda tetik SABIT (kovalama yok).
-            if off <= 0 and bar_t != self.tk_pend_bar:
+            # Dolum yoksa yalnizca offset==0 (aninda giris) modunda
+            # limit yeni barda fiyata tasinir; dolum yine dokunma
+            # anindadir. STOP (offset>0) ve PULLBACK (offset<0)
+            # tetikleri SABIT kalir — kovalama yok. Pullback limiti
+            # fiyatla birlikte asagi/yukari kaydirilirsa "dusen bicagi
+            # yakalama" olur ve girisler yine donus tepelerine denk
+            # gelir (canli desen, 2026-10-31).
+            if off == 0 and bar_t != self.tk_pend_bar:
                 self.tk_pend_entry = (yon2, price)
                 self.tk_pend_bar = bar_t
             return None

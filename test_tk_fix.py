@@ -44,6 +44,22 @@ def tk(**kw):
                 wallet_fraction=0.8, mode="tk", risk_pct=0.03)
     p.running = True
     p.tk_after_ms = 0.0
+    # Bu testler pozisyon boyu / banka / bekleme mekanizmalarini olcer;
+    # giris tetigi ve trend zorunlulugu ayri testlerde (7, 8) sinanir.
+    kw.setdefault("tk_entry_offset", 0.0)
+    kw.setdefault("tk_require_trend", False)
+    for k, v in kw.items():
+        setattr(p, k, v)
+    return p
+
+
+def tk_varsayilan(**kw):
+    """config varsayilanlariyla (pullback + trend zorunlulugu) trader."""
+    p = PaperTrader(kw.pop("symbol", "DOGEUSDT"))
+    p.configure(balance=1000.0, leverage=10, fee_rate=0.0005,
+                wallet_fraction=0.8, mode="tk", risk_pct=0.03)
+    p.running = True
+    p.tk_after_ms = 0.0
     for k, v in kw.items():
         setattr(p, k, v)
     return p
@@ -158,8 +174,49 @@ px6 = op6 * 0.98                       # ikinci dusus: onay tamam
 m6.append(C(T6, px6, op6))
 kontrol("6 2. dusus bari yonu -1 yapar", p6._tk_ribbon(m6) == -1)
 
-# 7) Giris tetigi varsayilani KAPALI (aninda giris)
-kontrol("7 giris tetigi varsayilani 0", abs(p.tk_entry_offset) < 1e-12)
+# ------------------------------------------------------------------
+# 7) GIRIS TETIGI: varsayilan PULLBACK (sinyal fiyatinin %0,05 gerisi)
+#    Canli desen (2026-10-31): aninda girisler donus tepelerine denk
+#    geliyordu. Artik pasif limit sinyal fiyatinin ALTINA konur; fiyat
+#    geri dokunursa daha iyi fiyattan dolar, dokunmazsa giris olmaz.
+# ------------------------------------------------------------------
+m7 = []
+px7 = 0.1
+for i in range(300):                   # yukselis: rib +1 (trend var)
+    op7 = px7
+    px7 = op7 * 1.002
+    m7.append(C(i * 60_000, px7, op7))
+p7 = tk_varsayilan()
+kontrol("7 giris tetigi varsayilani -%0,05 (pullback)",
+        abs(p7.tk_entry_offset + 0.0005) < 1e-12)
+ev = p7.on_price(px7, m7, "1m", "AL")
+kontrol("7 aninda giris YOK (pasif limit bekliyor)",
+        p7.position is None and p7.tk_pend_entry is not None)
+L7 = px7 * (1.0 - 0.0005)
+kontrol("7 limit sinyal fiyatinin %0,05 ALTINDA",
+        abs(p7.tk_pend_entry[1] - L7) < 1e-12)
+ev = p7.on_price(px7 * 1.003, m7, "1m", "AL")
+kontrol("7 fiyat yukselince limit KOVALANMAZ (seviye sabit)",
+        p7.position is None and p7.tk_pend_entry is not None and
+        abs(p7.tk_pend_entry[1] - L7) < 1e-12)
+ev = p7.on_price(L7 * 0.9999, m7, "1m", "AL")
+kontrol("7 limit seviyesine dokununca LONG doldu",
+        p7.position is not None and p7.position.side == "LONG")
+kontrol("7 dolum LIMIT seviyesinden (daha iyi fiyat)",
+        abs(p7.position.entry - L7) < 1e-12)
+
+# ------------------------------------------------------------------
+# 8) TREND ZORUNLULUGU: rib==0 (EMA'lar ayrismamis) -> giris yok
+# ------------------------------------------------------------------
+m8 = duz_mumlar()                      # yatay: EMA20==EMA50 -> rib 0
+p8 = tk_varsayilan(tk_entry_offset=0.0)
+ev = p8.on_price(0.1, m8, "1m", "AL")
+kontrol("8 trend yok (rib=0) -> giris YOK",
+        p8.position is None and p8.tk_pend_entry is None)
+p8b = tk_varsayilan(tk_entry_offset=0.0)
+ev = p8b.on_price(px7, m7, "1m", "AL")  # yukselis: rib +1
+kontrol("8 trend varken (rib=+1) giris ACIK",
+        p8b.position is not None and p8b.position.side == "LONG")
 
 print("-" * 62)
 print(f"{len(GECEN)}/{len(GECEN)} TK duzeltme testi gecti")
