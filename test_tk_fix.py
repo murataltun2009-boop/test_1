@@ -120,5 +120,46 @@ ev = p4.on_price(0.0988, m4, "1m", "SAT")
 kontrol("4 karsi yon (SHORT) girisi MUAF",
         p4.position is not None and p4.position.side == "SHORT")
 
+# ------------------------------------------------------------------
+# 5) OLU BANT (deadband): EMA20/EMA50 farki cok kucukse kesisme yok
+# ------------------------------------------------------------------
+m5 = []
+px5 = 0.1
+for i in range(300):
+    op5 = px5
+    px5 = px5 + 1e-7                   # ~0,0001%/bar: mikro fark
+    m5.append(C(i * 60_000, px5, op5))
+p5 = tk(tk_rib_confirm=1, tk_rib_deadband=0.0)
+kontrol("5 olu bant kapali: yon +1", p5._tk_ribbon(m5) == 1)
+p5b = tk(tk_rib_confirm=1, tk_rib_deadband=0.0002)
+kontrol("5 mikro fark olu bantta 0 (kesisme sayilmaz)",
+        p5b._tk_ribbon(m5) == 0)
+
+# ------------------------------------------------------------------
+# 6) TEYIT (confirm=2): tek bar donusu yon degistirmez (sticky)
+# ------------------------------------------------------------------
+m6 = []
+px6 = 0.1
+for i in range(300):
+    op6 = px6
+    px6 = op6 * 1.0005
+    m6.append(C(i * 60_000, px6, op6))
+p6 = tk(tk_rib_confirm=2, tk_rib_deadband=0.0)
+kontrol("6 yukselis 2 bar onayli: +1", p6._tk_ribbon(m6) == 1)
+T6 = int(m6[-1].open_time) + 60_000
+op6 = px6
+px6 = op6 * 0.80                       # tek sert dusus bari
+m6.append(C(T6, px6, op6))
+kontrol("6 tek dusus bari yonu DEGISTIRMEZ (sticky)",
+        p6._tk_ribbon(m6) == 1)
+T6 += 60_000
+op6 = px6
+px6 = op6 * 0.98                       # ikinci dusus: onay tamam
+m6.append(C(T6, px6, op6))
+kontrol("6 2. dusus bari yonu -1 yapar", p6._tk_ribbon(m6) == -1)
+
+# 7) Giris tetigi varsayilani KAPALI (aninda giris)
+kontrol("7 giris tetigi varsayilani 0", abs(p.tk_entry_offset) < 1e-12)
+
 print("-" * 62)
 print(f"{len(GECEN)}/{len(GECEN)} TK duzeltme testi gecti")

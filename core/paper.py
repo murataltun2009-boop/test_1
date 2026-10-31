@@ -144,7 +144,8 @@ def _ema_last(closes: list, n: int) -> Optional[float]:
     return e
 
 
-def _ma_ribbon(candles: list, mode: str = "cross") -> int:
+def _ma_ribbon(candles: list, mode: str = "cross",
+               deadband: float = 0.0) -> int:
     """GRAFIK CIZGI KESISIMI (kullanici kurali, 2026-10-30).
 
     Referans, hizli cizgi (kirmizi=EMA20) ile yavas cizginin
@@ -155,6 +156,8 @@ def _ma_ribbon(candles: list, mode: str = "cross") -> int:
       "cross"    : yalniz EMA20/EMA50 kesisimi (ilk kesisme noktasi)
       "cross200" : kesisim + hizli cizgi EMA200'un dogru tarafinda
       "stack"    : tam dizilim EMA20>EMA50>EMA200 (eski, gec kalir)
+    `deadband`: iki EMA arasi fark fiyatin bu oranindan kucukse
+    kesisme SAYILMAZ (0 doner) — chop'ta mikro-kesisme filtresi.
     Yildiz hesabina DOKUNMAZ.
     """
     c = _kapali_mumlar(candles)
@@ -168,6 +171,9 @@ def _ma_ribbon(candles: list, mode: str = "cross") -> int:
         return 0
     yon = 1 if e20 > e50 else (-1 if e20 < e50 else 0)
     if yon == 0:
+        return 0
+    if deadband > 0 and closes[-1] > 0 and \
+            abs(e20 - e50) / closes[-1] < deadband:
         return 0
     if mode == "cross":
         return yon
@@ -454,9 +460,27 @@ class PaperTrader:
             getattr(config, "PAPER_TK_RIBBON_FLIP", True))
         self.tk_ribbon_mode = str(
             getattr(config, "PAPER_TK_RIBBON_MODE", "cross"))
+        # Chop teshisi (2026-10-31, canli): EMA20/EMA50 mikro-kesismeleri
+        # her 1-2 dk'da yon ceviriyor; girisler donus tepelerine denk
+        # geliyor. Iki yumusatma:
+        #   * deadband: |EMA20-EMA50| fiyatin bu oranindan kucukse
+        #     kesisme SAYILMAZ (onceki yon korunur).
+        #   * confirm: yeni yon ancak bu kadar KAPALI bar ayni kaldiysa
+        #     gecerli (onceki yon korunur).
+        self.tk_rib_deadband = float(
+            getattr(config, "PAPER_TK_RIB_DEADBAND", 0.0002))
+        self.tk_rib_confirm = int(
+            getattr(config, "PAPER_TK_RIB_CONFIRM", 2))
+        self._tk_rib_hist: list = []
+        # GIRIS TETIGI (chop): 0 = sinyal fiyatindan ANINDA gir.
+        # >0 = yildiz yonunde bu kadar OTEDE stop-tetik bekle (fiyat
+        # sinyal yonunde ilerlemezse giris olmaz -> tukenmis donus
+        # tepelerine alim/satim elenir).
+        self.tk_entry_offset = float(
+            getattr(config, "PAPER_TK_ENTRY_OFFSET", 0.0))
         self._tk_rib_bar = 0          # ribbon onbellegi: kapanan bar
         self._tk_rib_val = 0          # +1 / -1 / 0
-        self.tk_bank_pct = float(getattr(config, "PAPER_TK_BANK_PCT", 0.025))
+        self.tk_bank_pct = float(getattr(config, "PAPER_TK_BANK_PCT", 0.035))
         # ---- CANLI ZARAR DUZELTMESI (2026-10-31) --------------------
         # Canli olcum (66 islem, net -330$): stop kaybi ~bakiyenin
         # %2,4'u + komisyon, banka kazanci ~%2,5 -> brut R:R ~1:1 ve
@@ -582,6 +606,12 @@ class PaperTrader:
                 config, "PAPER_TK_BANK_RR", self.tk_bank_rr))
             self.tk_pause_bars = int(getattr(
                 config, "PAPER_TK_PAUSE_BARS", self.tk_pause_bars))
+            self.tk_rib_deadband = float(getattr(
+                config, "PAPER_TK_RIB_DEADBAND", self.tk_rib_deadband))
+            self.tk_rib_confirm = int(getattr(
+                config, "PAPER_TK_RIB_CONFIRM", self.tk_rib_confirm))
+            self.tk_entry_offset = float(getattr(
+                config, "PAPER_TK_ENTRY_OFFSET", self.tk_entry_offset))
             if "BTC" in self.symbol:
                 self.tk_theta_max = 0.678          # (legacy: cikis only)
                 self.tk_theta_min = 0.44
@@ -2363,7 +2393,19 @@ class PaperTrader:
         bar = int(c[-1].open_time) if c else 0
         if bar != self._tk_rib_bar:
             self._tk_rib_bar = bar
-            self._tk_rib_val = _ma_ribbon(candles, self.tk_ribbon_mode)
+            n = max(1, int(getattr(self, "tk_rib_confirm", 1)))
+            c = _kapali_mumlar(candles)
+            vals = []
+            for k in range(n):
+                seg = c[:len(c) - k] if k else c
+                vals.append(_ma_ribbon(seg, self.tk_ribbon_mode,
+                                       self.tk_rib_deadband))
+            raw = vals[0]
+            if raw != 0 and all(v == raw for v in vals):
+                self._tk_rib_val = raw          # onaylandi: yon gecerli
+            elif n <= 1:
+                self._tk_rib_val = raw          # onay yok: ham deger
+            # aksi halde onceki ONAYLI yon korunur (sticky)
         return self._tk_rib_val
 
     def _tk_rib_flip(self, px: float, timeframe: str, candles: list,
@@ -2552,7 +2594,7 @@ class PaperTrader:
             # dolar — taker ucret yok. KULLANICI KURALI (2026-10-28):
             # banka kapanisi da 1 dk bekleme muhrunu BASAR — kazanc
             # yazildiktan sonra kisa gozlem suresi.
-            kb = float(getattr(self, "tk_bank_pct", 0.025) or 0.0)
+            kb = float(getattr(self, "tk_bank_pct", 0.035) or 0.0)
             if kb > 0 and p.qty > 0:
                 # STOP MESAFESI TABANLI R:R (canli duzeltme 2026-10-31):
                 # yalnizca bakiye yuzdesi kullanilirsa (orn. 670$*%2,5
@@ -2867,9 +2909,28 @@ class PaperTrader:
             self.tk_pend_entry = None
 
         if bar_low is None or bar_high is None:
-            # CANLI TIK: giris ANINDA — yildizla uyum garanti; limit
-            # seviyesi anlik fiyat (maker).
-            self._open(LONG if yon > 0 else SHORT, price,
+            # CANLI TIK.
+            # tk_entry_offset == 0: ANINDA giris (eski davranis).
+            # >0: yildiz yonunde offset kadar OTEDE stop-tetik bekle.
+            # Fiyat sinyal yonunde ilerlemezse giris OLMAZ; boylece
+            # tukenmis donus tepelerine alim/satim (ters pozisyon
+            # noktalari) elenir. Tetik ayni sinyal boyunca sabit kalir.
+            off = max(0.0, float(getattr(self, "tk_entry_offset", 0.0)))
+            gir = float(price)
+            if off > 0:
+                if self.tk_pend_entry is None or \
+                        self.tk_pend_entry[0] != yon:
+                    trig = price * (1.0 + off) if yon > 0 \
+                        else price * (1.0 - off)
+                    self.tk_pend_entry = (yon, trig)
+                    self.tk_pend_bar = bar_t
+                    return None
+                yon2, L = self.tk_pend_entry
+                vurdu = (price >= L) if yon2 > 0 else (price <= L)
+                if not vurdu:
+                    return None
+                gir = float(L)                 # tetikten dolum
+            self._open(LONG if yon > 0 else SHORT, gir,
                        "TK: yıldız limit (maker)",
                        timeframe, candles, maker=True)
             q = self.position
@@ -2878,54 +2939,67 @@ class PaperTrader:
                     # TP kapaliysa (tk_tp<=0) attr SIFIR kalmali:
                     # tp=entry yazilirsa TP giris fiyatina ceker ve
                     # pozisyon komisyona kaybeder (olcum 2026-10-28).
-                    q.tk_tp = price * (1.0 + self.tk_tp) \
+                    q.tk_tp = gir * (1.0 + self.tk_tp) \
                         if self.tk_tp > 0 else 0.0
-                    q.tk_stop = price * (1.0 - self.tk_sl)
+                    q.tk_stop = gir * (1.0 - self.tk_sl)
                 else:
-                    q.tk_tp = price * (1.0 - self.tk_tp) \
+                    q.tk_tp = gir * (1.0 - self.tk_tp) \
                         if self.tk_tp > 0 else 0.0
-                    q.tk_stop = price * (1.0 + self.tk_sl)
+                    q.tk_stop = gir * (1.0 + self.tk_sl)
             self.tk_pend_entry = None
             self._tk_son_islem_t = float(bar_t)
             return "TK: yıldız limit doldu (maker)"
 
         # --- BAR MODU (geriye-donuk test): beklemedeki limitin dolumu
-        # (dostum: dokunma dolum) ---
+        # (dostum: dokunma dolum). tk_entry_offset>0 ise STOP-TETIK:
+        # fiyat sinyal yonunde offset kadar ilerleyince dolar.
         acilis = float(candles[-1].open)
+        off = max(0.0, float(getattr(self, "tk_entry_offset", 0.0)))
         if self.tk_pend_entry is not None:
             yon2, L = self.tk_pend_entry
-            if yon2 > 0:
+            if off > 0:
+                if yon2 > 0:
+                    doldu = bool(bar_high is not None and bar_high >= L)
+                    fill = max(acilis, L)
+                else:
+                    doldu = bool(bar_low is not None and bar_low <= L)
+                    fill = min(acilis, L)
+            elif yon2 > 0:
                 doldu = bool(bar_low is not None and
                              acilis >= L and bar_low <= L)
+                fill = L
             else:
                 doldu = bool(bar_high is not None and
                              acilis <= L and bar_high >= L)
+                fill = L
             if doldu:
-                self._open(LONG if yon2 > 0 else SHORT, L,
+                self._open(LONG if yon2 > 0 else SHORT, fill,
                            "TK: yıldız limit (maker)",
                            timeframe, candles, maker=True)
                 q = self.position
                 if q is not None:
                     if yon2 > 0:
-                        q.tk_tp = L * (1.0 + self.tk_tp) \
+                        q.tk_tp = fill * (1.0 + self.tk_tp) \
                             if self.tk_tp > 0 else 0.0
-                        q.tk_stop = L * (1.0 - self.tk_sl)
+                        q.tk_stop = fill * (1.0 - self.tk_sl)
                     else:
-                        q.tk_tp = L * (1.0 - self.tk_tp) \
+                        q.tk_tp = fill * (1.0 - self.tk_tp) \
                             if self.tk_tp > 0 else 0.0
-                        q.tk_stop = L * (1.0 + self.tk_sl)
+                        q.tk_stop = fill * (1.0 + self.tk_sl)
                 self.tk_pend_entry = None
                 self._tk_son_islem_t = float(bar_t)
                 return "TK: yıldız limit doldu (maker)"
-            # Dolum yoksa yeni barda fiyata tasi: limit pasifligi
-            # bozulmaz; dolum yine dokunma anindadir.
-            if bar_t != self.tk_pend_bar:
+            # Dolum yoksa LIMIT modunda yeni barda fiyata tasi:
+            # limit pasifligi bozulmaz; dolum yine dokunma anindadir.
+            # STOP modunda tetik SABIT (kovalama yok).
+            if off <= 0 and bar_t != self.tk_pend_bar:
                 self.tk_pend_entry = (yon2, price)
                 self.tk_pend_bar = bar_t
             return None
 
-        # --- ARM: yildiz anindaki fiyata pasif limit kon ---
-        self.tk_pend_entry = (yon, price)
+        # --- ARM: yildiz anindaki fiyata pasif limit / stop-tetik kon ---
+        arm = price * (1.0 + off) if yon > 0 else price * (1.0 - off)
+        self.tk_pend_entry = (yon, arm)
         self.tk_pend_bar = bar_t
         return None
 

@@ -1280,3 +1280,39 @@ DOGRULAMA: test_tk_fix.py 12/12 (fraksiyon boyutu, R:R tabanli banka,
 zarar-sonrasi bekleme, karsi yon muafiyeti); tk_sanity 15 adim OK;
 test_paper 90/90. sw ta-v25. UI metinleri (server.py, app.js) yeni
 kural setiyle senkron.
+
+### TK 2. tur: ters pozisyon noktalari + kazanc/kayip dengesi (oturum 11b)
+CANLI (duzeltme sonrasi ilk oturum): 27 islem (10K/17Z), net -25,74$,
+komisyon 63,40$. Kazanclar +23,2..24,1$ (banka %2,5), kayiplar
+-8,6..-16,8$ (cogunlukla stop -15/-16). Kazanma %37, R:R ~1,5 ->
+basabas icin %40 gerekli; beklenti hala negatif.
+
+TESHIS: (a) banka hedefi kucuk kaldigi icin kazanc kaybi ancak 1,5x
+karsiliyor; (b) EMA20/EMA50 mikro-kesismeleri 1-2 dk'da yon cevirip
+girisleri donus tepelerine oturtuyor (ters pozisyon noktalari);
+(c) islem sikligi komisyonu sisiriyor (27 islemde 63$).
+
+DUZELTME:
+  * PAPER_TK_BANK_PCT = 0.035 (kazanc ~+33$, kayip ~-14$ -> R:R ~2,3;
+    basabas kazanma orani ~%30'a iner).
+  * PAPER_TK_RIB_CONFIRM = 2 — EMA kesisimi ancak 2 KAPALI bar ayni
+    yonde kalirsa gecerli (tek bar donusu yon degistirmez; sticky).
+  * PAPER_TK_RIB_DEADBAND = 0.0002 — |EMA20-EMA50| fiyatin %0,02'sinden
+    kucukse kesisme SAYILMAZ (chop mikro-kesisme filtresi).
+  * PAPER_TK_ENTRY_OFFSET = 0.0 — "yildiz yonunde X ilerleme tetigi"
+    olculdu ama zararli (asagi) bulundu; knop olarak duruyor.
+  * SAR on/off olcumde ayni sonuc (bu pencerelerde trend filtresi
+    tetiklemiyor); SAR acik birakildi.
+
+OLCUM (8x500, 4500 bar / 6x500, 3000 bar, f0.5, 7 coin):
+  bp2.5 cf1           : 8w +2028 / 6w +1155, en kotu -101 / -101
+  bp3.0 cf2           : 8w +2503 / 6w +1267, en kotu  -74 /  -77
+  bp3.0 cf2 db0.02    : 8w +2504 / 6w +1673, en kotu  -82 /  -51
+  bp3.5 cf2 db0.02    : 8w +2749 / 6w +1855, en kotu  -69 /  -37
+      (kazanc ~32$/kayip ~14$, kazanma %42-43, islem ~300-520)
+  giris tetigi +0.05% : 8w +1154 (zararli), +0.10%: +834
+Not: bp3.5 en iyi mutlak + en dusuk pencere kaybi; islem sayisi
+~%25-55 azaldigi icin komisyon da belirgin duser.
+
+DOGRULAMA: test_tk_fix 18/18 (deadband + confirm senaryolari dahil);
+tk_sanity 15 adim OK; test_paper 90/90. sw ta-v26.

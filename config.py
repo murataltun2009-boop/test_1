@@ -396,10 +396,13 @@ PAPER_TK_RIBBON = True            # grafik cizgi kesismesi (EMA20/EMA50): kirmiz
 PAPER_TK_RIBBON_FLIP = True       # trende ters pozisyonu aninda trend yonune cevir
 PAPER_TK_RIBBON_MODE = "cross"    # cross: ilk kesisme | cross200: +EMA200 tarafi | stack: tam dizilim
 PAPER_TK_CONFIRM_BARS = 2         # yildiz sabitlemesi: son K kapali bar ayni yon olmali (1=kapali)
-PAPER_TK_BANK_PCT = 0.025         # acik pozisyon kari bakiyenin bu kadarini gecince cuzdana yaz (+25$ @1000)
+PAPER_TK_BANK_PCT = 0.035         # banka hedefi bakiyenin %3,5'i (canli: kazanc/kayip ~2,3x)
 PAPER_TK_BANK_RR = 1.8            # banka esigi EN AZ stop riski x bu kat (canli 1:1 R:R + komisyon zarari)
 PAPER_TK_FRACTION = 0.50          # TK pozisyon boyu: cuzdan fraksiyonunun bu kadari (canli kayip siniri)
 PAPER_TK_PAUSE_BARS = 3           # zarar sonrasi K bar ayni yonde giris yok (chop azap degirmeni)
+PAPER_TK_RIB_DEADBAND = 0.0002    # |EMA20-EMA50| fiyatin bu oranindan kucukse kesisme sayilmaz (chop)
+PAPER_TK_RIB_CONFIRM = 2          # yeni yon kac KAPALI bar ayni kalirsa gecerli (1=hemen)
+PAPER_TK_ENTRY_OFFSET = 0.0       # giris tetigi: sinyal fiyatindan bu kadar otede (0=aninda)
 PAPER_TK_BE = False              # yarim-kar klip (yogun hook acar)
 PAPER_TK_BE_TRIG = 0.5           # TP mesafesinin bu kadarini gecince aktif
 PAPER_TK_BE_LOCK = 0.0           # klip seviyesi = ucresiz BE (yogun: 0.5)
