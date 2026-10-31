@@ -457,6 +457,20 @@ class PaperTrader:
         self._tk_rib_bar = 0          # ribbon onbellegi: kapanan bar
         self._tk_rib_val = 0          # +1 / -1 / 0
         self.tk_bank_pct = float(getattr(config, "PAPER_TK_BANK_PCT", 0.025))
+        # ---- CANLI ZARAR DUZELTMESI (2026-10-31) --------------------
+        # Canli olcum (66 islem, net -330$): stop kaybi ~bakiyenin
+        # %2,4'u + komisyon, banka kazanci ~%2,5 -> brut R:R ~1:1 ve
+        # komisyonla negatif beklenti. Uc knop:
+        #   * tk_fraction: TK pozisyonu cuzdan fraksiyonunun bu kadari
+        #     (mutlak kayip kuculur, sermaye daha uzun yasar).
+        #   * tk_bank_rr: banka esigi EN AZ stop mesafesinin bu kati
+        #     (kazanc stop kaybini komisyonla birlikte karsilar).
+        #   * tk_pause_bars: zarar sonrasi K bar ayni yonde yeni giris
+        #     yok (chop azap degirmeni).
+        self.tk_fraction = float(getattr(config, "PAPER_TK_FRACTION", 0.50))
+        self.tk_bank_rr = float(getattr(config, "PAPER_TK_BANK_RR", 1.8))
+        self._tk_kayip_t = 0.0        # son zararli kapanis bar zamani
+        self._tk_kayip_yon = 0        # son zararli kapanis yonu (+1/-1)
         self._tk_hist_bar = 0         # son kapali bar zaman mhr
         self._tk_hist_y1 = ""         # son kapali barin yildizi
         self._tk_hist_bar2 = 0        # onceki kapali bar zaman mhr
@@ -561,16 +575,22 @@ class PaperTrader:
             self.tk_on = True
             self.tk_tp = 0.0                       # TP kapali: yildizda tut
             self.tk_be = False                     # BE klip kapali: ayni
+            # Canli zarar duzeltmesi knoplari (config'ten taze okunur).
+            self.tk_fraction = float(getattr(
+                config, "PAPER_TK_FRACTION", self.tk_fraction))
+            self.tk_bank_rr = float(getattr(
+                config, "PAPER_TK_BANK_RR", self.tk_bank_rr))
+            self.tk_pause_bars = int(getattr(
+                config, "PAPER_TK_PAUSE_BARS", self.tk_pause_bars))
             if "BTC" in self.symbol:
                 self.tk_theta_max = 0.678          # (legacy: cikis only)
                 self.tk_theta_min = 0.44
                 self.tk_sl = 0.005                 # BTC: genis SL
                 self.tk_vol_mult = 1.0
             else:
-                # yogun seti: SL %0.3 + stop-sonrasi 3 bar giris yok
+                # yogun seti: SL %0.3
                 self.tk_sl = 0.003
                 self.tk_vol_mult = 1.0
-                self.tk_pause_bars = 3             # azap.degirmeni engel
                 self.tk_leg_flip = False
         if min_hold is not None and 0 <= int(min_hold) <= 500:
             self.min_hold_bars = int(min_hold)
@@ -610,6 +630,8 @@ class PaperTrader:
             self.last_signal = None
             self._bars_held = 0
             self._last_bar_time = 0
+            self._tk_kayip_t = 0.0
+            self._tk_kayip_yon = 0
             self.balance = float(config.PAPER_INITIAL_BALANCE)
             self.start_balance = self.balance
             self.backtest_stats = None
@@ -1997,6 +2019,13 @@ class PaperTrader:
         margin = stake_eq * self.wallet_fraction
         notional = margin * self.leverage
         eff_lev = self.leverage
+        if self.mode == "tk":
+            # TK POZISYON KISITI (canli teshis 2026-10-31): 10x + %80
+            # teminatla stop kaybi bakiyenin ~%2,4'u oluyordu; banka
+            # hedefi ~%2,5 -> komisyonla negatif beklenti. TK pozisyonu
+            # kisilir; R:R banka tarafinda PAPER_TK_BANK_RR ile kurulur.
+            margin *= max(0.0, min(1.0, self.tk_fraction))
+            notional = margin * self.leverage
         stop_price = 0.0
         trail_mult = 0.0
         trail_frac = 0.0
@@ -2350,6 +2379,8 @@ class PaperTrader:
         px = float(px)
         self._close(px, "TK: çizgi trendi döndü (maker)", timeframe,
                     reset_signal=False, maker=True)
+        self._tk_kayip_muhur(
+            float(candles[-1].open_time) if candles else 0.0)
         self.tk_hedef = yon
         self.tk_hedef_kaynak = "ÇİZGİ"
         self._open(LONG if yon > 0 else SHORT, px,
@@ -2366,6 +2397,23 @@ class PaperTrader:
         self.tk_pend_entry = None
         self.tk_pend_close = None
         return "TK: çizgi trendi döndü — ters pozisyon (maker)"
+
+    def _tk_kayip_muhur(self, bar_t: float) -> None:
+        """Son kapanan TK islemi zararliysa zarar muhru basar.
+
+        PAPER_TK_PAUSE_BARS boyunca AYNI yonde yeni giris yapilmaz
+        (chop azap degirmeni engeli). Karsi yon serbesttir: trend
+        donusu yakalanabilir. Karli kapanis muhru temizler.
+        """
+        if not self.trades:
+            return
+        t = self.trades[-1]
+        if float(getattr(t, "net_pnl", 0.0) or 0.0) < 0:
+            self._tk_kayip_t = float(bar_t)
+            self._tk_kayip_yon = 1 if t.side == LONG else -1
+        else:
+            self._tk_kayip_t = 0.0
+            self._tk_kayip_yon = 0
 
     def _tk(self, price: float, candles: list, timeframe: str,
             bar_low: Optional[float], bar_high: Optional[float],
@@ -2506,7 +2554,17 @@ class PaperTrader:
             # yazildiktan sonra kisa gozlem suresi.
             kb = float(getattr(self, "tk_bank_pct", 0.025) or 0.0)
             if kb > 0 and p.qty > 0:
+                # STOP MESAFESI TABANLI R:R (canli duzeltme 2026-10-31):
+                # yalnizca bakiye yuzdesi kullanilirsa (orn. 670$*%2,5
+                # = 16,75$) hedef, stop mesafesiyle (~%0,3 notional)
+                # ayni kaliyordu -> kazanc/kayip ~1:1 + komisyon.
+                # Esik = max(bakiye*BANK_PCT, stop_riski*BANK_RR).
                 esik = self.balance * kb          # para cinsinden esik
+                stp = float(getattr(p, "tk_stop", 0.0) or 0.0)
+                rr = float(getattr(self, "tk_bank_rr", 0.0) or 0.0)
+                if rr > 0 and stp > 0:
+                    risk_money = abs(p.entry - stp) * p.qty
+                    esik = max(esik, risk_money * rr)
                 if p.side == LONG:
                     seviye = p.entry + esik / p.qty
                     vurdu = (bar_high is not None and
@@ -2518,6 +2576,7 @@ class PaperTrader:
                 if vurdu:
                     self._close(seviye, "TK: kâr bankası (maker)",
                                 timeframe, maker=True)
+                    self._tk_kayip_muhur(bar_t)
                     self.tk_pend_entry = None
                     self.tk_pend_close = None
                     # KULLANICI KURALI (2026-10-28): banka kapanisi da
@@ -2534,6 +2593,7 @@ class PaperTrader:
                         if bar_low <= tp <= bar_high:
                             self._close(tp, "tk hedefe ulaşıldı",
                                         timeframe, maker=True)
+                            self._tk_kayip_muhur(bar_t)
                             return "TICK: hedef klip (maker)"
                         elif price >= tp:
                             # Resting-limit pass: fiyat TP'yi gecti
@@ -2542,6 +2602,7 @@ class PaperTrader:
                             # supurur -> maker dolumu (honest).
                             self._close(tp, "tk hedefe ulaşıldı",
                                         timeframe, maker=True)
+                            self._tk_kayip_muhur(bar_t)
                             return "TICK: hedef klip (maker)"
                     elif price >= tp:                      # canli tik
                         self._close(price, "tk hedefe ulaşıldı",
@@ -2552,12 +2613,14 @@ class PaperTrader:
                         if bar_low <= tp <= bar_high:
                             self._close(tp, "tk hedefe ulaşıldı",
                                         timeframe, maker=True)
+                            self._tk_kayip_muhur(bar_t)
                             return "TICK: hedef klip (maker)"
                         elif price <= tp:
                             # Resting-limit pass (SHORT: fiyat TP
                             # altina gecti) — maker dolumu (honest).
                             self._close(tp, "tk hedefe ulaşıldı",
                                         timeframe, maker=True)
+                            self._tk_kayip_muhur(bar_t)
                             return "TICK: hedef klip (maker)"
                     elif price <= tp:
                         self._close(price, "tk hedefe ulaşıldı",
@@ -2581,6 +2644,7 @@ class PaperTrader:
                                 bar_low <= be_px <= bar_high:
                             self._close(be_px, "tk başabaş klip",
                                         timeframe, maker=True)
+                            self._tk_kayip_muhur(bar_t)
                             return "TICK: başabaş klip (maker)"
                         if bar_high >= trig_px:
                             p.tk_be_armed = True
@@ -2591,6 +2655,7 @@ class PaperTrader:
                         elif price <= be_px:
                             self._close(price, "tk başabaş klip",
                                         timeframe)
+                            self._tk_kayip_muhur(bar_t)
                             return "TICK: başabaş klip (market)"
                 else:
                     be_px = p.entry * (1.0 - buf)
@@ -2600,6 +2665,7 @@ class PaperTrader:
                                 bar_low <= be_px <= bar_high:
                             self._close(be_px, "tk başabaş klip",
                                         timeframe, maker=True)
+                            self._tk_kayip_muhur(bar_t)
                             return "TICK: başabaş klip (maker)"
                         if bar_low <= trig_px:
                             p.tk_be_armed = True
@@ -2610,6 +2676,7 @@ class PaperTrader:
                         elif price >= be_px:
                             self._close(price, "tk başabaş klip",
                                         timeframe)
+                            self._tk_kayip_muhur(bar_t)
                             return "TICK: başabaş klip (market)"
 
             # --- SL: stop-market (taker) ---
@@ -2622,6 +2689,7 @@ class PaperTrader:
                         self._tk_son_islem_t = float(bar_t)
                         if not bekle:
                             self._tk_sar_ac(acilis, timeframe, candles)
+                        self._tk_kayip_muhur(bar_t)
                         return f"TICK: stop ({_px(acilis)})"
                     if bar_low is not None and bar_low <= stop:
                         self._close(stop, "tk stop", timeframe)
@@ -2630,6 +2698,7 @@ class PaperTrader:
                         self._tk_son_islem_t = float(bar_t)
                         if not bekle:
                             self._tk_sar_ac(stop, timeframe, candles)
+                        self._tk_kayip_muhur(bar_t)
                         return f"TICK: stop ({_px(stop)})"
                     if bar_low is None and price <= stop:
                         # Canli tik (bar araligi yok): tick stopu asti.
@@ -2638,6 +2707,7 @@ class PaperTrader:
                         self.tk_pend_close = None
                         if not bekle:
                             self._tk_sar_ac(price, timeframe, candles)
+                        self._tk_kayip_muhur(bar_t)
                         return f"TICK: stop ({_px(price)})"
                 else:
                     if acilis >= stop:
@@ -2647,6 +2717,7 @@ class PaperTrader:
                         self._tk_son_islem_t = float(bar_t)
                         if not bekle:
                             self._tk_sar_ac(acilis, timeframe, candles)
+                        self._tk_kayip_muhur(bar_t)
                         return f"TICK: stop ({_px(acilis)})"
                     if bar_high is not None and bar_high >= stop:
                         self._close(stop, "tk stop", timeframe)
@@ -2655,6 +2726,7 @@ class PaperTrader:
                         self._tk_son_islem_t = float(bar_t)
                         if not bekle:
                             self._tk_sar_ac(stop, timeframe, candles)
+                        self._tk_kayip_muhur(bar_t)
                         return f"TICK: stop ({_px(stop)})"
                     if bar_high is None and price >= stop:
                         self._close(price, "tk stop", timeframe)
@@ -2662,6 +2734,7 @@ class PaperTrader:
                         self.tk_pend_close = None
                         if not bekle:
                             self._tk_sar_ac(price, timeframe, candles)
+                        self._tk_kayip_muhur(bar_t)
                         return f"TICK: stop ({_px(price)})"
 
             # --- GRAFIK CIZGI SIRASI (MA ribbon) — kullanici kurali
@@ -2696,6 +2769,7 @@ class PaperTrader:
                     self.tk_pend_close = None
                     self.tk_pend_entry = None
                     self._tk_son_islem_t = float(bar_t)
+                    self._tk_kayip_muhur(bar_t)
                     return "TK: yıldız flip kapanış (maker)"
             if self.tk_pend_close is not None and not bekle:
                 if esit:
@@ -2711,6 +2785,7 @@ class PaperTrader:
                     self.tk_pend_close = None
                     self.tk_pend_entry = None
                     self._tk_son_islem_t = float(bar_t)
+                    self._tk_kayip_muhur(bar_t)
                     return "TK: yıldız flip kapanış (maker)"
                 Lc = self.tk_pend_close
                 acilis_c = float(candles[-1].open)
@@ -2727,6 +2802,7 @@ class PaperTrader:
                     self.tk_pend_entry = (self.tk_hedef, Lc)
                     self.tk_pend_bar = bar_t
                     self._tk_son_islem_t = float(bar_t)
+                    self._tk_kayip_muhur(bar_t)
                     return "TK: yıldız flip kapanış (maker)"
                 if bar_t != self.tk_pend_bar:
                     self.tk_pend_close = price     # yeni barda fiyata
@@ -2744,6 +2820,17 @@ class PaperTrader:
             self.tk_pend_entry = None
             return None
         yon = self.tk_hedef
+
+        # ZARAR SONRASI BEKLEME (canli duzeltme 2026-10-31): son TK
+        # kapanisi zararla olduysa PAPER_TK_PAUSE_BARS bar boyunca AYNI
+        # yonde yeni giris yok (chop'ta ust uste stop yemeyi keser).
+        # Karsi yon serbesttir: trend donusu kacirilmaz.
+        if self.tk_pause_bars > 0 and self._tk_kayip_t > 0 and \
+                yon == self._tk_kayip_yon:
+            fark = float(bar_t) - float(self._tk_kayip_t)
+            if 0 <= fark < self.tk_pause_bars * 60000:
+                self.tk_pend_entry = None
+                return None
 
         # CIZGI SIRASI KAPISI (kullanici kurali): dizilim yukari iken
         # SHORT, asagi iken LONG giris yok — trend yonunde kalinir.

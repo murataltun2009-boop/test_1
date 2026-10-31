@@ -1235,3 +1235,48 @@ kurali kesisme oldugu icin cross varsayilan; istenirse
 PAPER_TK_RIBBON_MODE="stack" ile eski davranisa donulur.
 
 DOGRULAMA: tk_sanity tum adimlar OK; test_paper 90/90. sw ta-v24.
+
+### TK canli zarar duzeltmesi (oturum 11, 2026-10-31)
+CANLI TESHIS (kullanici islem kaydi): 66 islem (32K/34Z), net -330,12$
+(-%33,01), komisyon 254,97$ (~3,86$/islem), brut ~-75$. Kayiplar
+-21..-27$, kazanclar +14..+19$ -> R:R < 1 ve kazanma orani %48.
+
+KOK NEDEN: SL %0,3 x 10x x %80 teminat -> stop kaybi ~bakiyenin
+%2,4'u (+komisyon); banka hedefi bakiyenin %2,5'i -> brut R:R ~1:1.
+Komisyon eklenince beklenti negatif. Chop bandi (0,1890-0,1929, ~%2)
+icinde stop/banka dongusu.
+
+DUZELTME (yildiz hesabi DEGISMEDI; res.signals yalnizca okunur):
+  * PAPER_TK_FRACTION = 0.50 — TK pozisyonu cuzdan fraksiyonunun
+    yarisina iner. Stop kaybi ~%1,2'ye, komisyon ~yarıya iner; banka
+    hedefi (bakiyenin %2,5'i) ayni kalir -> net R:R ~1,7-2,0.
+  * PAPER_TK_BANK_RR = 1.8 — banka esigi = max(bakiye*BANK_PCT,
+    stop_riski*RR). Stop genis secilirse hedef otomatik uzar; 0=kapali.
+  * PAPER_TK_PAUSE_BARS = 3 — zararli kapanistan sonra AYNI yonde 3
+    bar yeni giris yok (karsi yon serbest: trend donusu kacmaz).
+  * stop->ters (SAR) ve cizgi flip girisleri de fraksiyonla kuculur.
+
+OLCUM (research_tk16, 8x500, 1m, 7 coin, ayni veri):
+  eski f1.0            : +4055$, 926 islem, K581/Z345, kaz 22,6 /
+                         kay -26,2, en kotu pencere -157$
+  f0.4 (bp2.5 rr1.8 p3): +1666$, 645 islem, K255/Z390, 22,1/-10,2,
+                         en kotu -66$   (DOGE +183)
+  f0.5 (secilen)       : +1824$, 684 islem, K293/Z391, 23,2/-12,7,
+                         en kotu -81$   (DOGE +184)
+  f0.6                 : +2148$, 721 islem, K332/Z389, 24,3/-15,2,
+                         en kotu -90$   (DOGE +231)
+Not: fraksiyon kuculdukce mutlak $ dogal olarak duser; risk birimi
+de ayni oranda kuculur (normalize getiri eskiyle ayni). Secim f0.5:
+kullanici banka kurali (%2,5) korunur, islem basi stop ~%1,2 ve
+kazanc/kayip orani ~1,8; f0.4 daha guvenli ama toparlanma yavas.
+
+6x500 duyarlilik (ayni gun): rr2.2 (f1.0) +3688 vs eski +2654;
+pause3 tek basina trendli ornekte notr (chop'ta canli fayda icin
+korundu). Capraz kontrol: 6x500'de f0.5 bp2.5 p3 +1713 / f0.45 +1687
+/ f0.4 +1322 — farklar veri kaymasina bagli, hepsi eskiye gore daha
+dusuk varyansli.
+
+DOGRULAMA: test_tk_fix.py 12/12 (fraksiyon boyutu, R:R tabanli banka,
+zarar-sonrasi bekleme, karsi yon muafiyeti); tk_sanity 15 adim OK;
+test_paper 90/90. sw ta-v25. UI metinleri (server.py, app.js) yeni
+kural setiyle senkron.
