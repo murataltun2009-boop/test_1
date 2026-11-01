@@ -402,8 +402,15 @@ PAPER_TK_FRACTION = 0.50          # TK pozisyon boyu: cuzdan fraksiyonunun bu ka
 PAPER_TK_PAUSE_BARS = 3           # zarar sonrasi K bar ayni yonde giris yok (chop azap degirmeni)
 PAPER_TK_RIB_DEADBAND = 0.0005    # |EMA20-EMA50| fiyatin bu oranindan kucukse kesisme sayilmaz (chop)
 PAPER_TK_RIB_CONFIRM = 2          # yeni yon kac KAPALI bar ayni kalirsa gecerli (1=hemen)
-PAPER_TK_ENTRY_OFFSET = -0.0005   # giris: sinyal fiyatinin GERISINE %0,05 pasif limit (pullback); + = breakout, 0 = aninda
+PAPER_TK_ENTRY_OFFSET = -0.001    # giris: sinyal fiyatinin GERISINE %0,10 pasif limit (pullback); + = breakout, 0 = aninda
 PAPER_TK_REQUIRE_TREND = True     # True: rib==0 iken (trend yok) yildiz tek basina giris acamaz
+PAPER_TK_STREAK_N = 2             # arka arkaya N zarar -> TUM yonlerde K bar fren (0=kapali)
+PAPER_TK_STREAK_BARS = 10         # seri freni suresi (bar); dolunca sayac sifirlanir
+PAPER_TK_LEVEL_BAN = 0.002        # son zararli giris seviyesine bu kadar yakinda AYNI yon giris yok (0=kapali)
+PAPER_TK_LEVEL_BARS = 15          # seviye yasagi suresi (bar)
+PAPER_TK_SL_ATR = 0.0             # stop = max(SL, ATR14*bu kat) — olcumde zararliydi; yine olCuldu, varsayilan kapali
+PAPER_TK_BE_RISK = 0.0            # acik kar stop mesafesinin bu katina ulasinca stop girise cekilir (0=kapali, olcumde zararli)
+PAPER_TK_TIME_BARS = 0            # islem K bar boyunca sonuca ulasmadiysa market ile kapanir (0=kapali, olcumde zararli)
 PAPER_TK_BE = False              # yarim-kar klip (yogun hook acar)
 PAPER_TK_BE_TRIG = 0.5           # TP mesafesinin bu kadarini gecince aktif
 PAPER_TK_BE_LOCK = 0.0           # klip seviyesi = ucresiz BE (yogun: 0.5)

@@ -84,6 +84,10 @@ kontrol("1 pozisyon LONG", p.position.side == "LONG")
 #    (bakiye %2,5 = ~25$) -> banka ancak fiyat +%5,4'te.
 # ------------------------------------------------------------------
 entry = float(p.position.entry)
+# Banka R:R testini ayri mekanizmalardan izole et: ATR stop kapali,
+# risk-BE kapali yoksa stop BE'ye cekilince banka esigi kayar.
+p.tk_sl_atr = 0.0
+p.tk_be_risk = 0.0
 p.position.tk_stop = entry * 0.97
 p.position.tk_tp = 0.0
 ev = p.on_price(entry * 1.01, m, "1m", "AL")
@@ -187,13 +191,13 @@ for i in range(300):                   # yukselis: rib +1 (trend var)
     px7 = op7 * 1.002
     m7.append(C(i * 60_000, px7, op7))
 p7 = tk_varsayilan()
-kontrol("7 giris tetigi varsayilani -%0,05 (pullback)",
-        abs(p7.tk_entry_offset + 0.0005) < 1e-12)
+kontrol("7 giris tetigi varsayilani -%0,10 (pullback)",
+        abs(p7.tk_entry_offset + 0.001) < 1e-12)
 ev = p7.on_price(px7, m7, "1m", "AL")
 kontrol("7 aninda giris YOK (pasif limit bekliyor)",
         p7.position is None and p7.tk_pend_entry is not None)
-L7 = px7 * (1.0 - 0.0005)
-kontrol("7 limit sinyal fiyatinin %0,05 ALTINDA",
+L7 = px7 * (1.0 - 0.001)
+kontrol("7 limit sinyal fiyatinin %0,10 ALTINDA",
         abs(p7.tk_pend_entry[1] - L7) < 1e-12)
 ev = p7.on_price(px7 * 1.003, m7, "1m", "AL")
 kontrol("7 fiyat yukselince limit KOVALANMAZ (seviye sabit)",
@@ -217,6 +221,94 @@ p8b = tk_varsayilan(tk_entry_offset=0.0)
 ev = p8b.on_price(px7, m7, "1m", "AL")  # yukselis: rib +1
 kontrol("8 trend varken (rib=+1) giris ACIK",
         p8b.position is not None and p8b.position.side == "LONG")
+
+# ------------------------------------------------------------------
+# 9) SEVIYE HAFIZASI: zarar edilen giris seviyesine yakin AYNI yon
+#    giremez (ENA: 0,1945/0,1944/0,1946 -> hepsi stop)
+# ------------------------------------------------------------------
+m9 = duz_mumlar()
+p9 = tk(tk_sar=False, tk_ribbon=False, tk_pause_bars=0,
+        tk_streak_n=0, tk_level_ban=0.002, tk_level_bars=15)
+p9.on_price(0.1000, m9, "1m", "AL")
+p9.position.tk_stop = 0.0999
+p9.on_price(0.09989, m9, "1m", "AL")         # stop-out (entry 0,1000)
+kontrol("9 1. LONG stop oldu", p9.position is None and
+        p9._tk_kayip_giris > 0)
+m9.append(C(int(m9[-1].open_time) + 60_000, 0.10001, 0.09995))
+ev = p9.on_price(0.10001, m9, "1m", "AL")    # %0,02 uzakta: YASAK
+kontrol("9 kayip seviyesine yakin giris ENGELLENDI",
+        p9.position is None and p9.tk_pend_entry is None)
+ev = p9.on_price(0.1020, m9, "1m", "AL")     # %0,20+ uzak: serbest
+kontrol("9 seviyeden uzakta giris ACIK", p9.position is not None)
+
+# ------------------------------------------------------------------
+# 10) SERI FRENI: arka arkaya 2 zarar -> TUM yonlerde 10 bar fren
+# ------------------------------------------------------------------
+m10 = duz_mumlar()
+p10 = tk(tk_sar=False, tk_ribbon=False, tk_pause_bars=0,
+         tk_streak_n=2, tk_streak_bars=10, tk_level_ban=0.0)
+p10.on_price(0.1000, m10, "1m", "AL")
+p10.position.tk_stop = 0.0999
+p10.on_price(0.09989, m10, "1m", "AL")       # zarar 1
+p10.on_price(0.09989, m10, "1m", "AL")       # tekrar giris
+kontrol("10 yeniden giris acildi", p10.position is not None)
+p10.position.tk_stop = 0.0999
+p10.on_price(0.09989, m10, "1m", "AL")       # zarar 2
+kontrol("10 iki zarar sonrasinda seri freni AKTIF",
+        p10._tk_seri >= 2 and p10._tk_seri_t > 0)
+ev = p10.on_price(0.1020, m10, "1m", "MARKET:AL")
+kontrol("10 seri frende giris ENGELLENDI", p10.position is None)
+for i in range(11):
+    m10.append(C(int(m10[-1].open_time) + 60_000, 0.1020, 0.1020))
+kontrol("10 10 bar sonra temiz sayfa (sayac sifir)",
+        p10.on_price(0.1020, m10, "1m", "AL") is not None and
+        p10.position is not None and p10._tk_seri == 0)
+
+# ------------------------------------------------------------------
+# 11) ATR STOP: stop = max(SL, ATR14 * kat)
+# ------------------------------------------------------------------
+m11 = []
+px11 = 0.1
+for i in range(300):                         # yukselis
+    op11 = px11
+    px11 = op11 * 1.002
+    m11.append(C(i * 60_000, px11, op11))
+p11 = tk(tk_sl_atr=2.0, tk_entry_offset=0.0)
+ev = p11.on_price(px11, m11, "1m", "AL")
+d11 = abs(p11.position.entry - p11.position.tk_stop) / p11.position.entry
+kontrol("11 ATR stop tabandan WIDE (0,4% > %0,3)", d11 > 0.003)
+
+# ------------------------------------------------------------------
+# 12) RISK-BE: acik kar stop mesafesinin katina ulasirsa stop girise
+# ------------------------------------------------------------------
+m12 = duz_mumlar()
+p12 = tk(tk_be_risk=0.9, tk_entry_offset=0.0, tk_tp=0.0)
+p12.on_price(0.1000, m12, "1m", "AL")
+rd12 = p12.position.tk_risk_d
+kontrol("12 risk mesafesi kaydedildi", rd12 > 0)
+ev = p12.on_price(0.1006, m12, "1m", "AL")   # +%0,6 >= 0,9*rd (+%0,27)
+be12 = 0.1 * (1.0 + p12.maker_rate * 2.0)
+kontrol("12 BE kondu (stop girise cekildi)",
+        getattr(p12.position, "tk_be_armed", False) and
+        abs(p12.position.tk_stop - be12) < 1e-9)
+ev = p12.on_price(0.0999, m12, "1m", "AL")   # geri donus: BE'de kapanir
+kontrol("12 BE sonrasi geri donus kayibsiz kapanir",
+        p12.position is None)
+
+# ------------------------------------------------------------------
+# 13) ZAMAN STOPU: K bar sonuca ulasmayan islem kapanir
+# ------------------------------------------------------------------
+m13 = duz_mumlar()
+p13 = tk(tk_time_bars=3, tk_entry_offset=0.0)
+T13 = int(m13[-1].open_time)
+p13.on_price(0.1000, m13, "1m", "AL")
+for i in range(4):
+    T13 += 60_000
+    m13.append(C(T13, 0.1000, 0.1000))
+ev = p13.on_price(0.1000, m13, "1m", "AL")
+kontrol("13 3 bar sonra sonuca ulasmayan islem KAPANDI",
+        p13.position is None and ev is not None and
+        "zaman" in ev.lower())
 
 print("-" * 62)
 print(f"{len(GECEN)}/{len(GECEN)} TK duzeltme testi gecti")

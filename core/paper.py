@@ -144,6 +144,28 @@ def _ema_last(closes: list, n: int) -> Optional[float]:
     return e
 
 
+def _atr_pct(candles: list, n: int = 14) -> Optional[float]:
+    """Son KAPALI n barin True Range ortalamasinin fiyata orani.
+
+    Stop mesafesi bu olcede esneklenir: 1m chop'ta sabit %0,3 stop
+    gurultu icinde kalir (canli 2026-11-01: 23 islemin 19'u stop).
+    """
+    c = _kapali_mumlar(candles)
+    if len(c) < n + 1:
+        return None
+    trs = []
+    pc = float(c[-n - 1].close)
+    for x in c[-n:]:
+        h = float(getattr(x, "high", 0.0))
+        l = float(getattr(x, "low", 0.0))
+        trs.append(max(h - l, abs(h - pc), abs(l - pc)))
+        pc = float(x.close)
+    son = float(c[-1].close)
+    if son <= 0:
+        return None
+    return sum(trs) / float(n) / son
+
+
 def _ma_ribbon(candles: list, mode: str = "cross",
                deadband: float = 0.0) -> int:
     """GRAFIK CIZGI KESISIMI (kullanici kurali, 2026-10-30).
@@ -477,13 +499,50 @@ class PaperTrader:
         # sinyal yonunde ilerlemezse giris olmaz -> tukenmis donus
         # tepelerine alim/satim elenir).
         self.tk_entry_offset = float(
-            getattr(config, "PAPER_TK_ENTRY_OFFSET", -0.0005))
+            getattr(config, "PAPER_TK_ENTRY_OFFSET", -0.001))
         # Trend yoksa (rib==0) yildiz tek basina giris acmasin.
         self.tk_require_trend = bool(
             getattr(config, "PAPER_TK_REQUIRE_TREND", True))
+        # ---- PIYASA HAFIZASI (2026-10-31, canli ENA deseni) ----------
+        # ENA 1m: 8 islem, 2K/6Z. Uc kayip AYNI seviyede ust uste:
+        # LONG 0,1945 / 0,1944 / 0,1946 -> hepsi 0,1938-0,1939'da stop.
+        # Ders: (a) seri halinde zarar = rejim bozuk, islem acmayi birak;
+        # (b) zarar edilen giris SEVIYESI bir sure "yanmis" sayilir,
+        # ayni yonde oraya tekrar girilmez (seviye hafizasi).
+        self.tk_streak_n = int(getattr(config, "PAPER_TK_STREAK_N", 2))
+        self.tk_streak_bars = int(
+            getattr(config, "PAPER_TK_STREAK_BARS", 10))
+        self.tk_level_ban = float(
+            getattr(config, "PAPER_TK_LEVEL_BAN", 0.002))
+        self.tk_level_bars = int(getattr(config, "PAPER_TK_LEVEL_BARS", 15))
+        # Trend egimi esigi: EMA20 son K barda fiyatin bu orani kadar
+        # kaymiyorsa trend "yatay" sayilir, giris yok (0=kapali).
+        self.tk_trend_slope = float(
+            getattr(config, "PAPER_TK_TREND_SLOPE", 0.0))
+        self.tk_slope_bars = int(getattr(config, "PAPER_TK_SLOPE_BARS", 5))
+        self._tk_seri = 0             # arka arkaya zarar sayaci
+        self._tk_seri_t = 0.0         # frenin basladigi bar zamani
+        self._tk_kayip_giris = 0.0    # son zararli islemin GIRIS fiyati
+        self._tk_kayip_giris_t = 0.0  # o giris zaman damgasi (ms)
         self._tk_rib_bar = 0          # ribbon onbellegi: kapanan bar
         self._tk_rib_val = 0          # +1 / -1 / 0
         self.tk_bank_pct = float(getattr(config, "PAPER_TK_BANK_PCT", 0.035))
+        # ---- VOLATILITE DUYARLILIGI (2026-11-01, canli IK deseni) ---
+        # IK 1m: 23 islem (4K/19Z), net -140$. Butun kayiplar tam
+        # %0,30 stop: sabit stop 1m gurultu genisligi icinde kalir,
+        # giris "stop avina" doner. Stop ARTIK fiyatin ATR'siyle
+        # esnekler: stop = max(SL, ATR*SL_ATR). Banka esigi riskle
+        # orantili buyudugu icin R:R tabani korunur.
+        self.tk_sl_atr = float(getattr(config, "PAPER_TK_SL_ATR", 0.0))
+        # ---- RISK-TABANLI BE (kâr koruma klip) ----
+        # Acik kar, stop mesafesinin tk_be_risk katina ulastiysa stop
+        # girise (komisyon dahil) cekilir -> "once +0,3% sonrada geri
+        # donus" tipi tam-kayip islemleri ~0'a (basabas) iner.
+        self.tk_be_risk = float(getattr(config, "PAPER_TK_BE_RISK", 0.0))
+        # ---- ZAMAN STOPU ----
+        # Islem tk_time_bars bar boyunca sonuca ulasmadiysa kapanir:
+        # chop'ta pozisyon tutmak drift kaybidir.
+        self.tk_time_bars = int(getattr(config, "PAPER_TK_TIME_BARS", 0))
         # ---- CANLI ZARAR DUZELTMESI (2026-10-31) --------------------
         # Canli olcum (66 islem, net -330$): stop kaybi ~bakiyenin
         # %2,4'u + komisyon, banka kazanci ~%2,5 -> brut R:R ~1:1 ve
@@ -498,6 +557,10 @@ class PaperTrader:
         self.tk_bank_rr = float(getattr(config, "PAPER_TK_BANK_RR", 1.8))
         self._tk_kayip_t = 0.0        # son zararli kapanis bar zamani
         self._tk_kayip_yon = 0        # son zararli kapanis yonu (+1/-1)
+        self._tk_kayip_giris = 0.0    # son zararli islemin GIRIS fiyati
+        self._tk_kayip_giris_t = 0.0  # o giris zaman damgasi (ms)
+        self._tk_seri = 0             # arka arkaya zarar sayaci
+        self._tk_seri_t = 0.0         # seri freni baslangic zamani
         self._tk_hist_bar = 0         # son kapali bar zaman mhr
         self._tk_hist_y1 = ""         # son kapali barin yildizi
         self._tk_hist_bar2 = 0        # onceki kapali bar zaman mhr
@@ -618,6 +681,20 @@ class PaperTrader:
             self.tk_require_trend = bool(getattr(
                 config, "PAPER_TK_REQUIRE_TREND",
                 self.tk_require_trend))
+            self.tk_streak_n = int(getattr(
+                config, "PAPER_TK_STREAK_N", self.tk_streak_n))
+            self.tk_streak_bars = int(getattr(
+                config, "PAPER_TK_STREAK_BARS", self.tk_streak_bars))
+            self.tk_level_ban = float(getattr(
+                config, "PAPER_TK_LEVEL_BAN", self.tk_level_ban))
+            self.tk_level_bars = int(getattr(
+                config, "PAPER_TK_LEVEL_BARS", self.tk_level_bars))
+            self.tk_sl_atr = float(getattr(
+                config, "PAPER_TK_SL_ATR", self.tk_sl_atr))
+            self.tk_be_risk = float(getattr(
+                config, "PAPER_TK_BE_RISK", self.tk_be_risk))
+            self.tk_time_bars = int(getattr(
+                config, "PAPER_TK_TIME_BARS", self.tk_time_bars))
             if "BTC" in self.symbol:
                 self.tk_theta_max = 0.678          # (legacy: cikis only)
                 self.tk_theta_min = 0.44
@@ -668,6 +745,10 @@ class PaperTrader:
             self._last_bar_time = 0
             self._tk_kayip_t = 0.0
             self._tk_kayip_yon = 0
+            self._tk_kayip_giris = 0.0
+            self._tk_kayip_giris_t = 0.0
+            self._tk_seri = 0
+            self._tk_seri_t = 0.0
             self.balance = float(config.PAPER_INITIAL_BALANCE)
             self.start_balance = self.balance
             self.backtest_stats = None
@@ -2335,6 +2416,27 @@ class PaperTrader:
             return -self.tk_hedef if self.tk_hedef != 0 else 0
         return None
 
+    def _tk_stop_kur(self, q, fiyat: float, candles: list) -> None:
+        """TK pozisyonu icin SL seviyesi kurar (ATR esnek) + risk ozu.
+
+        Stop = max(tk_sl, tk_sl_atr * ATR%). Risk mesafesi q.tk_risk_d
+        kaydedilir: risk-tabanli BE klip ve banka R:R tabani bu degeri
+        kullanir.
+        """
+        d = float(self.tk_sl)
+        mult = float(getattr(self, "tk_sl_atr", 0.0) or 0.0)
+        if mult > 0:
+            a = _atr_pct(candles)
+            if a is not None:
+                d = max(d, min(0.05, mult * a))
+        d = max(0.0005, min(0.05, d))
+        if q.side == LONG:
+            q.tk_stop = fiyat * (1.0 - d)
+        else:
+            q.tk_stop = fiyat * (1.0 + d)
+        q.tk_risk_d = abs(float(fiyat) - float(q.tk_stop))
+        q.tk_be_armed = False
+
     def _tk_sar_ac(self, price: float, timeframe: str, candles: list) -> None:
         """STOP->TERS (kullanici kurali, 2026-10-29): stop kaybindan
         sonra pozisyon ters yonde acilir YALNIZCA dusus/ustu TRENDLI
@@ -2378,11 +2480,10 @@ class PaperTrader:
             if self.tk_hedef > 0:
                 q.tk_tp = fiyat * (1.0 + self.tk_tp) \
                     if self.tk_tp > 0 else 0.0
-                q.tk_stop = fiyat * (1.0 - self.tk_sl)
             else:
                 q.tk_tp = fiyat * (1.0 - self.tk_tp) \
                     if self.tk_tp > 0 else 0.0
-                q.tk_stop = fiyat * (1.0 + self.tk_sl)
+            self._tk_stop_kur(q, fiyat, candles)
         self.tk_pend_entry = None
         self.tk_pend_close = None
 
@@ -2438,10 +2539,9 @@ class PaperTrader:
         if q is not None:
             if yon > 0:
                 q.tk_tp = px * (1.0 + self.tk_tp) if self.tk_tp > 0 else 0.0
-                q.tk_stop = px * (1.0 - self.tk_sl)
             else:
                 q.tk_tp = px * (1.0 - self.tk_tp) if self.tk_tp > 0 else 0.0
-                q.tk_stop = px * (1.0 + self.tk_sl)
+            self._tk_stop_kur(q, px, candles)
         self.tk_pend_entry = None
         self.tk_pend_close = None
         return "TK: çizgi trendi döndü — ters pozisyon (maker)"
@@ -2459,9 +2559,21 @@ class PaperTrader:
         if float(getattr(t, "net_pnl", 0.0) or 0.0) < 0:
             self._tk_kayip_t = float(bar_t)
             self._tk_kayip_yon = 1 if t.side == LONG else -1
+            # SEVIYE HAFIZASI: zarar edilen GIRIS seviyesi isaretlenir.
+            self._tk_kayip_giris = float(getattr(t, "entry", 0.0) or 0.0)
+            self._tk_kayip_giris_t = float(bar_t)
+            # SERI FRENI: arka arkaya zarar sayaci.
+            self._tk_seri = int(getattr(self, "_tk_seri", 0)) + 1
+            if self._tk_seri >= max(1, int(self.tk_streak_n)):
+                self._tk_seri_t = float(bar_t)
         else:
+            # Kar muhru temizler: seviye hafizasi ve seri sifirlanir.
             self._tk_kayip_t = 0.0
             self._tk_kayip_yon = 0
+            self._tk_kayip_giris = 0.0
+            self._tk_kayip_giris_t = 0.0
+            self._tk_seri = 0
+            self._tk_seri_t = 0.0
 
     def _tk(self, price: float, candles: list, timeframe: str,
             bar_low: Optional[float], bar_high: Optional[float],
@@ -2727,8 +2839,57 @@ class PaperTrader:
                             self._tk_kayip_muhur(bar_t)
                             return "TICK: başabaş klip (market)"
 
+            # --- RISK-TABANLI BE (kâr koruma klip) ---
+            # Acik kar, stop mesafesinin tk_be_risk katina ulastiysa
+            # stop girise (komisyon dahil) cekilir; chop'ta "once
+            # +X sonra geri donus" tipi tam-kayip islemler ~0'a iner.
+            # (eski tk_be klip TP-mesafe tabanliydi; bu klip risk
+            # mesafesi tabanlidir — TP kapaliyken de calisir.)
+            btrig = float(getattr(self, "tk_be_risk", 0.0) or 0.0)
+            rd = float(getattr(p, "tk_risk_d", 0.0) or 0.0)
+            be_risk_just_armed = False
+            if btrig > 0 and rd > 0 and \
+                    not getattr(p, "tk_be_armed", False):
+                bufer = self.maker_rate * 2.0
+                if p.side == LONG:
+                    be_px = p.entry * (1.0 + bufer)
+                    karsilan = float(price) - p.entry
+                    if bar_high is not None:
+                        karsilan = max(karsilan, bar_high - p.entry)
+                    if karsilan >= btrig * rd:
+                        p.tk_stop = max(float(stop), be_px)
+                        stop = float(p.tk_stop)
+                        p.tk_be_armed = True
+                        be_risk_just_armed = True
+                else:
+                    be_px = p.entry * (1.0 - bufer)
+                    karsilan = p.entry - float(price)
+                    if bar_low is not None:
+                        karsilan = max(karsilan, p.entry - bar_low)
+                    if karsilan >= btrig * rd:
+                        p.tk_stop = min(float(stop), be_px)
+                        stop = float(p.tk_stop)
+                        p.tk_be_armed = True
+                        be_risk_just_armed = True
+
+            # --- ZAMAN STOPU: sonuca baglilik ---
+            # Islem tk_time_bars bar boyunca banka hedefine ya da BE
+            # tabancasina tapinmadiysa pozisyon market ile kapanir:
+            # chop'ta pozisyon tutmak drift kaybidir.
+            tsb = int(getattr(self, "tk_time_bars", 0) or 0)
+            if tsb > 0 and float(getattr(p, "opened_at", 0.0) or 0.0) > 0 \
+                    and float(bar_t) - float(p.opened_at) >= \
+                    tsb * 60000.0:
+                self._close(price, "TK: zaman stopu (market)", timeframe)
+                self._tk_kayip_muhur(bar_t)
+                self._tk_son_islem_t = float(bar_t)
+                return "TK: zaman stopu (market)"
+
             # --- SL: stop-market (taker) ---
-            if stop > 0:
+            # BE bu cagrida KONULDUYSA yeni stop bir SONRAKI bardan
+            # gecerlidir (ayni bar icinde konan BE, barin acilisina
+            # geriye-donuk olarak vurulamaz — honest dolum).
+            if stop > 0 and not be_risk_just_armed:
                 if p.side == LONG:
                     if acilis <= stop:
                         self._close(acilis, "tk stop", timeframe)
@@ -2880,6 +3041,30 @@ class PaperTrader:
                 self.tk_pend_entry = None
                 return None
 
+        # SERI FRENI (2026-10-31, canli ENA deseni): arka arkaya N zarar
+        # -> TUM yonlerde K bar yeni giris yok. Uc kayip ust uste gelince
+        # rejim bozulmustur; ayni bantta islem acmak kayiplari cogaltir.
+        if self.tk_streak_n > 0 and self._tk_seri_t > 0:
+            fark = float(bar_t) - float(self._tk_seri_t)
+            if 0 <= fark < self.tk_streak_bars * 60000:
+                self.tk_pend_entry = None
+                return None
+            # Fren doldu: temiz sayfa (aksi halde seri kalici yasak olur).
+            self._tk_seri = 0
+            self._tk_seri_t = 0.0
+
+        # SEVIYE HAFIZASI: son zararli islemin GIRIS seviyesine yakin
+        # AYNI yonde tekrar giris yok — ayni duvara ust uste kafa atma
+        # (ENA: LONG 0,1945/0,1944/0,1946 -> uc kez stop).
+        if self.tk_level_ban > 0 and self._tk_kayip_giris > 0 and \
+                self._tk_kayip_giris_t > 0 and yon == self._tk_kayip_yon:
+            fark = float(bar_t) - float(self._tk_kayip_giris_t)
+            if 0 <= fark < self.tk_level_bars * 60000 and \
+                    abs(float(price) - self._tk_kayip_giris) / \
+                    self._tk_kayip_giris < self.tk_level_ban:
+                self.tk_pend_entry = None
+                return None
+
         # CIZGI SIRASI KAPISI (kullanici kurali): dizilim yukari iken
         # SHORT, asagi iken LONG giris yok — trend yonunde kalinir.
         # Yildiz ters yonde kalsa bile trende karsi pozisyon acilmaz.
@@ -2894,6 +3079,23 @@ class PaperTrader:
         if getattr(self, "tk_require_trend", False) and rib == 0:
             self.tk_pend_entry = None
             return None
+
+        # TREND EGIMI (2026-10-31): "trend var" demek icin EMA20 sadece
+        # dogru tarafta degil, KAYIYOR da olmali. Yatay bantta EMA20
+        # egimi ~0 iken yildiz girisleri duvara carpar (ENA deseni).
+        if self.tk_trend_slope > 0:
+            cc = _kapali_mumlar(candles)
+            cl = [float(x.close) for x in cc]
+            sb = max(1, int(self.tk_slope_bars))
+            e_now = _ema_last(cl, 20)
+            e_old = _ema_last(cl[:-sb], 20) \
+                if len(cl) > 20 + sb else None
+            if e_now is not None and e_old is not None and price > 0:
+                slp = (e_now - e_old) / float(price)
+                if (yon > 0 and slp < self.tk_trend_slope) or \
+                        (yon < 0 and slp > -self.tk_trend_slope):
+                    self.tk_pend_entry = None
+                    return None
 
         # TAZE YILDIZ-HDEF UYUMU (pozisyon-yok girisleri): kirmizi/
         # yesil yildiz hedef ile ayni yonde DEGILSE giris YOK — hedef
@@ -2954,17 +3156,16 @@ class PaperTrader:
                        timeframe, candles, maker=True)
             q = self.position
             if q is not None:
+                # TP kapaliysa (tk_tp<=0) attr SIFIR kalmali:
+                # tp=entry yazilirsa TP giris fiyatina ceker ve
+                # pozisyon komisyona kaybeder (olcum 2026-10-28).
                 if yon > 0:
-                    # TP kapaliysa (tk_tp<=0) attr SIFIR kalmali:
-                    # tp=entry yazilirsa TP giris fiyatina ceker ve
-                    # pozisyon komisyona kaybeder (olcum 2026-10-28).
                     q.tk_tp = gir * (1.0 + self.tk_tp) \
                         if self.tk_tp > 0 else 0.0
-                    q.tk_stop = gir * (1.0 - self.tk_sl)
                 else:
                     q.tk_tp = gir * (1.0 - self.tk_tp) \
                         if self.tk_tp > 0 else 0.0
-                    q.tk_stop = gir * (1.0 + self.tk_sl)
+                self._tk_stop_kur(q, gir, candles)
             self.tk_pend_entry = None
             self._tk_son_islem_t = float(bar_t)
             return "TK: yıldız limit doldu (maker)"
@@ -3010,11 +3211,10 @@ class PaperTrader:
                     if yon2 > 0:
                         q.tk_tp = fill * (1.0 + self.tk_tp) \
                             if self.tk_tp > 0 else 0.0
-                        q.tk_stop = fill * (1.0 - self.tk_sl)
                     else:
                         q.tk_tp = fill * (1.0 - self.tk_tp) \
                             if self.tk_tp > 0 else 0.0
-                        q.tk_stop = fill * (1.0 + self.tk_sl)
+                    self._tk_stop_kur(q, fill, candles)
                 self.tk_pend_entry = None
                 self._tk_son_islem_t = float(bar_t)
                 return "TK: yıldız limit doldu (maker)"

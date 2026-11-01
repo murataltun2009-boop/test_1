@@ -1362,3 +1362,52 @@ VARSAYILAN DOGRULAMA (yalniz config, ayni gun): 8w +2402$ (272 islem,
 DOGRULAMA: test_tk_fix 25/25 (pullback dolum/kovalamama + trend
 zorunlulugu senaryolari dahil); tk_sanity 15 adim OK; test_paper
 90/90. sw ta-v27. UI metinleri (server.py, app.js) senkron.
+
+### TK 4. tur: piyasa hafizasi + pullback derlesme (oturum 11d)
+CANLI (ikinci iki oturum): ENA 1m 8 islem (2K/6Z, -26$) ve IK 1m
+23 islem (4K/19Z, -140,73$, komisyon 56,29$). IK deseninde
+19/23 kayip TAM %0,30 stop — giris "stop-avi" oluyor; ENA deseninde
+ayni seviyede ust uste kayip: LONG 0,1945/0,1944/0,1946 -> hepsi
+0,1938-0,1939 stop. Uc giristeki mantik hatasi net gorunuyor:
+zarar edilen seviyeye GERI donuluyor.
+
+TESHIS: sabit %0,30 stop 1m gurultu genisligi icinde kalir; sinyal
+fiyatindan aninda girmek en kotu fiyat; ayni seviyeye tekrar tekrar
+girmek serbestti.
+
+DUZELTME (yildiz hesabi DEGISMEDI):
+  * PULLBACK %0,05 -> %0,10 (PAPER_TK_ENTRY_OFFSET = -0.001):
+    sinyal fiyatinin %0,10 gerisine pasif limit; dolum orani dusuyor
+    ama dolan islem daha iyi fiyattan acilarak R:R'yi yukaritir.
+  * PIYASA HAFIZASI:
+      - PAPER_TK_STREAK_N=2 / STREAK_BARS=10: arka arkaya 2 zarar
+        -> TUM yonlerde 10 bar giris yok (rejim bozuk; 10 bar sonunda
+        sayac sifirlanir, kalici yasak yok).
+      - PAPER_TK_LEVEL_BAN=0.002 / LEVEL_BARS=15: son zararli giris
+        seviyesine yakin (±%0,20) AYNI yonde 15 bar tekrar giris yok
+        — ayni duvara ust uste kafa atma engeli (ENA deseni).
+  * YENI KNOPlar (kod eklendi, OLCUMDE ZARARLI BULUNDU -> varsayilan
+    kapali): PAPER_TK_SL_ATR (stop=max(SL, ATR14*kat)), risk-tabanli
+    BE klip PAPER_TK_BE_RISK (kar >= kat*stop-mesafesi -> stop
+    girise cekilir), zaman stopu PAPER_TK_TIME_BARS. Ucunde de 8w/
+    6w olcumler tabandan koyu geriye gitti (BE kazanma oranini
+    dusurup islem basi ortalamayi sifirladi; ATR stop kayip boyunu
+    ~%50 buyutup kazanmayi artirmadi).
+
+OLCUM (8x500 / 6x500, ayni veri, gercek varsayilanlar):
+  pull .05 (eski)         : 8w +1775 (229 islem, %47, en kotu -67)
+                            6w  +148  ( 69 islem, %38, -67)
+  pull .10 + hafiza (YENI): 8w +1120 (107 islem, %52, en kotu -38)
+                            6w  +178  ( 17 islem, %59, -29)
+  pull .10 (hafiza yok)   : ~ayni (hafiza bu pencere icinde notr ama
+                            canli ENA deseni buna bagli korundu)
+Not: mutlak $ dusuyor (islem ~%55 azaliyor -> komisyon da ~%55
+azaliyor) ama profil belirgin daha guvenli: (a) en kotu pencere
+kaybi -67 -> -38 (8w) / -29 (6w); (b) kazanma orani %47/%38 -> %52/%59;
+(c) islem basi ort +7,8 -> +10,5$. Canli IK desenindeki 19 tam-stop
+kaybin kaynagi "her sinyale dogrudan giris" idi; pullback filtresi +
+seviye hafizasi bu cift deseni buyuk olcude engelliyor.
+
+DOGRULAMA: test_tk_fix 37/37 (seviye hafizasi, seri freni, ATR,
+risk-BE, zaman stopu pullback senaryolari dahil); tools/sanity_tk
+12 adim OK; test_paper 90/90. sw ta-v28.
