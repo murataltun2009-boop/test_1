@@ -1411,3 +1411,55 @@ seviye hafizasi bu cift deseni buyuk olcude engelliyor.
 DOGRULAMA: test_tk_fix 37/37 (seviye hafizasi, seri freni, ATR,
 risk-BE, zaman stopu pullback senaryolari dahil); tools/sanity_tk
 12 adim OK; test_paper 90/90. sw ta-v28.
+
+### OTURUM 12 — TİK2: YALNIZ-SHORT yildiz durumu makinesi (kullanici kurali)
+
+CANLI: IK 43 islem (11K/32Z, -154,87$, komisyon 99,03$). Kullanici
+yeni bir kural seti istedi (2026-11-02): "TİK2 — mevcut algoritmaya
+gore calissin AMA SADECE SHORT yapsin."
+
+KURAL (kullanici, birebir uygulama):
+  * KIRMIZI yildiz (SAT/GÜÇLÜ SAT) aldigi surece SHORT pozisyonda kal;
+    kirmizi iken SHORT ac.
+  * GRI yildiz (NÖTR) -> pozisyonu KAPAT (kirmizi-dogumlu short).
+  * YESIL yildiz (AL/GÜÇLÜ AL) -> islem acmaz, bekler (kirmizi/gri
+    yildizi bekler).
+  * YESILDEN SONRA gelen ilk gri -> SHORT ac (gri-dogumlu short; gri
+    dizisi boyunca kalir, yesil geri gelirse kapanir).
+  * LONG HIC KOŞULDA ACILMAZ — cift mekanik kilit: karar makinesi
+    hedefi 0/-1 disina cikmaz + SAR ve ribbon-flip configure ile
+    devre-disi + SAR icinde mod-kontrol + giris yolunda yon +1
+    kapisi.
+
+UGULAMA (yildiz hesabina DOKUNULMADI, res.signals okunur):
+  * mode="tk2": configure ayni TK knoplarini taze okur uzerine SAR/
+    ribbon-flip kapamasi; on_price ayni _tk motorunu kullanir, karar
+    blogunda _tk2_karar() cagrilir (yerlesen/KAPALI bar yildizini
+    okur; TK1'in ribbon-pin ve gri-TERS kurallari tk2'de cagrilmaz).
+  * Karar tablosu: kirmizi->hedef=-1 "KIRMIZI"; gri->kirmizi-dogumlu
+    kapatir "TİK2-GRI-KAPA", gri-dogumlu tutulur, duz+yesil-gecmis
+    ise acar "TİK2-GRI"; yesil->gri-dogumlu kapatir "TİK2-YESIL-KAPA"
+    ve _tk2_yesil bayragini kurar (tekrar gri gelirse kacis girisi).
+  * backtest(): sinyal-serisi build mod listesine tk2 eklendi —
+    yoksa geriye-donuk testte yildiz yok sanip islem acilmiyordu
+    (ilk olcumde 0 islem tespit edildi, eklendi).
+  * shared knoplar TK1 ile AYNI: pullback -.10, pause 3, streak 2/10,
+    level 0.002/15, rib-deadband/confirm, require-trend, banka %3,5
+    + R:R x1.8, fraksiyon %50, 1 dk bekleme — hepsi tk2'de aktif.
+
+OLCUM (gercek veri; 8x500 / 6x500; TÜM işlemler assert ile SHORT):
+  aninda (ofs 0)   : 8w +191 (461 is, %45, -27) / 6w +50 (315, %43, -27)
+  pull -.05        : 8w +289 (183 is, %57, -50)  / 6w +216 (127, %56, -50)
+  pull -.10 (VAR)  : 8w  +94 ( 66 is, %62, -33)  / 6w  +83 ( 47, %60, -33)
+  pull -.15        : 8w  +56 ( 20 is, %70, -15)  / 6w  +63 ( 16, %75,  -7)
+SECIM: paylasilan PAPER_TK_ENTRY_OFFSET=-0.001 (pull -.10) ile
+birakildi — mutlak kaliyor ama iki pencerede pozitif, en-kotu kayip
+kucuk, kazanma %60-62; -.05 daha cok kazanc ama en-kotu -50.
+DOGRULAMA: test_tk2.py 24 senaryo (kirmizi-ac/kal, gri-kapat, yesil-
+bekle, yesil→gri-ac, gri-dogumlu yesil-kapat, hic-LONG-ihlali,
+ribbon/SAR/flip kilitlemeleri, banka, mum-kapisi) — TAMAM;
+test_tk_fix 37/37; test_paper 90/90; tools/sanity_tk 12 adim.
+sw ta-v29.
+UI: index.html'e "TİK2 — yalnız-SHORT" modu eklendi; server.py (iki
+blok) + app.js aciklama metinleri ayri yazildi.
+

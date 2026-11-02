@@ -1135,7 +1135,7 @@ if ("serviceWorker" in navigator) {
     // Trend/MURO modu da SHORT kuralini kullanmaz: yon tamamen
     // gostergeden gelir. Bu yuzden secici kapatilir.
     var trend = (mode === "trend" || mode === "muro" || mode === "ppt" ||
-                 mode === "tk");
+                 mode === "tk" || mode === "tk2");
     var muro = (mode === "muro");
     var kilit = tek || trend;
     el.ruleWrap.style.display = kilit ? "none" : "";
@@ -1170,6 +1170,7 @@ if ("serviceWorker" in navigator) {
     // TIK: olculmus optimum parametreler SUNUCUDA otomatik uygulanir
     // (kaynak: tools/research_tk*.py). Kullanici iste: "hesapla, elle oynama".
     var tik = (el.pMode.value === "tk");
+    var tik2 = (el.pMode.value === "tk2");
     // Secilen algoritma ANINDA uygulanir: /api/paper/config sunucuda
     // configure + force_mode_refresh calistirir -> grafik AL/SAT yildizlari
     // secilen modun karar serisine gecer (pozisyon BASLATILMAZ, running
@@ -1179,6 +1180,23 @@ if ("serviceWorker" in navigator) {
       (el.pMode.value === "ppt"
         ? " · optimum parametreler otomatik uygulandı "
           + "(mult 3,5 · pull 1,0 ATR · risk %3 · kilit %2)"
+        : "") +
+      (tik2
+        ? " · TİK2 yalnız-SHORT kuralı: SADECE SHORT yapar, LONG hiç "
+          + "açılmaz; kırmızı yıldız→SHORT açar, kırmızı kaldıkça "
+          + "pozisyonda kalır; gri yıldız→pozisyonu KAPATIR (gri "
+          + "doğumlu short gri dizisi boyunca kalır); yeşil yıldız→"
+          + "işlem açmaz, bekler, YEŞILDEN SONRA gelen gri SHORT açar; "
+          + "aç/kapa LIMIT (maker); her işlem sonrası 1 dk bekleme; "
+          + "pozisyon boyu cüzdan fraksiyonunun %50'si; kâr bankası: "
+          + "açık pozisyon kârı bakiyenin %3,5'ine (en az stop riski "
+          + "×1,8) ulaşınca cüzdana yazılır (maker); zarar sonrası 3 "
+          + "bar aynı yönde yeni giriş yok; arka arkaya 2 zarar 10 bar "
+          + "tüm-yön fren yapar, zarar edilen giriş seviyesine yakın "
+          + "aynı yönde 15 bar tekrar girilmez (piyasa hafızası); "
+          + "trend yoksa giriş yok; giriş sinyal fiyatının %0,10 "
+          + "gerisine konan pullback limitinin dolmasıyla olur; "
+          + "stop→ters ve ribbon-flip devre dışı (LONG açabilirler)"
         : "") +
       (tik
         ? " · TİK yıldız kuralı: yeşil yıldız→LONG, kırmızı yıldız→"

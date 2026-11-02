@@ -378,7 +378,7 @@ PAPER_CORR_STRONG_FIRST = True   # zayif-yazimi ARM gate ONCESI uygula
 #   BTC  5m : tp %3 sl %5 theta<=0.678 -> 3/3 pencere pozitif (+150$)
 #   SOL  1m : tp %3 sl %5 theta<=0.85  -> +123$ / 3 pencere
 # ETH ve digerleri ayni tp/sl, theta 0.85 (ETH olcumu zayifti).
-PAPER_TK_ON = False              # mode="tk" secilirken configure acar
+PAPER_TK_ON = False              # mode="tk"/"tk2" secilirken configure acar (tk2 = TİK2 yalniz-SHORT; ayni knoplar)
 PAPER_TK_TP = 0.003              # hedef %0.3 (olcum: BTC5m/SOL1m en iyi)
 PAPER_TK_SL = 0.005              # stop %0.5 (genis: 1m mean-reversion)
 PAPER_TK_WIN = 60                # fib salinim penceresi (BAR)

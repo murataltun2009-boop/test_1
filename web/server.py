@@ -460,6 +460,44 @@ def create_app(service: MarketService, store: SignalStore,
             lock_pct=_num(data.get("lock_pct")),
             pull_atr=_num(data.get("pull_atr")),
         )
+        # TİK2 onayi (2026-11-02, kullanici kurali — yalniz-SHORT):
+        if data.get("mode") == "tk2" and paper.mode == "tk2":
+            dur = "" if paper.running else \
+                " · SIMULASYON DURAKLATILMIS — islem acilmasi icin " \
+                "Trade Başla'ya bas"
+            service._emit_log(
+                "info", "simulator",
+                f"TİK2 (yalnız-SHORT) aktif — sembol {paper.symbol} · "
+                f"SADECE SHORT yapar, LONG HİÇ açılmaz · kırmızı yıldız: "
+                f"SHORT açar; kırmızı kaldıkça pozisyonda kalır · gri "
+                f"yıldız: pozisyonu KAPATIR (gri-dogumlu short gri "
+                f"dizisi boyunca kalır) · yeşil yıldız: işlem açmaz, "
+                f"bekler; YEŞILDEN SONRA gelen gri SHORT açar · aç/kapa "
+                f"LIMIT (maker) · her işlem sonrası 1 dk bekleme "
+                f"(kâr bankası dahil) · pozisyon boyu cüzdan "
+                f"fraksiyonunun %{getattr(paper,'tk_fraction',0.5)*100:.0f}'i · "
+                f"kar bankası: biriken kâr bakiyenin "
+                f"%{getattr(paper,'tk_bank_pct',0.035)*100:.1f}'ine "
+                f"(en az stop riski ×{getattr(paper,'tk_bank_rr',1.8):.1f}) "
+                f"ulaşınca cuzdana yazılır · zarar sonrası "
+                f"{getattr(paper,'tk_pause_bars',3)} bar aynı yönde yeni "
+                f"giriş yok · arka arkaya "
+                f"{getattr(paper,'tk_streak_n',2)} zarar "
+                f"{getattr(paper,'tk_streak_bars',10)} bar tüm-yön fren; "
+                f"zarar edilen giriş seviyesine "
+                f"%{getattr(paper,'tk_level_ban',0.002)*100:.2f} yakın "
+                f"aynı yonde {getattr(paper,'tk_level_bars',15)} bar tekrar "
+                f"girilmez · trend yoksa yıldız tek başına giriş açmaz · "
+                f"giriş, sinyal fiyatinin "
+                f"%{abs(getattr(paper,'tk_entry_offset',-0.001))*100:.2f} "
+                f"gerisine konan pasif limitin (pullback) dolmasıyla "
+                f"olur · stop→ters ve ribbon-flip DEVRE DIŞI (LONG "
+                f"açabilirler){dur}")
+        elif data.get("mode") == "tk2" and paper.mode != "tk2":
+            service._emit_log(
+                "warning", "simulator",
+                f"TİK2 modu UYGULANAMADI (motor mode={paper.mode}) — "
+                f"server kodu eski olabilir, restart gerekli")
         # TIK modu onayi: kullaniciya motorun GERCEKTEN tik ile
         # calistigini (eski surecte sessiz yok-sayma tehlikesi) ve
         # simulasyonun duraklatip duraklatmadigini acikla.
@@ -618,6 +656,44 @@ def create_app(service: MarketService, store: SignalStore,
             lock_pct=_num(data.get("lock_pct")),
             pull_atr=_num(data.get("pull_atr")),
         )
+        # TİK2 onayi (2026-11-02, kullanici kurali — yalniz-SHORT):
+        if data.get("mode") == "tk2" and paper.mode == "tk2":
+            dur = "" if paper.running else \
+                " · SIMULASYON DURAKLATILMIS — islem acilmasi icin " \
+                "Trade Başla'ya bas"
+            service._emit_log(
+                "info", "simulator",
+                f"TİK2 (yalnız-SHORT) aktif — sembol {paper.symbol} · "
+                f"SADECE SHORT yapar, LONG HİÇ açılmaz · kırmızı yıldız: "
+                f"SHORT açar; kırmızı kaldıkça pozisyonda kalır · gri "
+                f"yıldız: pozisyonu KAPATIR (gri-dogumlu short gri "
+                f"dizisi boyunca kalır) · yeşil yıldız: işlem açmaz, "
+                f"bekler; YEŞILDEN SONRA gelen gri SHORT açar · aç/kapa "
+                f"LIMIT (maker) · her işlem sonrası 1 dk bekleme "
+                f"(kâr bankası dahil) · pozisyon boyu cüzdan "
+                f"fraksiyonunun %{getattr(paper,'tk_fraction',0.5)*100:.0f}'i · "
+                f"kar bankası: biriken kâr bakiyenin "
+                f"%{getattr(paper,'tk_bank_pct',0.035)*100:.1f}'ine "
+                f"(en az stop riski ×{getattr(paper,'tk_bank_rr',1.8):.1f}) "
+                f"ulaşınca cuzdana yazılır · zarar sonrası "
+                f"{getattr(paper,'tk_pause_bars',3)} bar aynı yönde yeni "
+                f"giriş yok · arka arkaya "
+                f"{getattr(paper,'tk_streak_n',2)} zarar "
+                f"{getattr(paper,'tk_streak_bars',10)} bar tüm-yön fren; "
+                f"zarar edilen giriş seviyesine "
+                f"%{getattr(paper,'tk_level_ban',0.002)*100:.2f} yakın "
+                f"aynı yonde {getattr(paper,'tk_level_bars',15)} bar tekrar "
+                f"girilmez · trend yoksa yıldız tek başına giriş açmaz · "
+                f"giriş, sinyal fiyatinin "
+                f"%{abs(getattr(paper,'tk_entry_offset',-0.001))*100:.2f} "
+                f"gerisine konan pasif limitin (pullback) dolmasıyla "
+                f"olur · stop→ters ve ribbon-flip DEVRE DIŞI (LONG "
+                f"açabilirler){dur}")
+        elif data.get("mode") == "tk2" and paper.mode != "tk2":
+            service._emit_log(
+                "warning", "simulator",
+                f"TİK2 modu UYGULANAMADI (motor mode={paper.mode}) — "
+                f"server kodu eski olabilir, restart gerekli")
         # TIK modu onayi: kullaniciya motorun GERCEKTEN tik ile
         # calistigini (eski surecte sessiz yok-sayma tehlikesi) ve
         # simulasyonun duraklatip duraklatmadigini acikla.
