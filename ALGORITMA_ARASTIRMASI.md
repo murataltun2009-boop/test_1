@@ -1243,6 +1243,34 @@ kod serileriyle assert; bayat son-bar karari yakalanamaz). node
 --check app.js OK; py_compile analysis/service OK. sw ta-v29 ->
 ta-v30.
 
+### IZLEME MODU — MUM SECIMI HEP EN ESKI BARA GIDIYORDU (devam, 2026-11-03)
+KULLANICI ISTEGI: "mouse ile grafikte tikladigimda secim islemi
+yapilmiyor; mum uzerine tikladigimda o mumun sonuclarini gostermeli."
+
+KOK NEDEN (tarayicida canli teyit edildi): x ekseni CATEGORY tipinde
+olan grafikte convertFromPixel KATEGORI INDEKSI dondurmektedir; eski
+chartClickToBar bu kucuk indeksi mum saniyesiyle (~1.7e9)
+karsilastiriyordu. Tum mumlar esit derecede "uzak"tigindan en-yakin-
+mum hesabi HEP state.candles[0] (en eski bar, 29.08.2026) donuyordu:
+tiklama calisiyor gibi gorup DEGERLER asla hareket etmiyordu.
+
+DUZELTME: chartClickToBar convertFromPixel yerine kesin SLOT
+geometrisiyle hesaplar:
+  * gorunur pencere: chart.getOption().dataZoom[0] start/end (%)
+    -> vStart=floor(N*s/100), vEnd=ceil(N*e/100)-1
+  * slot = plotW / vCount (grid sabitleri left=62, right=86;
+    boundaryGap: true, her mum slotun merkezinde)
+  * k = floor((tık-piksel - left) / slot), idx = vStart + k
+CANLI TEST (tarayici ticaret sunucu + ECharts instance):
+  * tiklamalar monoton: %30 -> 15.10 23:00, %55 -> 25.10 03:00,
+    %85 -> 03.11 (olusan bar, penumbra clamp)
+  * tooltip ile cakisan x'teki eksen etiketi ile watch MUM basligi
+    BIREBIR eslesir (%55: "25.10.2026 03:00" == "MUM · 25.10 03:00")
+  * tablolar + sayaclari tıklanan barin kararlarini gosterir "(mum)"
+  * "(olusuyor)" etiketi sunucu/istemci uzunluk farkindan her bare
+    cikiyordu; j.index yerine j.time >= son-candle zamanla kiyas
+    (yalniz gercekten olusan bar icin). sw ta-v31.
+
 ### TK cizgi KESISIMI referansi (oturum 10, 2026-10-30)
 KULLANICI KURALI (netlestirme): "kirmizi>yesil>turuncu: kirmizi ile
 yesilin ILK KESISTIGI nokta short cikis / long giris; yesil>kirmizi>

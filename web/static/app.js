@@ -167,8 +167,11 @@ if ("serviceWorker" in navigator) {
     }).then(function (j) {
       if (mySeq !== watchFetching || !j || !j.ok) return;
       var html = "";
-      var olusuyor = state.candles.length &&
-        j.index >= state.candles.length - 1;
+      // Oluşan bar tespiti: sunucu serisi istemciden uzun olabilir
+      // (j.index dogrudan kullanilamaz); mum ZAMANIyla kiyasla.
+      var sonZaman = state.candles.length
+        ? state.candles[state.candles.length - 1][0] : 0;
+      var olusuyor = sonZaman > 0 && j.time >= sonZaman;
       html += watchSection("MUM · " +
         new Date(j.time).toLocaleString("tr-TR") +
         (olusuyor ? "  (oluşuyor)" : ""));
@@ -229,18 +232,41 @@ if ("serviceWorker" in navigator) {
     }).catch(function () { /* sessiz: eski tumpan gosterilir */ });
   }
   function chartClickToBar(x) {
-    // ECharts piksel -> bar zamani. X ekseni SANIYE cinsinden deger
-    // tutar (fmtAxis t*1000 kullanir), mum zamani da c[0] SANIYE.
+    // ECharts piksel -> bar zamani.
+    // KOK NEDEN (düzeltildi): x ekseni CATEGORY tipinde; convertFromPixel
+    // bu eksende KATEGORI INDEKSI dondurur (buyuk kucuk bir sayi), mum
+    // saniyesini degil. Eski kod bu indeksi SANIYE ile karsilastiriyordu:
+    // tum mumlar |1.7e9 - indeks| kadar "uzak"tigindan en-yakin-mum
+    // hesabi HEP EN ESKI muma gidiyordu (seçim yapiyormus gibi görünür,
+    //her tiklama ilk bar doner). Artik mum, gorunur dataZoom penceresi +
+    // grid genisliginden SLOT geometrisiyle kesin hesaplanir:
+    //   plot genisligi / gorunen mum adedi = slot genisligi
+    //   k = klik-pikselin slottaki sirasi; global idx = pencere-basi + k
+    // (boundaryGap: true her mum bir slotun ortasinda; fmtAxis etiketi
+    //  saniyeyi ms'ye carparak gosterir — mum zamani hala SANIYE c[0].)
     try {
-      var pt = chart.convertFromPixel({ seriesIndex: 0 }, [x, 0]);
-      if (!pt || !isFinite(pt[0])) return null;
-      var best = null, bestD = null;
-      for (var i = 0; i < state.candles.length; i++) {
-        var dd = Math.abs(state.candles[i][0] - pt[0]);
-        if (bestD === null || dd < bestD) { bestD = dd; best = i; }
-      }
-      return best === null ? null : state.candles[best][0];
-    } catch (e) { return null; }
+      var n = state.candles.length;
+      if (!n || !isFinite(x)) return null;
+      var dz = (chart.getOption().dataZoom || [])[0] || {};
+      var s = (typeof dz.start === "number") ? dz.start : 0;
+      var e = (typeof dz.end === "number") ? dz.end : 100;
+      s = Math.max(0, Math.min(100, s));
+      e = Math.max(0, Math.min(100, e));
+      if (e <= s) return state.candles[n - 1][0];
+      var vStart = Math.floor(n * s / 100);
+      var vEnd = Math.max(vStart, Math.ceil(n * e / 100) - 1);
+      var vCount = vEnd - vStart + 1;
+      // buildOption grid: left=62, right=86 (her iki gridde ayni).
+      var gridLeft = 62, gridRight = 86;
+      var plotW = chart.getWidth() - gridLeft - gridRight;
+      if (plotW <= 0) return null;
+      var slot = plotW / vCount;
+      var k = Math.floor((x - gridLeft) / slot);
+      if (k < 0) k = 0; else if (k > vCount - 1) k = vCount - 1;
+      var idx = vStart + k;
+      if (idx < 0 || idx > n - 1) return null;
+      return state.candles[idx][0];
+    } catch (er) { return null; }
   }
   if (el.pWatch) {
     el.pWatch.addEventListener("click", function () {
