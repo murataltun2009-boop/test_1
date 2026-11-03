@@ -1210,6 +1210,39 @@ SHORT yok, AL ile LONG; 14: dusus diziliminde LONG aninda SHORT'a
 cevrilir, kaynak CIZGI; 15: dususte AL SHORT'u bozamaz); test_paper
 90/90. sw ta-v23.
 
+### IZLEME MODU — BAR BAZLI AL/SAT/NÖTR KARARI (oturum 13, 2026-11-03)
+KULLANICI ISTEGI: "izleme modunda grafikte bir muma tikladigimda
+osilator ve hareketli ortalamalar tablosundaki SAYISAL degerler
+degisiyor ama her indikatorun karsisindaki AL/Sat/Nötr (Detay)
+sutunu degismiyor. Kontrol et ve duzelt."
+
+KOK NEDEN: sag sutundaki tablolar yalnizca CANLI snapshot'tan
+(res.oscillator_rows / res.ma_rows = SON barin karari) doluyordu;
+tıklanan mumun PER-INDIKATOR kararlari sunucudan hic gonderilmiyordu.
+Izleme panelindeki sayilar (j.osc/j.ma) dogru bardan geliyordu ama
+tablonun Detay sutunu (ve Al/Sat/Nötr sayaclari) canli son bare
+kilitli kaliyordu.
+
+DUZELTME (uc katman):
+  * core/analysis.py: TimeframeAnalysis'a osc_codes/ma_codes alanlari
+    (etiket -> bar-bazina karar ham kodu dizisi, _rsi_v vb. zaten
+    uretiyordu; rows'a yalnizca son bar yaziliyordu).
+  * core/service.py bar_info(): tıklanan barin karar etiketleri
+    ("Al"/"Nötr"/"Sat") osc_vad/ma_vad dict olarak cevaba eklendi.
+  * web/static/app.js: fillWatchRows() + countLabels() eklendi;
+    renderWatch tiklanmada oscTable/maTable'i TIKLANAN BARIN
+    deger+karariyla doldurur, sayaclara "(mum)" etiketi konur;
+    applySnapshot canli veriyi lastIndicators/lastCounts olarak
+    saklar ve izlemedeyken tabloları EZMEZ; izlemeden cikista
+    renderTables(lastIndicators, lastCounts) ile tablolar son canli
+    duruma geri doner.
+
+DOGRULAMA: test_paper 90/90 (İZLEME testi genisletildi: bar_info
+artik osc_vad/ma_vad döndurur; bar 75 ve bar 60 kararları analyze()
+kod serileriyle assert; bayat son-bar karari yakalanamaz). node
+--check app.js OK; py_compile analysis/service OK. sw ta-v29 ->
+ta-v30.
+
 ### TK cizgi KESISIMI referansi (oturum 10, 2026-10-30)
 KULLANICI KURALI (netlestirme): "kirmizi>yesil>turuncu: kirmizi ile
 yesilin ILK KESISTIGI nokta short cikis / long giris; yesil>kirmizi>

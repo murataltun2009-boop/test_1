@@ -22,7 +22,8 @@ from typing import Any, Optional
 import numpy as np
 
 import config
-from core.analysis import Signal, TimeframeAnalysis, analyze, format_number
+from core.analysis import (Signal, TimeframeAnalysis, analyze,
+                           format_number, _v)
 from core.binance_client import BinanceFuturesClient, Candle, Trade
 from core.paper import _kapali_mumlar
 
@@ -900,6 +901,22 @@ class MarketService:
         for lab, arr in res.ma_series.items():
             ma[lab] = _f(arr)
 
+        # TIKLANAN barin GOSTERGE YONLERI (AL/SAT/NÖTR): analyze() bar
+        # basina karar ham kodu uretir (+1 AL / 0 NÖTR / -1 SAT); son
+        # barin kararini rows tutar, tum seriyle birlikte artik döner —
+        # izleme modunda tiklanan mumun tablodaki Detay kolonu dogru
+        # bardan gelir (onceki kod hep son barin kararini gosteriyordu).
+        osc_vad = {}
+        if res.osc_codes:
+            for lab, arr in res.osc_codes.items():
+                if arr is not None and idx < arr.size:
+                    osc_vad[lab] = _v(int(arr[idx])).label
+        ma_vad = {}
+        if res.ma_codes:
+            for lab, arr in res.ma_codes.items():
+                if arr is not None and idx < arr.size:
+                    ma_vad[lab] = _v(int(arr[idx])).label
+
         # Akif algoritmanin o bardaki karari (cache'li mod serisi).
         try:
             seri = self.mode_signal_series(tf)
@@ -946,6 +963,8 @@ class MarketService:
             "mode_signal": mode_sig,
             "osc": osc,
             "ma": ma,
+            "osc_vad": osc_vad,
+            "ma_vad": ma_vad,
             "fib": {k: round(v, 6) for k, v in fib_out.items()},
             "fib_leg": leg_i,
             "fib_theta": theta_v,

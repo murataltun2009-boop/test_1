@@ -2314,10 +2314,10 @@ ok.append(test("FIB-gate: skor serileri (AL zirvede NÖTR, altın cebe GÜÇLÜ)
 
 
 def t_bar_info_izleme():
-    """service.bar_info: 11 osilator + 15 MA + skorlar + fib paneli."""
+    """service.bar_info: 11 osilator + 15 MA + skorlar + fib + bar karari."""
     import config as cfg_mod
     from core.service import MarketService
-    from core.analysis import analyze
+    from core.analysis import analyze, Verdict
     from core.binance_client import Candle
 
     n = 90
@@ -2353,9 +2353,26 @@ def t_bar_info_izleme():
         assert bilgi["fib_theta"] is not None
     # Fib serisi cache'lenir ve parametre yenilemesinde temizlenir.
     assert "1h" in svc._fib_cache
+    # IZLEME MODU BAR KARARI: osc_vad/ma_vad tiklanan barber
+    # analyze() kod serilerinden gelmeli (son bar degil!).
+    assert len(bilgi["osc_vad"]) == 11, f"osc_vad adedi: {len(bilgi['osc_vad'])}"
+    assert len(bilgi["ma_vad"]) == 15, f"ma_vad adedi: {len(bilgi['ma_vad'])}"
+    for lab, arr in res.osc_codes.items():
+        beklenen = Verdict(int(arr[75])).label
+        assert bilgi["osc_vad"][lab] == beklenen, \
+            f"osc_vad[{lab}]: {bilgi['osc_vad'][lab]} != {beklenen}"
+    for lab, arr in res.ma_codes.items():
+        beklenen = Verdict(int(arr[75])).label
+        assert bilgi["ma_vad"][lab] == beklenen, \
+            f"ma_vad[{lab}]: {bilgi['ma_vad'][lab]} != {beklenen}"
+    # Farkli bir bar (60) da dogru karar vermeli.
+    bilgi2 = svc.bar_info("1h", int(ot[60]))
+    for lab, arr in res.osc_codes.items():
+        assert bilgi2["osc_vad"][lab] == Verdict(int(arr[60])).label, \
+            f"bar60 osc_vad[{lab}] bayat son-bar karari"
 
 
-ok.append(test("İZLEME: bar_info 11 osilatör + 15 MA + fib döndürür",
+ok.append(test("İZLEME: bar_info 11 osilatör + 15 MA + fib + bar kararı",
                t_bar_info_izleme))
 
 

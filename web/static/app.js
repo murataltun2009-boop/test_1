@@ -208,6 +208,24 @@ if ("serviceWorker" in navigator) {
       }
       el.wValues.innerHTML = html;
       el.watchHint.style.display = "none";
+
+      // IZLEME MODU TABLO GUNCELLEMESI: tiklanan mumun osilator + MA
+      // tabloları da ayni bardan doldurulur (deger + Al/Sat/Nötr kari).
+      // Server bar bazina karar kodunu osc_vad/ma_vad olarak gonderir.
+      if (j.osc) {
+        fillWatchRows(el.oscTable, j.osc, null, j.osc_vad);
+        var oc = countLabels(j.osc_vad);
+        el.oscCounts.textContent = "Al " + oc.Al + " · Sat " + oc.Sat +
+          " · Nötr " + oc.Notr + "  (mum)";
+      }
+      if (j.ma) {
+        fillWatchRows(el.maTable, j.ma, function (k, v) {
+          return fnum(v, 4);
+        }, j.ma_vad);
+        var mc = countLabels(j.ma_vad);
+        el.maCounts.textContent = "Al " + mc.Al + " · Sat " + mc.Sat +
+          " · Nötr " + mc.Notr + "  (mum)";
+      }
     }).catch(function () { /* sessiz: eski tumpan gosterilir */ });
   }
   function chartClickToBar(x) {
@@ -241,6 +259,9 @@ if ("serviceWorker" in navigator) {
         el.watchBox.style.display = "none";
         el.wValues.innerHTML = "";
         watchMark(null);
+        // Tablolar tıklanan mum verisiyle kalmisti: son canli
+        // snapshot'a geri don (applySnapshot kaydeder).
+        renderTables(state.lastIndicators, state.lastCounts);
       }
     });
   }
@@ -561,7 +582,13 @@ if ("serviceWorker" in navigator) {
 
     if (state.firstLoad) { state.firstLoad = false; fitView(); }
 
-    renderTables(d.indicators, d.counts);
+    // Canli tablo verisi hep saklanir: izleme modundan cikinca tablolar
+    // bununla geri dolar (tiklanan mumun verisi ezilmeden once).
+    state.lastIndicators = d.indicators;
+    state.lastCounts = d.counts;
+    // Izleme modunda canli snapshot tabloları EZMESIN: tiklanan mumun
+    // deger+kari ekranda kalmali. Cikista lastIndicators geri dolar.
+    if (!watchOn) renderTables(d.indicators, d.counts);
     setLivePrice(d.price);
   }
 
@@ -659,6 +686,39 @@ if ("serviceWorker" in navigator) {
     });
     node.innerHTML = html;
   }
+
+  // TIKLANAN BARIN kararlarini sag sutundaki tablolara yaz (izleme
+  // modu). Onceki kod tabloyu yalnizca canli (son bar) snapshot'indan
+  // doldurdugu icin tiklanan mumun Al/Sat/Nötr sutunu degismiyordu;
+  // bar_info artik bar bazina karari da dondurur, tablo da barin
+  // deger+kari ile yeniden doldurulur.
+  function fillWatchRows(node, values, valText, variations) {
+    var html = "";
+    Object.keys(values).forEach(function (k) {
+      var v = values[k];
+      var vad = (variations && variations[k]) ? variations[k] : "—";
+      var cls = vad === "Al" ? "d-buy"
+              : (vad === "Sat" ? "d-sell" : "d-neutral");
+      var deger = valText ? valText(k, v) : fnum(v, 4);
+      html += '<div class="row"><span>' + k + "</span>" +
+              '<span class="v">' + deger + "</span>" +
+              '<span class="' + cls + '">' + vad + "</span></div>";
+    });
+    node.innerHTML = html;
+  }
+  function countLabels(variations) {
+    var out = { Al: 0, Sat: 0, Notr: 0 };
+    Object.keys(variations || {}).forEach(function (k) {
+      var v = variations[k];
+      if (v === "Al") out.Al += 1;
+      else if (v === "Sat") out.Sat += 1;
+      else if (v === "Nötr") out.Notr += 1;
+    });
+    return out;
+  }
+  // Izleme modundan cikinca tablolari SON CANLI snapshot'a dondurur.
+  state.lastIndicators = null;
+  state.lastCounts = null;
 
   // ==================================================================
   // Log

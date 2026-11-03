@@ -321,6 +321,13 @@ class TimeframeAnalysis:
     # tiklanan mumin o andaki tum osilator degerleri sunucudan sorulur).
     osc_series: dict[str, np.ndarray] = None
 
+    # Izleme modu BAR BAZINA karar ham kodu (+1 AL / 0 NÖTR / -1 SAT).
+    # analyze() zaten bu dizileri uretir;>sadece son barin karari rows'a
+    # yazilir, tum seri burada saklanir: tiklanan mumin YONU (AL/SAT/
+    # NÖTR) degeriyle birlikte sunucudan doner.
+    osc_codes: dict[str, np.ndarray] = None
+    ma_codes: dict[str, np.ndarray] = None
+
     rows: list[IndicatorValue] = None     # son bar icin osilatör + MA satirlari
     osc_split: int = 0                    # rows icinde osilator sayisi
 
@@ -492,6 +499,9 @@ def analyze(symbol: str, timeframe: str,
         osc_split=len(osc_codes),
         osc_series={lab: arr for lab, arr in
                     zip(OSCILLATOR_LABELS, osc_values)},
+        osc_codes={lab: np.asarray(cd, dtype=np.int8) for lab, cd in
+                   zip(OSCILLATOR_LABELS, osc_codes)},
+        ma_codes=dict(zip(ma_labels_list, ma_codes)),
     )
 
 
