@@ -717,6 +717,12 @@ class PaperTrader:
                 # pozisyonu LONG'a force eder — ikisi de TİK2 ihlalidir.
                 self.tk_sar = False
                 self.tk_ribbon_flip = False
+                # GIRIS: TİK2 yildiz kurali "o anda" calisir; TK1'in
+                # pullback limiti dusuk dilimlerde hic dolmuyor ya da
+                # gec giriyordu (olcum: config.PAPER_TK2_ENTRY_OFFSET).
+                # Yildiz hesabi degismez, yalniz dolum mekanigi.
+                self.tk_entry_offset = float(getattr(
+                    config, "PAPER_TK2_ENTRY_OFFSET", 0.0))
         if min_hold is not None and 0 <= int(min_hold) <= 500:
             self.min_hold_bars = int(min_hold)
         if risk_pct is not None and 0 < float(risk_pct) <= 0.50:

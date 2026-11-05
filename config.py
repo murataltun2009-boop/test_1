@@ -403,6 +403,14 @@ PAPER_TK_PAUSE_BARS = 3           # zarar sonrasi K bar ayni yonde giris yok (ch
 PAPER_TK_RIB_DEADBAND = 0.0005    # |EMA20-EMA50| fiyatin bu oranindan kucukse kesisme sayilmaz (chop)
 PAPER_TK_RIB_CONFIRM = 2          # yeni yon kac KAPALI bar ayni kalirsa gecerli (1=hemen)
 PAPER_TK_ENTRY_OFFSET = -0.001    # giris: sinyal fiyatinin GERISINE %0,10 pasif limit (pullback); + = breakout, 0 = aninda
+# TIK2'ye OZEL giris offseti (2026-11-06, son 3x500 bar x 5 dilim olcumu):
+# TIK2 yildiz kurali "o anda" karar verir; pullback limiti dusuk dilimlerde
+# ya hic dolmuyor ya da gec giriyordu. Olcum (BTCUSDT, 3 pencere):
+#   taban (TK1 pullback -0.10) : 4h +623, 1h +153, 15m +275, 5m -27, 1m -7
+#   TIK2 aninda (0.0)          : 4h +656, 1h +521, 15m +217, 5m +119, 1m +33
+# Aninda girisde 15 pencerenin 13'u pozitif; pullback'te 5m/1m 0/3.
+# Yildiz hesabi ve diger TIK2 kurallari DEGISMEDI; yalniz dolum mekanigi.
+PAPER_TK2_ENTRY_OFFSET = 0.0      # TIK2: sinyal barinin kapanisinda aninda gir (0 = market)
 PAPER_TK_REQUIRE_TREND = True     # True: rib==0 iken (trend yok) yildiz tek basina giris acamaz
 PAPER_TK_STREAK_N = 2             # arka arkaya N zarar -> TUM yonlerde K bar fren (0=kapali)
 PAPER_TK_STREAK_BARS = 10         # seri freni suresi (bar); dolunca sayac sifirlanir

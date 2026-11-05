@@ -223,5 +223,25 @@ ev = p10.on_price(0.1000, m10, "1m", "SAT")
 kontrol("10 kirmizi mume kirmizi yildiz: SHORT acildi",
         p10.position is not None and p10.position.side == "SHORT")
 
+# ------------------------------------------------------------------
+# 11) GIRIS DOLUMU (2026-11-06): TİK2 aninda girer (offset 0), TK1
+#     pullback limitini korur. Yildiz hesabi degismez.
+# ------------------------------------------------------------------
+import config as _cfg   # noqa: E402
+
+p11 = PaperTrader("BTCUSDT")
+p11.configure(balance=1000.0, leverage=10, fee_rate=0.0005,
+              wallet_fraction=0.8, mode="tk2", risk_pct=0.03)
+kontrol("11 TİK2 giris offseti 0 (aninda)",
+        abs(p11.tk_entry_offset) < 1e-12)
+kontrol("11 TİK2 offseti config'ten bagimsiz 0",
+        float(getattr(_cfg, "PAPER_TK2_ENTRY_OFFSET", 0.0)) == 0.0)
+
+p11b = PaperTrader("BTCUSDT")
+p11b.configure(balance=1000.0, leverage=10, fee_rate=0.0005,
+               wallet_fraction=0.8, mode="tk", risk_pct=0.03)
+kontrol("11 TK1 pullback offseti KORUNDU (-0.001)",
+        abs(p11b.tk_entry_offset - float(_cfg.PAPER_TK_ENTRY_OFFSET)) < 1e-12)
+
 print("-" * 62)
 print(f"TAMAM — TİK2 senaryolari gecti")

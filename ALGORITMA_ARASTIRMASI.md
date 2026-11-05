@@ -1577,4 +1577,45 @@ py_compile OK. Canlı tarayıcı (localhost:8741): panelde 11 osilatör +
 15 MA = 26 renkli rozet, bölüm özetleri ve tablo sayaçları doğru;
 tooltip ile seçilen mum birebir eşleşir. sw ta-v34, ?v=34.
 
+### OTURUM 15 — TİK2 canlı zararı: pullback girişi kaldırıldı (son 500 mum ölçümü)
+
+SIKAYET: "TİK2 karar mekanizması hep zarar ettiriyor." Yıldız hesabına
+ve TİK2'nin kullanıcı kuralına (yalnız-SHORT; kırmızı=kal, gri=kapat,
+yeşil=bekle, yeşil→gri=SHORT aç) DOKUNULMADI; yalnız ölçüm yapıldı.
+
+TESHIS (BTCUSDT, gerçek Binance Futures verisi, 500 bar × 5 dilim,
+PaperTrader.backtest, yıldız serisi moddan bağımsız üretildi):
+  dilim   taban (pullback -%0,10)      anında giriş (offset 0)
+  4h      +150$ / 17 işlem / %53       +217$ / 20 işlem / %55
+  1h       -30$ / 11 işlem / %36       +201$ / 16 işlem / %69
+  15m     +137$ /  7 işlem / %100       +77$ / 14 işlem / %43
+  5m       -14$ /  2 işlem / %50        +95$ / 14 işlem / %71
+  1m        -7$ /  1 işlem / %0         +47$ / 13 işlem / %54
+  (3x500 bar tekrarı: taban 15 pencerenin 9'u pozitif, 5m/1m 0/3;
+   anında 13/15 pozitif. Taban toplamı 1h +153 / 5m -27 / 1m -7;
+   anında 1h +521 / 5m +119 / 1m +33.)
+
+KÖK NEDEN: PAPER_TK_ENTRY_OFFSET = -0.001 (sinyal fiyatının %0,10
+gerisine pasif limit). TK1 için faydalı olan bu pullback, TİK2'de
+yıldız kuralının "o anda" mantığıyla çelişiyor:
+  * Düşük dilimlerde (1m/5m) geri çekilme çoğu zaman gelmiyor →
+    neredeyse hiç işlem yok (1m'de 500 barda 1 işlem).
+  * Geldiğinde ise fiyat artık dönmüş oluyor → giriş kötüleşiyor.
+  * Sabit %0,5 stop, sinyal kapanışını beklemeden bar içi gürültüde
+    tam ±%0,5000'de vuruluyor (1h işlem listesinde 5 kaybın 5'i tam
+    stop; kazançlar +%0,9 banka hedefi). Kazanma %36 + komisyon →
+    R:R fiilen 1,8'den ~1,3'e düşüyor, başabaş %44 iken %36 → zarar.
+
+DÜZELTME: config.PAPER_TK2_ENTRY_OFFSET = 0.0; configure() içinde
+mode=="tk2" dalında self.tk_entry_offset bu değerden okunur. TK1
+pullback'i (PAPER_TK_ENTRY_OFFSET = -0.001) AYNEN korunur. Stop,
+banka (%3,5 + R:R×1,8), fraksiyon %50, bekleme, SAR/ribbon kilidi,
+seri/seviye hafızası değişmedi.
+
+DOGRULAMA: test_tk2'ye senaryo 11 eklendi (TİK2 offset 0, TK1 offset
+-0.001 korunur) — TAMAM. test_tk_fix 37/37, test_paper 90/90.
+Ölçüm sonrası son 500 mum: 4h +217, 1h +201, 15m +77, 5m +95, 1m +47
+(5/5 dilim pozitif). sw ta-v34.
+
+
 
