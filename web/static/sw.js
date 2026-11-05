@@ -22,13 +22,16 @@
 // v6: yon titremesi duzeltmesi (kapali bar sinyali + 5 dk bekleme)
 //     + trend modunda kar kilitleme
 // v7: 1m dilimi, stop sonrasi reclaim, optimum nokta giris filtresi
-const VERSION = "ta-v31";
+// v8: izleme modu — tiklanan mumun per-gosterge Al/Sat/Notr rozetleri,
+//     MA kisa anahtar -> tam etiket eslemesi. Statik dosyalar ?v=34 ile
+//     servis edilir; boylece cache-first SW eski app.js'i gostermez.
+const VERSION = "ta-v34";
 const SHELL = "shell-" + VERSION;
 
 const PRECACHE = [
   "/",
-  "/static/style.css",
-  "/static/app.js",
+  "/static/style.css?v=34",
+  "/static/app.js?v=34",
   "/static/vendor/echarts.min.js",
   "/static/icon-192.png",
   "/static/icon-512.png",

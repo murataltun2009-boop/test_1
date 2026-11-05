@@ -2316,7 +2316,7 @@ ok.append(test("FIB-gate: skor serileri (AL zirvede NÖTR, altın cebe GÜÇLÜ)
 def t_bar_info_izleme():
     """service.bar_info: 11 osilator + 15 MA + skorlar + fib + bar karari."""
     import config as cfg_mod
-    from core.service import MarketService
+    from core.service import MA_LABEL_BY_KEY, MarketService
     from core.analysis import analyze, Verdict
     from core.binance_client import Candle
 
@@ -2361,15 +2361,23 @@ def t_bar_info_izleme():
         beklenen = Verdict(int(arr[75])).label
         assert bilgi["osc_vad"][lab] == beklenen, \
             f"osc_vad[{lab}]: {bilgi['osc_vad'][lab]} != {beklenen}"
-    for lab, arr in res.ma_codes.items():
-        beklenen = Verdict(int(arr[75])).label
-        assert bilgi["ma_vad"][lab] == beklenen, \
-            f"ma_vad[{lab}]: {bilgi['ma_vad'][lab]} != {beklenen}"
+    # MA: deger anahtari KISALTMA (ema10/sma20/ichimoku...), karar AYNI
+    # anahtarla gelir; MA_LABEL_BY_KEY ile tam etikete esler.
+    for kisa, tam_etiket in MA_LABEL_BY_KEY.items():
+        # Haritada tam etiket anahtarlari da olabilir; ma_series'te
+        # olanlar saglanmalidir.
+        if kisa not in res.ma_series:
+            continue
+        beklenen = Verdict(int(res.ma_codes[tam_etiket][75])).label
+        assert bilgi["ma_vad"][kisa] == beklenen, \
+            f"ma_vad[{kisa}]: {bilgi['ma_vad'][kisa]} != {beklenen}"
     # Farkli bir bar (60) da dogru karar vermeli.
     bilgi2 = svc.bar_info("1h", int(ot[60]))
     for lab, arr in res.osc_codes.items():
         assert bilgi2["osc_vad"][lab] == Verdict(int(arr[60])).label, \
             f"bar60 osc_vad[{lab}] bayat son-bar karari"
+    for kisa in res.ma_series:
+        assert kisa in bilgi2["ma_vad"], f"bar60 ma_vad[{kisa}] eksik"
 
 
 ok.append(test("İZLEME: bar_info 11 osilatör + 15 MA + fib + bar kararı",

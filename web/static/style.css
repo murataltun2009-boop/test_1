@@ -284,6 +284,16 @@ select.coin:disabled{opacity:.5;cursor:progress}
 .wv{font-family:var(--mono);color:#dfe8f1}
 .wv.pos{color:#4ade80}
 .wv.neg{color:#ff6b6b}
+/* IZLEME panelinde AL/SAT/NÖTR rozeti (tiklanan mumun bar kararleri). */
+.wkarar{font-size:10px;font-weight:800;padding:0 5px;margin-left:6px;
+  border:1px solid currentColor;border-radius:8px;line-height:15px;
+  white-space:nowrap}
+/* Secilen mumun genel karari: panelin ustunde buyuk rozet. */
+.wkarar-big{font-size:12px;padding:1px 11px;border-radius:11px;
+  line-height:20px;margin-left:0}
+.wsum{display:flex;align-items:center;justify-content:space-between;
+  gap:8px;padding:3px 0;border-bottom:1px solid #16202c}
+.wsumk{font-size:9.5px;font-weight:800;letter-spacing:.6px;color:#8fb3d9}
 .wsec{font-size:9.5px;font-weight:800;letter-spacing:.5px;color:#8fb3d9;
   border-top:1px solid #16202c;margin-top:4px;padding-top:3px}
 .wbtn.on{background:#1f5a6b;color:#e0f7ff;font-weight:700}

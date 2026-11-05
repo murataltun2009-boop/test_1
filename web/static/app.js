@@ -146,10 +146,40 @@ if ("serviceWorker" in navigator) {
       chart.setOption({ series: patch });
     } catch (e) { /* grafik henuz hazir degilse sessiz gec */ }
   }
-  function watchRow(k, v, cls) {
+  function watchRow(k, v, cls, karar) {
     return '<div class="wrow"><span class="wk">' + k + '</span>' +
            '<span class="wv' + (cls ? " " + cls : "") + '">' + v +
-           "</span></div>";
+           "</span>" + kararChip(karar) + "</div>";
+  }
+  // Izleme panelinde AL/SAT/NÖTR rozeti: degerin saginda renkli chip.
+  function kararChip(k) {
+    if (!k || (k !== "Al" && k !== "Sat" && k !== "Nötr")) return "";
+    var kc = k === "Al" ? "d-buy" : (k === "Sat" ? "d-sell" : "d-neutral");
+    return '<span class="wkarar ' + kc + '">' + k + "</span>";
+  }
+  // Bolum basligina ozet: " (Al 2 · Sat 3 · Nötr 6)".
+  function kararOzet(vad) {
+    var c = countLabels(vad);
+    if (!c || (c.Al + c.Sat + c.Notr) === 0) return "";
+    return "  (Al " + c.Al + " · Sat " + c.Sat + " · Nötr " + c.Notr +
+           ")";
+  }
+  // Bilesik/aktif-algoritma karari: Signal degerleri BUYUK harf ve
+  // "GÜÇLÜ AL" olabilir; hepsini Al/Sat/Nötr rozetine cevir.
+  function sinyalChip(s) {
+    if (!s) return "";
+    var u = String(s).toUpperCase();
+    var cls = "d-neutral", ad = "Nötr";
+    if (u.indexOf("SAT") >= 0) { cls = "d-sell"; ad = "Sat"; }
+    else if (u.indexOf("AL") >= 0) { cls = "d-buy"; ad = "Al"; }
+    return '<span class="wkarar wkarar-big ' + cls + '">' + ad +
+           (u === ad.toUpperCase() ? "" : " · " + s) + "</span>";
+  }
+  // Algoritma kodunu okunur ada cevir (tk2 -> TİK2).
+  function modeAd(m) {
+    if (!m) return "ALGORİTMA";
+    var s = String(m).toUpperCase();
+    return s.indexOf("TK") === 0 ? "TİK" + s.slice(2) : s;
   }
   function watchSection(t) {
     return '<div class="wsec">' + t + "</div>";
@@ -165,16 +195,28 @@ if ("serviceWorker" in navigator) {
           "&ts=" + encodeURIComponent(ts)).then(function (r) {
       return r.json();
     }).then(function (j) {
-      if (mySeq !== watchFetching || !j || !j.ok) return;
+      // j.ok yoksa da devam et: alan yalnizca web/server.py katmaninda
+      // eklenir; servis dogrudan cagrildiginda bulunmaz. Sadece ACIK
+      // hata (ok === false) paneli engeller.
+      if (mySeq !== watchFetching || !j || j.ok === false) return;
       var html = "";
       // Oluşan bar tespiti: sunucu serisi istemciden uzun olabilir
-      // (j.index dogrudan kullanilamaz); mum ZAMANIyla kiyasla.
+      // (j.index dogrudan kullanilamaz). DIKKAT units: j.time MS,
+      // candle[0] SANIYE — kiyas oncesi x1000.
       var sonZaman = state.candles.length
         ? state.candles[state.candles.length - 1][0] : 0;
-      var olusuyor = sonZaman > 0 && j.time >= sonZaman;
+      var olusuyor = sonZaman > 0 && j.time >= sonZaman * 1000;
       html += watchSection("MUM · " +
         new Date(j.time).toLocaleString("tr-TR") +
         (olusuyor ? "  (oluşuyor)" : ""));
+      // SECILEN MUMUN KARARI: tek bakista gorunen buyuk rozet.
+      html += '<div class="wsum"><span class="wsumk">SEÇİLEN MUM KARARI</span>' +
+              sinyalChip(j.signal) + "</div>";
+      if (j.mode_signal) {
+        html += '<div class="wsum"><span class="wsumk">' +
+                modeAd(j.mode) + " KARARI</span>" +
+                sinyalChip(j.mode_signal) + "</div>";
+      }
       html += watchRow("Açılış", fmt(j.o)) + watchRow("En yüksek", fmt(j.h)) +
               watchRow("En düşük", fmt(j.l)) + watchRow("Kapanış", fmt(j.c)) +
               watchRow("Hacim", fmtVol(j.v));
@@ -185,20 +227,19 @@ if ("serviceWorker" in navigator) {
         j.osc_score >= 0 ? "pos" : "neg");
       html += watchRow("Ortalamalar ortalama", pctScore(j.ma_score),
         j.ma_score >= 0 ? "pos" : "neg");
-      html += watchRow("Bileşik kararı", j.signal);
-      html += watchRow("Algoritma kararı (" + j.mode + ")", j.mode_signal);
-      html += watchSection("OSİLATÖRLER");
+      html += watchSection("OSİLATÖRLER" + kararOzet(j.osc_vad));
       j.osc && Object.keys(j.osc).forEach(function (k2) {
-        html += watchRow(k2, fnum(j.osc[k2], 4));
+        html += watchRow(k2, fnum(j.osc[k2], 4), null, j.osc_vad && j.osc_vad[k2]);
       });
-      html += watchSection("HAREKETLİ ORTALAMALAR");
+      html += watchSection("HAREKETLİ ORTALAMALAR" + kararOzet(j.ma_vad));
       j.ma && Object.keys(j.ma).forEach(function (k2) {
         var v2 = j.ma[k2];
         var cls = "";
         if (v2 !== null && j.c !== null) {
           cls = Number(v2) < Number(j.c) ? "pos" : "neg";
         }
-        html += watchRow(k2, fnum(v2, 4), cls);
+        var ad = (j.ma_label && j.ma_label[k2]) ? j.ma_label[k2] : k2;
+        html += watchRow(ad, fnum(v2, 4), cls, j.ma_vad && j.ma_vad[k2]);
       });
       if (j.fib_leg && j.fib_theta !== null) {
         html += watchSection("AUTO FIB · " +
@@ -222,9 +263,11 @@ if ("serviceWorker" in navigator) {
           " · Nötr " + oc.Notr + "  (mum)";
       }
       if (j.ma) {
+        // MA degerleri KISA anahtarlarla gelir (ema10...); tam etiket
+        // ma_label haritasindan, karar ma_vad ile AYNI anahtardan.
         fillWatchRows(el.maTable, j.ma, function (k, v) {
           return fnum(v, 4);
-        }, j.ma_vad);
+        }, j.ma_vad, j.ma_label);
         var mc = countLabels(j.ma_vad);
         el.maCounts.textContent = "Al " + mc.Al + " · Sat " + mc.Sat +
           " · Nötr " + mc.Notr + "  (mum)";
@@ -718,15 +761,16 @@ if ("serviceWorker" in navigator) {
   // doldurdugu icin tiklanan mumun Al/Sat/Nötr sutunu degismiyordu;
   // bar_info artik bar bazina karari da dondurur, tablo da barin
   // deger+kari ile yeniden doldurulur.
-  function fillWatchRows(node, values, valText, variations) {
+  function fillWatchRows(node, values, valText, variations, labelMap) {
     var html = "";
     Object.keys(values).forEach(function (k) {
       var v = values[k];
+      var ad = (labelMap && labelMap[k]) ? labelMap[k] : k;
       var vad = (variations && variations[k]) ? variations[k] : "—";
       var cls = vad === "Al" ? "d-buy"
               : (vad === "Sat" ? "d-sell" : "d-neutral");
       var deger = valText ? valText(k, v) : fnum(v, 4);
-      html += '<div class="row"><span>' + k + "</span>" +
+      html += '<div class="row"><span>' + ad + "</span>" +
               '<span class="v">' + deger + "</span>" +
               '<span class="' + cls + '">' + vad + "</span></div>";
     });

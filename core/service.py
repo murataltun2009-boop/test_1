@@ -22,12 +22,30 @@ from typing import Any, Optional
 import numpy as np
 
 import config
-from core.analysis import (Signal, TimeframeAnalysis, analyze,
-                           format_number, _v)
+from core.analysis import (Signal, TimeframeAnalysis, analyze, format_number,
+                           ma_labels, _v)
 from core.binance_client import BinanceFuturesClient, Candle, Trade
 from core.paper import _kapali_mumlar
 
 logger = logging.getLogger("ta.service")
+
+# Izleme modu MA anahtar-eslemesi: res.ma_series anahtarlari KISALTMA
+# (ema10 / sma20 / ichimoku / vwma / hma), res.ma_codes anahtarlari TAM
+# etiket ("Basit Hareketli Ortalama(20)"). bar_info deger ve KARAR'i
+# AYNI anahtarla dondursun diye kisaltma -> tam etiket haritasi.
+# YALNIZCA KISALTMA anahtarlari (15 adet, ma_series ile birebir).
+_MA_LABELS = ma_labels()
+MA_LABEL_BY_KEY: dict[str, str] = {}
+for _lab in _MA_LABELS:
+    if _lab.startswith("Üstel Hareketli Ortalama ("):
+        MA_LABEL_BY_KEY["ema" + _lab[len("Üstel Hareketli Ortalama ("):-1]] = _lab
+    elif _lab.startswith("Basit Hareketli Ortalama("):
+        MA_LABEL_BY_KEY["sma" + _lab[len("Basit Hareketli Ortalama("):-1]] = _lab
+# Kuyruk: ma_labels() son ucunde sirayla İchimoku / VWMA / Hull.
+_k = _MA_LABELS[-3:]
+MA_LABEL_BY_KEY["ichimoku"] = _k[0]
+MA_LABEL_BY_KEY["vwma"] = _k[1]
+MA_LABEL_BY_KEY["hma"] = _k[2]
 
 # MURO/karar etiketlerini grafik Signal'ine cevirir. MURO "kapama"
 # aksiyonlarinda yildiz TERS yonde olmalidir (long kapat = sat, short
@@ -913,9 +931,20 @@ class MarketService:
                     osc_vad[lab] = _v(int(arr[idx])).label
         ma_vad = {}
         if res.ma_codes:
+            # MA kararlarini KISA anahtarla dondur (ma_series ayni
+            # anahtar); tarayici ma_label ile TAM etikete cevirir.
             for lab, arr in res.ma_codes.items():
-                if arr is not None and idx < arr.size:
-                    ma_vad[lab] = _v(int(arr[idx])).label
+                if arr is None or idx >= arr.size:
+                    continue
+                ma_vad[lab] = _v(int(arr[idx])).label
+        # Kisaltma anahtarlari birebir karar tasir:
+        #   bar_info["ma"]["ema10"]  <->  bar_info["ma_vad"]["ema10"]
+        ma_label = dict(MA_LABEL_BY_KEY)
+        ma_vad_kisa = {}
+        for lab_key, lab_full in ma_label.items():
+            if lab_full in ma_vad:
+                ma_vad_kisa[lab_key] = ma_vad[lab_full]
+        ma_vad = ma_vad_kisa
 
         # Akif algoritmanin o bardaki karari (cache'li mod serisi).
         try:
@@ -965,6 +994,7 @@ class MarketService:
             "ma": ma,
             "osc_vad": osc_vad,
             "ma_vad": ma_vad,
+            "ma_label": ma_label,
             "fib": {k: round(v, 6) for k, v in fib_out.items()},
             "fib_leg": leg_i,
             "fib_theta": theta_v,

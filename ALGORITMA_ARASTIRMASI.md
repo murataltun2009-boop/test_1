@@ -1524,3 +1524,57 @@ sw ta-v29.
 UI: index.html'e "TİK2 — yalnız-SHORT" modu eklendi; server.py (iki
 blok) + app.js aciklama metinleri ayri yazildi.
 
+### OTURUM 14 — İZLEME: seçilen mumun Al/Sat/Nötr kararı (görünürlük düzeltmesi)
+
+SIKAYET (tekrar eden): "izleme modunda seçilen noktanın al/sat/nötr
+durumunu göremiyorum". Onceki turlarda karar sunucuda bar-bazlı
+üretiliyordu ama kullanıcı panelde göremiyordu; iki ayri kök neden
+bulundu.
+
+1) YANLIŞ ANAHTAR EŞLEŞMESİ (MA kararları hiç chip üretmiyordu):
+   res.ma_series anahtarları KISALTMA (ema10, sma20, ichimoku, vwma,
+   hma), res.ma_codes anahtarları TAM Türkçe etiket ("Basit Hareketli
+   Ortalama(20)"). bar_info ma_vad'i tam etiketle döndürüyordu; istemci
+   j.ma[kisa] ile eşleştirdiği için 15 MA satırının HİÇBİRİNDE rozet
+   çıkmıyordu. Düzeltme: core/service.py'de MA_LABEL_BY_KEY (15 kısa
+   anahtar -> tam etiket); bar_info artık ma_vad'i KISALTMA anahtarla ve
+   ek ma_label haritasıyla döndürür. Böylece
+   bar_info["ma"]["ema10"] ile bar_info["ma_vad"]["ema10"] birebir
+   eşleşir; istemci tam etiketi yalnız GÖRÜNTÜ için ma_label'dan alır.
+   (Yıldız/skor hesabına dokunulmadı; yalnız okuma/eşleme.)
+
+2) BAYAT İSTEMCİ KODU (cache-first service worker):
+   SW statik varlıkları cache-first veriyor; tek yenilemede eski
+   app.js çalışıyordu. Düzeltme: index.html app.js/style.css
+   referansları ?v=34 sürüm parametresiyle yüklenir (sorgu dizesi
+   cache.match anahtarını değiştirdiği için eski SW bile ağdan taze
+   dosyayı çeker), sw.js PRECACHE'i de aynı ?v=34 URL'lerini önbelleğe
+   alır ve VERSION ta-v34 olur. skipWaiting() BİLİNÇLİ OLARAK
+   KULLANILMADI: canlı işlem sırasında sayfayı yarıda yenilememesi için
+   sw.js tasarım notu korunur; yeni SW bir sonraki tam açılışta devreye
+   girer, ?v= parametresi ise kodu hemen tazeler.
+
+3) GÖRÜNÜRLÜK (kullanıcının asıl istediği tek bakışta karar):
+   İzleme panelinin en üstüne "SEÇİLEN MUM KARARI" + "TİK2 KARARI"
+   satırları eklendi; değer, büyük renkli rozetle gösterilir
+   (yeşil Al / kırmızı Sat / gri Nötr). Signal değerleri büyük harf ve
+   "GÜÇLÜ AL" olabildiği için sinyalChip() bunları da Al/Sat/Nötr'e
+   normalize eder. Ayrıca her osilatör ve MA satırının sağında küçük
+   .wkarar rozeti, bölüm başlıklarında "(Al x · Sat y · Nötr z)" özeti
+   ve tablo sayaçlarında "(mum)" etiketi vardır.
+
+4) BAR SEÇİMİ: chartClickToBar, convertFromPixel'ın kategori ekseninde
+   İNDEKS döndürmesi nedeniyle hep en eski mumu seçiyordu. Artık
+   dataZoom penceresi + grid slot geometrisiyle (62 px sol / 86 px sağ,
+   slot = plot genişliği / görünen mum) hesaplanır. "(oluşuyor)" etiketi
+   j.time (ms) ile candle[0] (sn) karşılaştırmasındaki birim hatası
+   düzeltilerek x1000 ile yapılır.
+
+DOGRULAMA: test_paper 90/90 (İZLEME testi yeni ma_vad/ma_label yapısına
+göre: her osilatör ve MA için tiklanan bar 75 ve 60'ın kararı
+doğrulanır), test_tk2 TAMAM, test_tk_fix 37/37, node --check app.js OK,
+py_compile OK. Canlı tarayıcı (localhost:8741): panelde 11 osilatör +
+15 MA = 26 renkli rozet, bölüm özetleri ve tablo sayaçları doğru;
+tooltip ile seçilen mum birebir eşleşir. sw ta-v34, ?v=34.
+
+
