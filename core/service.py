@@ -26,6 +26,7 @@ from core.analysis import (Signal, TimeframeAnalysis, analyze, format_number,
                            ma_labels, _v)
 from core.binance_client import BinanceFuturesClient, Candle, Trade
 from core.paper import _kapali_mumlar
+from core import tk2_rules
 
 logger = logging.getLogger("ta.service")
 
@@ -618,7 +619,7 @@ class MarketService:
             price = self._live_price
         if price != price or price <= 0:      # NaN veya gecersiz
             price = candles[-1].close
-        signal = self._signal_for_mode(res, candles)
+        signal = self._signal_for_mode(res, candles, tf)
         try:
             self.paper.on_price(price, candles, tf, signal)
         except Exception as exc:      # noqa: BLE001
@@ -669,7 +670,8 @@ class MarketService:
 
     # ------------------------------------------------------------------
     def _signal_for_mode(self, res: "TimeframeAnalysis | None",
-                         candles: Optional[list] = None) -> str | None:
+                         candles: Optional[list] = None,
+                         tf: Optional[str] = None) -> str | None:
         """
         Karar mekanizmasina göre SINYAL kaynagini secer.
 
@@ -762,6 +764,25 @@ class MarketService:
             return karar[-1] if karar else None
         if mode == "muro":
             return self._muro_action(res, candles)
+        if mode == "tk2":
+            # TİK2 (kullanici kurali 2026-11-06): karar, kural
+            # listesinden (osilator + MA ciftleri) uretilir. Yalnizca
+            # KAPANMIS son bar okunur — motor okumasi bar bazlidir.
+            cs = _kapali_mumlar(candles or [])
+            if not cs:
+                return None
+            idx = len(cs) - 1
+            # Ayni analiz versiyonu icin seri zaten cache'li: her tikte
+            # 74 satiri yeniden hesaplamak yerine cache'ten oku.
+            if tf:
+                try:
+                    seri = self.mode_signal_series(tf)
+                    if idx < len(seri):
+                        return seri[idx].value
+                except Exception:      # noqa: BLE001
+                    pass
+            seri = tk2_rules.series(res.osc_codes, res.ma_codes)
+            return seri[idx] if idx < len(seri) else None
         if mode == "tk":
             # YILDIZ SETTLE (2026-10-28 kullanici kurali): yildiz OLUSAN
             # bar icinde belirip kaybolabilir (tik ruzgarlari); pozisyon
@@ -818,6 +839,7 @@ class MarketService:
           1m           : 1m modu karar serisi (ayni decide_series)
           ppt          : PP-Supertrend karar serisi (core/ppst.py)
           muro         : muro.actions serisi (kapama ters yonde yildiz)
+          tk2          : kullanici kural listesi (core/tk2_rules.py)
 
         Seri analizin AKTIF versiyonu icin cache'lenir; her tik
         yeniden hesaplanmaz.
@@ -848,6 +870,12 @@ class MarketService:
                 res.oscillator_scores,
                 config.PAPER_OSC_BASE_THRESHOLD,
                 config.PAPER_OSC_STRONG_THRESHOLD)
+        elif mode == "tk2":
+            # TİK2 kural serisi: AL/SAT/NÖTR -> grafik yildizlari.
+            # Karar kaynagi core/tk2_rules.py; gosterge hesaplari OKUNUR.
+            karar = tk2_rules.series(res.osc_codes, res.ma_codes)
+            series = [_LABEL_TO_SIGNAL.get(k, Signal.NEUTRAL)
+                      for k in karar]
         else:
             series = list(res.signals)
 

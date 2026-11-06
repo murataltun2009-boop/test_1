@@ -1618,4 +1618,61 @@ DOGRULAMA: test_tk2'ye senaryo 11 eklendi (TİK2 offset 0, TK1 offset
 (5/5 dilim pozitif). sw ta-v34.
 
 
+### OTURUM 16 — TİK2 karar kaynağı: kullanıcı osilatör+MA kural listesi (2026-11-06)
 
+KULLANICI KURALI: Grafik oluşturma ve gösterge hesapları AYNEN kalacak;
+TİK2 pozisyon aç/kapa kararı, verilen 74 satırlık listeden üretilecek.
+Her satırda bir DURUM (AL/SAT), osilatör kümesi ve hareketli ortalama
+kümesi var. SAT = SHORT, AL = LONG. Bir satırın geçerli olması için o
+satırdaki TÜM osilatörler ve TÜM MA'lar satırın yönünde olmalı; satırlar
+arası VEYA. Aynı barda AL ve SAT satırı birlikte tutarsa NÖTR (çakışma
+-> işlem yok). Aç/kapa sonrası 2 DAKİKA bekleme. Giriş/çıkış limit
+(maker) — komisyon düşük.
+
+UYGULAMA:
+  * `core/tk2_rules.py`: 74 satır normalize edilmiş kural tablosu
+    (25 AL / 49 SAT, 43 tekil). Yazım hataları eşlendi:
+    NUTHIS→MÜTHİŞ, SKOTASTİK→STOKASTİK, WILLAMS→WILLIAMS,
+    HACIM AGIRLIK(I)→HACIM AGIRLIKLI, BOGA GUCU→BOĞA AYI,
+    EMTİA/EMTİA KANAL ENDEKS→CCI, NİHAİ→Nihai Osilatör.
+    MA grupları: ÜSTEL=6 EMA, BASİT=6 SMA, HULL=Hull(9),
+    HACİM AĞIRLIKLI=VWMA(20), HAREKETLİ HEPSİ=15 MA.
+  * `paper._build_signal_series` mode=="tk2": `tk2_rules.series(
+    res.osc_codes, res.ma_codes)` — analyze() çıktısı yalnız OKUNUR.
+  * `paper._tk2_karar`: AL→+1 (LONG), SAT→−1 (SHORT), NÖTR→0 (kapat).
+  * `service.mode_signal_series` ve `_signal_for_mode`: tk2 kural
+    serisini kullanır; grafik yıldızları ve izleme panelindeki
+    `mode_signal` aynı kararı gösterir.
+  * TİK2 giriş kapıları kaldırıldı: LONG yasağı, ribbon/trend yönü,
+    require_trend ve mum-yönü kapıları artık TİK2'de uygulanmaz —
+    tek karar kaynağı kural listesidir. Stop %0,5, banka %3,5 +
+    R:R×1,8, fraksiyon %50, SAR/ribbon-flip kapalı, seri/seviye
+    hafızası, maker giriş/çıkış AYNEN korundu.
+  * `config.PAPER_TK2_AFTER_SEC = 120`; configure() tk2 dalında
+    `tk_after_ms` bu değerden okunur (TK1 60 sn kalır).
+
+KURAL KAPSAMI (BTCUSDT, son 500 mum, gerçek veri):
+  dilim   AL      SAT     NÖTR    ort. koşu   ort. sinyal
+  4h     23,8%   44,8%   31,4%   2,2 bar     2,5 bar
+  1h     22,0%   44,6%   33,4%   2,0 bar     2,2 bar
+  15m    22,0%   44,4%   33,6%   2,2 bar     2,2 bar
+  5m     20,0%   42,6%   37,4%   2,0 bar     2,1 bar
+  1m     17,6%   41,0%   41,4%   2,1 bar     2,2 bar
+
+GERİYE DÖNÜK TEST (aynı 500 bar, 1000$, 10x, %80 teminat):
+  4h  +833,69$ (+%83,37) / 80 işlem / %55 kazanma
+  1h  +477,52$ (+%47,75) / 56 işlem / %62
+  15m   −5,01$ (−%0,50)  / 50 işlem / %44
+  5m   +25,83$ (+%2,58)  / 44 işlem / %36
+  1m    +5,91$ (+%0,59)  / 29 işlem / %45
+  (Tek pencere ölçümü; kullanıcı kuralı sabit olduğu için parametre
+  taraması yapılmadı.)
+
+DOĞRULAMA: `test_tk2.py` yeni kural setine göre yeniden yazıldı —
+43/43 (tablo 74 satır, AL/SAT/NÖTR/çakışma, LONG/SHORT/kapat, 2 dk
+bekleme açılış ve kapanışta, maker komisyon, kapı bypass, backtest
+serisi = kural serisi, service.mode_signal_series/bar_info/canlı sinyal).
+`test_paper` 90/90, `test_tk_fix` 37/37, `py_compile` ve
+`node --check app.js` temiz. Gösterge/grafik kodu değişmedi; sw ta-v35
+(app.js/index.html metinleri: TİK2 artık yalnız-SHORT değil, kural
+listesi).

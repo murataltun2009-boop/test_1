@@ -1312,21 +1312,18 @@ if ("serviceWorker" in navigator) {
           + "(mult 3,5 · pull 1,0 ATR · risk %3 · kilit %2)"
         : "") +
       (tik2
-        ? " · TİK2 yalnız-SHORT kuralı: SADECE SHORT yapar, LONG hiç "
-          + "açılmaz; kırmızı yıldız→SHORT açar, kırmızı kaldıkça "
-          + "pozisyonda kalır; gri yıldız→pozisyonu KAPATIR (gri "
-          + "doğumlu short gri dizisi boyunca kalır); yeşil yıldız→"
-          + "işlem açmaz, bekler, YEŞILDEN SONRA gelen gri SHORT açar; "
-          + "aç/kapa LIMIT (maker); her işlem sonrası 1 dk bekleme; "
+        ? " · TİK2 kural listesi: osilatör+hareketli ortalama çiftleri; AL→LONG, SAT→SHORT, NÖTR→açık pozisyonu KAPATIR; "
+          + "bir satırın geçerli olması için o satırdaki TÜM osilatörler ve "
+          + "TÜM MA'lar aynı yönde olmalı (satırlar arası VEYA; aynı "
+          + "barda AL+SAT çakışırsa NÖTR); aç/kapa LIMIT (maker); her "
+          + "işlem sonrası 2 dk bekleme; "
           + "pozisyon boyu cüzdan fraksiyonunun %50'si; kâr bankası: "
           + "açık pozisyon kârı bakiyenin %3,5'ine (en az stop riski "
           + "×1,8) ulaşınca cüzdana yazılır (maker); zarar sonrası 3 "
           + "bar aynı yönde yeni giriş yok; arka arkaya 2 zarar 10 bar "
           + "tüm-yön fren yapar, zarar edilen giriş seviyesine yakın "
           + "aynı yönde 15 bar tekrar girilmez (piyasa hafızası); "
-          + "trend yoksa giriş yok; giriş sinyal fiyatının %0,10 "
-          + "gerisine konan pullback limitinin dolmasıyla olur; "
-          + "stop→ters ve ribbon-flip devre dışı (LONG açabilirler)"
+          + "stop→ters ve ribbon-flip devre dışı (kural dışı yön üretmemeli)"
         : "") +
       (tik
         ? " · TİK yıldız kuralı: yeşil yıldız→LONG, kırmızı yıldız→"

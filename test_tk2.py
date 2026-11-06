@@ -1,18 +1,33 @@
 # -*- coding: utf-8 -*-
-"""TİK2 — YALNIZ-SHORT yildiz durum makinesi testi (2026-11-02).
+"""TİK2 — KULLANICI KURAL LİSTESİ testi (2026-11-06).
 
-Kullanici kurali:
-  * Kirmizi yildiz (SAT/GÜÇLÜ SAT): SHORT ac / kirmizi surekli SHORT'ta kal.
-  * Gri yildiz (NÖTR): pozisyonu KAPATIR (kirmizi-dogumlu short).
-  * Yesil yildiz (AL/GÜÇLÜ AL): islem ACMAZ, bekler.
-  * Yesilden SONRA gri gelirse: SHORT acar.
-  * HICBIR kosulda LONG acilmaz.
+Kullanıcı kuralı:
+  * Karar kaynağı `core/tk2_rules.py` kural tablosudur: her satırda
+    osilatör(ler) + hareketli ortalama(lar) AYNI yönde ise sinyal.
+  * AL = LONG, SAT = SHORT, NÖTR = pozisyonu kapat.
+  * Satırlar arası VEYA; aynı barda AL+SAT çakışırsa NÖTR.
+  * Pozisyon aç/kapa sonrası 2 DAKİKA bekleme.
+  * Giriş/çıkış LIMIT (maker) — komisyon düşük.
+  * Gösterge hesapları ve grafik üretimi DEĞİŞMEZ.
+
+Not: Bu dosya pytest değil, düz Python betiğidir:
+    python test_tk2.py
 """
+import math
 import sys
 
 sys.path.insert(0, ".")
 
+import numpy as np   # noqa: E402
+
+import config        # noqa: E402
+from core import tk2_rules   # noqa: E402
+from core.analysis import (OSCILLATOR_LABELS, analyze,   # noqa: E402
+                           ma_labels)
 from core.paper import PaperTrader   # noqa: E402
+
+_GECEN = 0
+_KALAN = 0
 
 
 class C:
@@ -23,12 +38,18 @@ class C:
         s.close = close
         s.high = max(open_, close) * 1.0001
         s.low = min(open_, close) * 0.9999
+        s.volume = 1.0
+        s.close_time = t + 59_999
 
 
 def kontrol(ad, kosul):
-    if not kosul:
-        raise AssertionError("GECMEDI: " + ad)
-    print("  GECTI ", ad)
+    global _GECEN, _KALAN
+    if kosul:
+        _GECEN += 1
+        print("  GECTI ", ad)
+    else:
+        _KALAN += 1
+        print("  KALDI ", ad)
 
 
 def tk(**kw):
@@ -38,8 +59,8 @@ def tk(**kw):
     p.tk_on = True
     p.tk_tp = 0.0
     p.tk_be = False
-    p.tk_require_trend = False      # yildiz-kurali testleri izole
-    p.tk_entry_offset = 0.0         # aninda giris (tik testi)
+    p.tk_require_trend = True       # TİK2'de kapı BYPASS edilmeli
+    p.tk_entry_offset = 0.0
     p.tk_pause_bars = 0
     p.tk_streak_n = 0
     p.tk_level_ban = 0.0
@@ -53,195 +74,257 @@ def tk(**kw):
     return p
 
 
-# Bar matrisi: T_i = i daki bar; her "Adim icinde bir bar kapanir".
-T0 = 0
-
-
 def barlar(n):
-    # KIRMIZI mumlar (close < open): mum-yonu kapisi SHORT girişini
-    # engellemesin izole-test amaçlı.
-    m = [C(i * 60_000, 0.1, 0.1002) for i in range(60)]
-    return m
+    return [C(i * 60_000, 0.1, 0.1002) for i in range(n)]
 
 
 def yildiz_var(p, m, yildiz, also_mum=None):
-    """Yeni bar kapandi: yerlesen yildizi gunceller, tik verir."""
+    """Yeni bar kapat + tick ver (canlı akış)."""
     t = int(m[-1].open_time) + 60_000
     px = float(m[-1].close) if also_mum is None else float(also_mum)
-    op = px * 1.0002
-    m.append(C(t, px, op))
+    m.append(C(t, px, px * 1.0002))
     return p.on_price(px, m, "1m", yildiz)
 
 
-# ------------------------------------------------------------------
-# 1) Kirmizi -> SHORT acilir
-# ------------------------------------------------------------------
-p1 = tk()
-m1 = barlar(60)
-ev = yildiz_var(p1, m1, "SAT")
-kontrol("1 kirmizi yildiz SHORT acti",
-        p1.position is not None and p1.position.side == "SHORT")
+# ==================================================================
+# 1) KURAL TABLOSU: 74 satır, 25 AL / 49 SAT, etiketler geçerli
+# ==================================================================
+print("1) Kural tablosu")
+s = tk2_rules.summary()
+kontrol("1.1 74 satır", s["rows"] == 74)
+kontrol("1.2 25 AL / 49 SAT", s["al"] == 25 and s["sat"] == 49)
+kontrol("1.3 tüm osilatör etiketleri analysis ile uyumlu",
+        all(o in OSCILLATOR_LABELS for o in s["oscillators"]))
+kontrol("1.4 tüm MA etiketleri analysis ile uyumlu",
+        all(m in ma_labels() for m in s["mas"]))
+kontrol("1.5 HAREKETLİ HEPSİ = 15 MA",
+        len(tk2_rules.MA_GROUPS["ALL"]) == 15)
+kontrol("1.6 USTEL+BASIT+HULL = 13 MA",
+        len(tk2_rules.MA_GROUPS["EMA"]) +
+        len(tk2_rules.MA_GROUPS["SMA"]) +
+        len(tk2_rules.MA_GROUPS["HULL"]) == 13)
 
-# ------------------------------------------------------------------
-# 2) Kirmizi devam -> SHORT'ta KALIR (yeni islem acilmaz)
-# ------------------------------------------------------------------
-n2 = len(p1.trades)
-ev = yildiz_var(p1, m1, "GÜÇLÜ SAT")
-kontrol("2 kirmizi devami: pozisyon KALDI",
-        p1.position is not None and p1.position.side == "SHORT")
-kontrol("2 kirmizi devami: YENI islem acilmadi", len(p1.trades) == n2)
 
-# ------------------------------------------------------------------
-# 3) Gri -> pozisyon KAPATIR; ters (LONG) acilmaz
-# ------------------------------------------------------------------
-ev = yildiz_var(p1, m1, "NÖTR")
-kontrol("3 gri: pozisyon kapandi", p1.position is None)
-kontrol("3 gri: islem kapanis kaydi SHORT", len(p1.trades) == n2 + 1 and
-        p1.trades[-1].side == "SHORT")
-mask = [t.side for t in p1.trades]
-kontrol("3 gri: HIC LONG yok", all(s == "SHORT" for s in mask))
+# ==================================================================
+# 2) KURAL SERİSİ: AL / SAT / NÖTR / çakışma
+# ==================================================================
+print("2) Kural serisi")
 
-# ------------------------------------------------------------------
-# 4) Yesil (pozisyon yok) -> islem acmaz, bekler
-# ------------------------------------------------------------------
-n4 = len(p1.trades)
-ev = yildiz_var(p1, m1, "AL")
-kontrol("4 yesil: pozisyon yok", p1.position is None)
-ev = yildiz_var(p1, m1, "GÜÇLÜ AL")
-kontrol("4 yesil devami: islem acilmadi", len(p1.trades) == n4 and
-        p1.position is None)
-kontrol("4 yesil devami: gri-TERS kurali CALISMAZ",
-        p1.tk_hedef == 0)
 
-# ------------------------------------------------------------------
-# 5) Yesil -> gri: SHORT acar
-# ------------------------------------------------------------------
-ev = yildiz_var(p1, m1, "NÖTR")
-kontrol("5 yesil→gri: SHORT acildi",
-        p1.position is not None and p1.position.side == "SHORT")
-# gri dizisi boyunca gri-dogumlu short KALIR
-ev = yildiz_var(p1, m1, "NÖTR")
-kontrol("5 gri-dogumlu gri devami: KALDI", p1.position is not None)
-# yesil geri gelir: gri-dogumlu short kapanir
-ev = yildiz_var(p1, m1, "AL")
-kontrol("5 yesil geri geldi: gri-dogumlu short kapandi",
-        p1.position is None)
-# sonra tekrar gri: yesil→gri kacisi → SHORT tekrar acilir
-ev = yildiz_var(p1, m1, "NÖTR")
-kontrol("5 tekrar yesil→gri: SHORT acildi",
-        p1.position is not None and p1.position.side == "SHORT")
+def seri(osc_up=(), osc_dn=(), ma_up=(), ma_dn=()):
+    """Sentetik kod serisi: verilen kısa adları +1 / -1 yapar."""
+    n = 4
+    osc = {lab: np.zeros(n, dtype=np.int8) for lab in OSCILLATOR_LABELS}
+    ma = {lab: np.zeros(n, dtype=np.int8) for lab in ma_labels()}
+    for ad in osc_up:
+        osc[tk2_rules.OSC_BY_ALIAS[ad]] = np.full(n, 1, dtype=np.int8)
+    for ad in osc_dn:
+        osc[tk2_rules.OSC_BY_ALIAS[ad]] = np.full(n, -1, dtype=np.int8)
+    for ad in ma_up:
+        for lab in tk2_rules.MA_GROUPS[tk2_rules.MA_GROUP_BY_ALIAS[ad]]:
+            ma[lab] = np.full(n, 1, dtype=np.int8)
+    for ad in ma_dn:
+        for lab in tk2_rules.MA_GROUPS[tk2_rules.MA_GROUP_BY_ALIAS[ad]]:
+            ma[lab] = np.full(n, -1, dtype=np.int8)
+    return tk2_rules.series(osc, ma)
 
-# ------------------------------------------------------------------
-# 6) LONG garantisi: kirmizi-dogumlu short kapanip yesil+gri
-#    dizisinden gecse bile tum islemler SHORT
-# ------------------------------------------------------------------
-p6 = tk()
-m6 = barlar(60)
-yildiz_var(p6, m6, "GÜÇLÜ SAT")          # short
-yildiz_var(p6, m6, "NÖTR")               # kapandi
-yildiz_var(p6, m6, "GÜÇLÜ AL")           # yesil: bekler
-yildiz_var(p6, m6, "NÖTR")               # yesil→gri: SHORT acar
-kontrol("6 son giris SHORT", p6.position is not None and
-        p6.position.side == "SHORT")
-mask6 = [t.side for t in p6.trades]
-kontrol("6 hic LONG yok", all(s == "SHORT" for s in mask6))
-kontrol("6 geleneksel gri-TERS hedefi YOK (+1 kurulmaz)",
-        p6.tk_hedef <= 0)
 
-# ------------------------------------------------------------------
-# 7) Ribbon pin TİK2 hedefe DOKUNMAZ (+1 kurmaz); ama trend-yön
-#    kapısı YÜKSELİŞ diziliminde kırmızı-short girişini yine engeller
-#    (koruma, TİK1 ile aynı)
-# ------------------------------------------------------------------
-p7 = tk()
-m7 = []
-px7 = 0.1
-for i in range(300):
-    op = px7
-    px7 = op * 1.002
-    m7.append(C(i * 60_000, px7, op))
-assert p7._tk_ribbon(m7) == 1          # yukselis dizilimi
-ev = yildiz_var(p7, m7, "SAT")
-kontrol("7 ribbon pin calismaz (hedef +1 DEGIL)", p7.tk_hedef <= 0)
-kontrol("7 yukselis diziliminde kirmizi giris ENGELLENDI (koruma)",
-        p7.position is None)
-kontrol("7 ribbon flip kapali", p7.tk_ribbon_flip is False)
-# dusus dizilimine gectikten sonra kirmizi giris acilir
-for i in range(60):
-    opc = px7
-    px7 = opc * 0.985
-    m7.append(C(int(m7[-1].open_time) + 60_000, px7, opc))
-assert p7._tk_ribbon(m7) == -1
-ev = yildiz_var(p7, m7, "SAT")
-kontrol("7 dusus diziliminde kirmizi: SHORT acildi",
-        p7.position is not None and p7.position.side == "SHORT")
-ev = yildiz_var(p7, m7, "NÖTR")
-kontrol("7 gri: short kapandi; LONG'a cevrilmedi", p7.position is None)
+kontrol("2.1 boş kodlar -> NÖTR", seri() == ["NÖTR"] * 4)
+kontrol("2.2 EMTIA+HULL sat -> SAT",
+        seri(osc_dn=("EMTIA",), ma_dn=("HULL",)) == ["SAT"] * 4)
+kontrol("2.3 EMTIA+HULL al -> AL",
+        seri(osc_up=("EMTIA",), ma_up=("HULL",)) == ["AL"] * 4)
+# Satır 1 (SAT MACD + EMA/SMA/HULL) ile satır 46 (SAT MOMENTUM/MACD + VWMA)
+# aynı anda tutabilir; VWMA tek başına yön belirler.
+kontrol("2.4 SAT çoklu MA (EMA+SMA+HULL) -> SAT",
+        seri(osc_dn=("MACD",),
+             ma_dn=("USTEL HAREKETLI", "BASIT HAREKETLI", "HULL"))
+        == ["SAT"] * 4)
+# ÇAKIŞMA: satır 6 (AL STOKR+WILLIAMS+HULL) ve satır 46 (SAT
+# MOMENTUM+MACD+VWMA) aynı barda tutar -> NÖTR.
+kontrol("2.5 AL+SAT çakışması -> NÖTR",
+        seri(osc_up=("STOKASTIK RSI HIZLI", "WILLIAMS"),
+             osc_dn=("MOMENTUM", "MACD"),
+             ma_up=("HULL",), ma_dn=("HACIM AGIRLIKLI",))
+        == ["NÖTR"] * 4)
+# AL satırı eksik bileşen (yalnız HULL) tutmaz.
+kontrol("2.6 eksik bileşen -> NÖTR",
+        seri(ma_up=("HULL",)) == ["NÖTR"] * 4)
 
-# ------------------------------------------------------------------
-# 8) SAR: stop-out sonrasi ters cevirme LONG acamaz (düz kapanis)
-# ------------------------------------------------------------------
-p8 = tk()
-m8 = barlar(60)
-ev = yildiz_var(p8, m8, "SAT")
-p8.position.tk_stop = 0.0999
-ev = yildiz_var(p8, m8, "SAT", also_mum=0.09989)   # stop dogar
-kontrol("8 stop sonrasi pozisyon kapandi", p8.position is None)
-kontrol("8 stop ters cevirme engelli (SAR yok)",
-        p8.tk_sar is False and p8.tk_hedef != 1)
-mask8 = [t.side for t in p8.trades]
-kontrol("8 stop sonrasi hic LONG yok", all(s == "SHORT" for s in mask8))
 
-# ------------------------------------------------------------------
-# 9) Varlik: banka kapanisi hala calisir (cuzdana yazar)
-# ------------------------------------------------------------------
-p9 = tk(tk_bank_pct=0.035)
-m9 = barlar(60)
-ev = yildiz_var(p9, m9, "SAT")
-p9.position.tk_stop = 0.0999
-p9.position.tk_tp = 0.0
-ev = yildiz_var(p9, m9, "SAT", also_mum=0.0960)    # SHORT kâr: fiyat DUSER
-kontrol("9 banka kapanisi calisir", p9.position is None and
-        any("bank" in (t.exit_reason or "").lower()
-            for t in p9.trades))
+# ==================================================================
+# 3) MOTOR: AL=LONG, SAT=SHORT, NÖTR=kapat
+# ==================================================================
+print("3) Motor yönleri")
+p3 = tk()
+m3 = barlar(60)
+yildiz_var(p3, m3, "AL")
+kontrol("3.1 AL -> LONG açıldı",
+        p3.position is not None and p3.position.side == "LONG")
+n3 = len(p3.trades)
+yildiz_var(p3, m3, "AL")
+kontrol("3.2 AL devamı: yeni işlem yok",
+        len(p3.trades) == n3 and p3.position is not None)
+yildiz_var(p3, m3, "SAT")
+kontrol("3.3 SAT -> LONG kapandı", p3.position is None)
+kontrol("3.4 kapanış kaydı LONG",
+        len(p3.trades) == n3 + 1 and p3.trades[-1].side == "LONG")
+yildiz_var(p3, m3, "SAT")
+kontrol("3.5 SAT -> SHORT açıldı",
+        p3.position is not None and p3.position.side == "SHORT")
+yildiz_var(p3, m3, "NÖTR")
+kontrol("3.6 NÖTR -> SHORT kapandı", p3.position is None)
+kontrol("3.7 NÖTR ters pozisyon (LONG) açmadı",
+        len(p3.trades) == n3 + 2 and p3.trades[-1].side == "SHORT")
 
-# ------------------------------------------------------------------
-# 10) Kirmizi MUM dokumende short, gri mum: mum-yon capasi SHORT
-#     girisini mum-uyusmazligina teslim eder (taze-ST gate): kirmizi
-#     yildiz + yukselen mum -> giris BEKLETILIR (TK1 hattinin kapisi)
-# ------------------------------------------------------------------
-p10 = tk()
-m10 = barlar(60)
-t10 = int(m10[-1].open_time) + 60_000
-m10.append(C(t10, 0.1001, 0.1000))    # yukselen mum
-ev = p10.on_price(0.1001, m10, "1m", "SAT")
-kontrol("10 yesil mume kirmizi yildiz: giris ertelendi (poz yok)",
-        p10.position is None and p10.tk_pend_entry is None)
-t10 += 60_000
-m10.append(C(t10, 0.1000, 0.1002))    # kirmizi mum: uyusuma tamam
-ev = p10.on_price(0.1000, m10, "1m", "SAT")
-kontrol("10 kirmizi mume kirmizi yildiz: SHORT acildi",
-        p10.position is not None and p10.position.side == "SHORT")
 
-# ------------------------------------------------------------------
-# 11) GIRIS DOLUMU (2026-11-06): TİK2 aninda girer (offset 0), TK1
-#     pullback limitini korur. Yildiz hesabi degismez.
-# ------------------------------------------------------------------
-import config as _cfg   # noqa: E402
-
-p11 = PaperTrader("BTCUSDT")
-p11.configure(balance=1000.0, leverage=10, fee_rate=0.0005,
+# ==================================================================
+# 4) 2 DAKİKA BEKLEME (1m barlarda tam 2 bar)
+# ==================================================================
+print("4) 2 dakika bekleme")
+p4c = PaperTrader("DOGEUSDT")
+p4c.configure(balance=1000.0, leverage=10, fee_rate=0.0005,
               wallet_fraction=0.8, mode="tk2", risk_pct=0.03)
-kontrol("11 TİK2 giris offseti 0 (aninda)",
-        abs(p11.tk_entry_offset) < 1e-12)
-kontrol("11 TİK2 offseti config'ten bagimsiz 0",
-        float(getattr(_cfg, "PAPER_TK2_ENTRY_OFFSET", 0.0)) == 0.0)
+kontrol("4.1 configure tk2 -> 120 sn",
+        p4c.tk_after_ms == 120_000.0 ==
+        config.PAPER_TK2_AFTER_SEC * 1000.0)
+p4 = tk(tk_after_ms=config.PAPER_TK2_AFTER_SEC * 1000.0)
+m4 = barlar(60)
+yildiz_var(p4, m4, "AL")              # LONG aç (bar T)
+kontrol("4.2 ilk LONG açıldı", p4.position is not None)
+yildiz_var(p4, m4, "SAT")             # T+1: kapanış da beklemeye tabi
+kontrol("4.3 açılıştan 1 dk sonra kapanış BEKLER (pozisyon kaldı)",
+        p4.position is not None)
+yildiz_var(p4, m4, "SAT")             # T+2: bekleme doldu -> kapat
+kontrol("4.4 2 dk sonra SAT kapattı", p4.position is None)
+yildiz_var(p4, m4, "AL")              # T+3: kapanıştan 1 dk sonra
+kontrol("4.5 kapanıştan 1 dk sonra giriş YOK", p4.position is None)
+yildiz_var(p4, m4, "AL")              # T+4: 2 dk doldu
+kontrol("4.6 2 dk sonra LONG açıldı",
+        p4.position is not None and p4.position.side == "LONG")
 
-p11b = PaperTrader("BTCUSDT")
-p11b.configure(balance=1000.0, leverage=10, fee_rate=0.0005,
-               wallet_fraction=0.8, mode="tk", risk_pct=0.03)
-kontrol("11 TK1 pullback offseti KORUNDU (-0.001)",
-        abs(p11b.tk_entry_offset - float(_cfg.PAPER_TK_ENTRY_OFFSET)) < 1e-12)
 
-print("-" * 62)
-print(f"TAMAM — TİK2 senaryolari gecti")
+# ==================================================================
+# 5) LİMİT (maker) GİRİŞ/ÇIKIŞ: komisyon maker oranında
+# ==================================================================
+print("5) Maker komisyon")
+p5 = tk()
+m5 = barlar(60)
+yildiz_var(p5, m5, "AL")
+fee_bek = p5.position.qty * p5.position.entry * config.PAPER_MAKER_RATE
+kontrol("5.1 giriş maker komisyonu",
+        abs(p5.position.fee_open - fee_bek) < 1e-9)
+yildiz_var(p5, m5, "NÖTR")
+t5 = p5.trades[-1]
+fee_cik = t5.qty * t5.exit * config.PAPER_MAKER_RATE
+kontrol("5.2 çıkış maker komisyonu", abs(t5.fee_close - fee_cik) < 1e-9)
+
+
+# ==================================================================
+# 6) RİBBON/TREND/MUM KAPILARI TİK2'DE BYPASS (kural tek kaynak)
+# ==================================================================
+print("6) Filtre kapıları bypass")
+p6 = tk()
+m6 = []
+px6 = 0.1
+for i in range(300):                  # yükseliş dizilimi (ribbon +1)
+    op = px6
+    px6 = op * 1.002
+    m6.append(C(i * 60_000, px6, op))
+kontrol("6.1 ribbon yükseliş", p6._tk_ribbon(m6) == 1)
+yildiz_var(p6, m6, "SAT")
+kontrol("6.2 yükselişte SAT -> SHORT açılır (kapı yok)",
+        p6.position is not None and p6.position.side == "SHORT")
+yildiz_var(p6, m6, "AL")              # önce SHORT'u kapatır
+kontrol("6.3a AL -> SHORT kapandı", p6.position is None)
+yildiz_var(p6, m6, "AL")              # sonraki tick: LONG açar
+kontrol("6.3 düşen mumda AL -> LONG açılır (mum kapısı yok)",
+        p6.position is not None and p6.position.side == "LONG")
+
+
+# ==================================================================
+# 7) GERİYE DÖNÜK TEST SERİSİ = KURAL SERİSİ (bileşik skor DEĞİL)
+# ==================================================================
+print("7) Backtest serisi kural kaynağından")
+m7 = []
+px7 = 100.0
+for i in range(320):
+    px7 = px7 * (1.0 + 0.0018 * math.sin(i / 7.0) + 0.0003)
+    op = m7[-1].close if m7 else px7 * 0.999
+    m7.append(C(i * 60_000, px7, op))
+res7 = analyze(
+    symbol="TESTUSDT", timeframe="1m",
+    open_times=[c.open_time for c in m7],
+    o=[c.open for c in m7], h=[c.high for c in m7],
+    l=[c.low for c in m7], c=[c.close for c in m7],
+    v=[c.volume for c in m7],
+    close_times=[c.close_time for c in m7])
+beklenen = tk2_rules.series(res7.osc_codes, res7.ma_codes)
+p7 = tk()
+gelen = p7._build_signal_series(m7, "1m")
+kontrol("7.1 seri uzunluğu eşit", len(gelen) == len(beklenen))
+kontrol("7.2 seri kural motoruyla birebir aynı", gelen == beklenen)
+kontrol("7.3 seride AL ve SAT üretildi",
+        "AL" in gelen and "SAT" in gelen)
+kontrol("7.4 geçersiz etiket yok",
+        all(x in ("AL", "SAT", "NÖTR") for x in gelen))
+
+
+# ==================================================================
+# 8) İZLEME PANELİ EŞLEMESİ: kural kararı grafik sinyaline döner
+# ==================================================================
+print("8) İzleme eşlemesi")
+from core.analysis import Signal            # noqa: E402
+from core.service import _LABEL_TO_SIGNAL   # noqa: E402
+kontrol("8.1 AL -> BUY", _LABEL_TO_SIGNAL["AL"] is Signal.BUY)
+kontrol("8.2 SAT -> SELL", _LABEL_TO_SIGNAL["SAT"] is Signal.SELL)
+kontrol("8.3 NÖTR -> NEUTRAL",
+        _LABEL_TO_SIGNAL["NÖTR"] is Signal.NEUTRAL)
+
+
+# ==================================================================
+# 9) CANLI SERVİS: mode_signal_series + bar_info TİK2 kuralını gösterir
+# ==================================================================
+print("9) Canlı servis entegrasyonu")
+from core.binance_client import Candle            # noqa: E402
+from core.service import MarketService            # noqa: E402
+
+n9 = 90
+c9 = np.linspace(100.0, 130.0, n9)
+o9 = c9 - 0.4
+h9 = c9 + 0.6
+l9 = c9 - 0.8
+v9 = np.full(n9, 10.0)
+ot9 = (np.arange(n9) * 3_600_000).astype(np.int64)
+ct9 = ot9 + 3_599_999
+res9 = analyze("BTCUSDT", "1h", ot9, o9, h9, l9, c9, v9, ct9)
+mums9 = [Candle(open_time=int(ot9[i]), open=float(o9[i]), high=float(h9[i]),
+                low=float(l9[i]), close=float(c9[i]), volume=float(v9[i]),
+                close_time=int(ct9[i]), closed=True) for i in range(n9)]
+svc9 = MarketService(config.Settings(), None)
+svc9.paper = PaperTrader("BTCUSDT")
+svc9.paper.configure(balance=1000.0, leverage=10, mode="tk2",
+                     wallet_fraction=0.8, risk_pct=0.03)
+svc9._analyses["1h"] = res9
+svc9._buffers["1h"] = mums9
+svc9._versions["1h"] = 1
+seri9 = svc9.mode_signal_series("1h")
+beklenen9 = tk2_rules.series(res9.osc_codes, res9.ma_codes)
+kontrol("9.1 mode_signal_series kural serisiyle aynı",
+        [x.value for x in seri9] == beklenen9)
+bilgi9 = svc9.bar_info("1h", int(ot9[75]))
+kontrol("9.2 bar_info tıklanan barın TİK2 kararını verir",
+        bilgi9 is not None and bilgi9["mode_signal"] == beklenen9[75])
+canli9 = svc9._signal_for_mode(res9, mums9)
+kontrol("9.3 canlı sinyal son KAPALI barın kararı",
+        canli9 == beklenen9[len(mums9) - 2])
+kontrol("9.4 canlı sinyal geçerli etiket",
+        canli9 in ("AL", "SAT", "NÖTR"))
+canli9b = svc9._signal_for_mode(res9, mums9, "1h")
+kontrol("9.5 cache'li seri yolu aynı kararı verir", canli9b == canli9)
+
+
+print("-" * 60)
+print(f"TAMAM — {_GECEN} geçti, {_KALAN} kaldı")
+if _KALAN:
+    sys.exit(1)

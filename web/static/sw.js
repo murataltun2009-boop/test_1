@@ -23,15 +23,15 @@
 //     + trend modunda kar kilitleme
 // v7: 1m dilimi, stop sonrasi reclaim, optimum nokta giris filtresi
 // v8: izleme modu — tiklanan mumun per-gosterge Al/Sat/Notr rozetleri,
-//     MA kisa anahtar -> tam etiket eslemesi. Statik dosyalar ?v=34 ile
+//     MA kisa anahtar -> tam etiket eslemesi. Statik dosyalar ?v=35 ile
 //     servis edilir; boylece cache-first SW eski app.js'i gostermez.
-const VERSION = "ta-v34";
+const VERSION = "ta-v35";
 const SHELL = "shell-" + VERSION;
 
 const PRECACHE = [
   "/",
-  "/static/style.css?v=34",
-  "/static/app.js?v=34",
+  "/static/style.css?v=35",
+  "/static/app.js?v=35",
   "/static/vendor/echarts.min.js",
   "/static/icon-192.png",
   "/static/icon-512.png",

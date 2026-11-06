@@ -411,6 +411,10 @@ PAPER_TK_ENTRY_OFFSET = -0.001    # giris: sinyal fiyatinin GERISINE %0,10 pasif
 # Aninda girisde 15 pencerenin 13'u pozitif; pullback'te 5m/1m 0/3.
 # Yildiz hesabi ve diger TIK2 kurallari DEGISMEDI; yalniz dolum mekanigi.
 PAPER_TK2_ENTRY_OFFSET = 0.0      # TIK2: sinyal barinin kapanisinda aninda gir (0 = market)
+# TIK2 ac/kapa sonrasi bekleme (kullanici kurali 2026-11-06): AL/SAT
+# kuralina gore pozisyon acildiktan/kapandiktan sonra 2 DAKIKA yeni
+# islem yok. TK1'in PAPER_TK_AFTER_SEC=60 degeri DEGISMEZ.
+PAPER_TK2_AFTER_SEC = 120         # TIK2: ac/kapa sonrasi 2 dk bekleme
 PAPER_TK_REQUIRE_TREND = True     # True: rib==0 iken (trend yok) yildiz tek basina giris acamaz
 PAPER_TK_STREAK_N = 2             # arka arkaya N zarar -> TUM yonlerde K bar fren (0=kapali)
 PAPER_TK_STREAK_BARS = 10         # seri freni suresi (bar); dolunca sayac sifirlanir

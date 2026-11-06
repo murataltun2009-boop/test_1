@@ -27,6 +27,7 @@ from core import trend as trend_mod
 from core import muro as muro_mod
 from core import ppst
 from core import fib as fib_mod
+from core import tk2_rules
 
 logger = logging.getLogger("ta.paper")
 
@@ -466,10 +467,9 @@ class PaperTrader:
         self.tk_pend_close = None     # flip kapanis dokunma seviyesi
         self.tk_pend_entry = None     # (yon, seviye) giris limit ARM
         self.tk_pend_bar = 0          # ARM edildigi bar acilis zamani
-        # ---- TİK2 (2026-11-02, kullanici kurali): YALNIZ-SHORT ----
-        # Kirmizi yildiz: SHORT ac/kal. Gri: pozisyonu kapatir (gri-
-        # dogumlu short gri-boyunca kalir). Yesil: islem acmaz, bekler;
-        # yesilden SONRA gelen ilk gri SHORT acar. LONG HIC ACILMAZ.
+        # ---- TİK2 (2026-11-06, kullanici kurali): AL=LONG / SAT=SHORT ----
+        # Karar, core/tk2_rules.py kural listesinden uretilir. Kirmizi
+        # (SAT) SHORT, yesil (AL) LONG acar; gri (NÖTR) pozisyonu kapatir.
         self._tk2_yesil = False       # yerlesen yesil gordu mu (gri tipi)
         self._tk_son_islem_t = 0.0    # son ac/kapa bar zamani (1 dk bekleme)
         self.tk_after_ms = float(getattr(
@@ -700,6 +700,9 @@ class PaperTrader:
                 config, "PAPER_TK_BE_RISK", self.tk_be_risk))
             self.tk_time_bars = int(getattr(
                 config, "PAPER_TK_TIME_BARS", self.tk_time_bars))
+            # Ac/kapa beklemesi mod degisiminde sifirlanmasin: TK1 60 sn.
+            self.tk_after_ms = float(getattr(
+                config, "PAPER_TK_AFTER_SEC", 60)) * 1000.0
             if "BTC" in self.symbol:
                 self.tk_theta_max = 0.678          # (legacy: cikis only)
                 self.tk_theta_min = 0.44
@@ -711,12 +714,16 @@ class PaperTrader:
                 self.tk_vol_mult = 1.0
                 self.tk_leg_flip = False
             if mode == "tk2":
-                # TİK2 (kullanici kurali 2026-11-02): YALNIZ-SHORT.
-                # SAR (stop→ters) ve ribbon-flip mekaniksel olarak
-                # ENGELLENIR: stop ters cevrilmesi LONG acabilir, ribbon
-                # pozisyonu LONG'a force eder — ikisi de TİK2 ihlalidir.
+                # TİK2 (kullanici kurali 2026-11-06): karar kaynagi
+                # core/tk2_rules.py kural listesidir; AL=LONG, SAT=SHORT,
+                # NÖTR=kapat. SAR (stop→ters) ve ribbon-flip mekaniksel
+                # olarak ENGELLENIR (kural disi yon uretmemeli).
                 self.tk_sar = False
                 self.tk_ribbon_flip = False
+                # AC/KAPA SONRASI BEKLEME: kullanici kurali 2 dakika.
+                # (TK1 60 sn'de kalir; yalniz TİK2 icin gecerlidir.)
+                self.tk_after_ms = float(getattr(
+                    config, "PAPER_TK2_AFTER_SEC", 120)) * 1000.0
                 # GIRIS: TİK2 yildiz kurali "o anda" calisir; TK1'in
                 # pullback limiti dusuk dilimlerde hic dolmuyor ya da
                 # gec giriyordu (olcum: config.PAPER_TK2_ENTRY_OFFSET).
@@ -1851,6 +1858,7 @@ class PaperTrader:
           signal / signal_long / signal_exit : bilesik skor
           ma_only     : 15 hareketli ortalamanin skoru
           osc_only    : 11 osilatorun skoru
+          tk2         : kullanici kural listesi (core/tk2_rules.py)
 
         Osilator modunda daha kucuk esikler kullanilir; bilesik esikler
         11 osilatorun ortalamasi icin neredeyse hic asilmaz.
@@ -1975,6 +1983,13 @@ class PaperTrader:
                 close_times=[c.close_time for c in candles])
         except Exception:      # noqa: BLE001
             return [None] * len(candles)
+
+        # TİK2 KURAL SERİSİ (2026-11-06, kullanıcı kuralı): karar yildiz
+        # hesaplarindan DEGIL, osilator + hareketli ortalama ciftlerinin
+        # bar bazli kararlarindan uretilir. analyze() cikisi yalnizca
+        # OKUNUR; gosterge/grafik hesaplarina dokunulmaz.
+        if self.mode == "tk2":
+            return tk2_rules.series(res.osc_codes, res.ma_codes)
 
         if self.mode == "ma_only":
             seriler = res.ma_scores
@@ -2436,53 +2451,35 @@ class PaperTrader:
         return None
 
     def _tk2_karar(self) -> None:
-        """TİK2 karar mekanizmasi (2026-11-02, kullanici kurali).
+        """TİK2 karar mekanizmasi (2026-11-06, kullanici kurali).
 
-        YALNIZ-SHORT yildiz durumu makinesi; yerlesen (KAPALI barin)
-        yildizini okur, res.signals'a DOKUNMAZ:
+        Karar kaynagi artik bilesik skor DEGIL, `core/tk2_rules.py`
+        icindeki kullanici kural listesidir. Yerlesen (KAPALI barin)
+        yildizi okunur; bu yildiz zaten kural serisinden gelir:
 
-          * KIRMIZI (SAT/GÜÇLÜ SAT) -> hedef SHORT; pozisyon yoksa
-            asagidaki ARM/giris akisi acar, aciksa KALIR.
-          * GRI (NÖTR) -> acik SHORT KAPATIR (kirmizi-dogumlu olan);
-            gri-dogumlu short gri dizisi boyunca kalir. Pozisyon yoksa
-            ve hemen onceki yerlesen yildiz YESIL ise SHORT ACAR
-            (yesil→gri kacisi) — bu tek-seferliktir.
-          * YESIL (AL/GÜÇLÜ AL) -> islem acmaz, bekler (kirmizi/gri
-            yildizi bekler); acik gri-dogumlu SHORT'u kapatir
-            (yesil: kısa tezi bozar). Kirmizi-dogumlu short yesilde
-            beklemeye gecer — kapanis SIRASI gri'dedir.
+          * AL  -> hedef +1 (LONG ac/koru)
+          * SAT -> hedef -1 (SHORT ac/koru)
+          * NÖTR -> hedef 0 (acik pozisyonu kapat)
 
-        hedef DAIMA 0 (duz) veya -1 (SHORT); +1 LONG bu makinede
-        hicbir kosulda kurulmaz. SAR/ribbon-flip configure() ile
-        kapali (mode="tk2"), mekanik olarak da cage mekanizmasi yok.
+        Kural serisi `_build_signal_series` / `service.mode_signal_series`
+        tarafindan uretilir; grafik yildizlari da ayni seriyi gosterir.
+        Osilator/MA hesaplari ve grafik olusturma DEGISMEDI.
         """
         d = str(self._tk_hist_y1 or self.tk_sig_son or "").strip()
-        if d in ("SAT", "GÜÇLÜ SAT"):
-            self._tk2_yesil = False
-            if self.tk_hedef != -1 or self.tk_hedef_kaynak != "KIRMIZI":
-                self.tk_hedef = -1
-                self.tk_hedef_kaynak = "KIRMIZI"
-        elif d in ("AL", "GÜÇLÜ AL"):
-            self._tk2_yesil = True
-            if self.tk_hedef == -1 and \
-                    (self.tk_hedef_kaynak == "NÖTR" or
-                     str(self.tk_hedef_kaynak or "").startswith("TİK2-GRI")):
-                # gri-dogumlu short: yesil gormek tezi bozar
-                self.tk_hedef = 0
-                self.tk_hedef_kaynak = "TİK2-YESIL-KAPA"
+        if d in ("AL", "GÜÇLÜ AL"):
+            yeni = 1
+            kaynak = "TİK2-AL"
+        elif d in ("SAT", "GÜÇLÜ SAT"):
+            yeni = -1
+            kaynak = "TİK2-SAT"
         elif d == "NÖTR":
-            if self.tk_hedef == -1:
-                if self.tk_hedef_kaynak == "KIRMIZI":
-                    # kirmizi-dogumlu short: GRI KAPATIR (kullanici kurali)
-                    self.tk_hedef = 0
-                    self.tk_hedef_kaynak = "TİK2-GRI-KAPA"
-                # gri-dogumlu short: gri yildizda KALIR (gri onu acti)
-            elif self._tk2_yesil:
-                # YESIL→GRI KACISI: yesilden sonra gelen ilk gri SHORT acar
-                self.tk_hedef = -1
-                self.tk_hedef_kaynak = "TİK2-GRI"
-                self._tk2_yesil = False
-        # d "" veya taninmadiysa: durum korunur (hedef degismez)
+            yeni = 0
+            kaynak = "TİK2-NOTR"
+        else:
+            return            # henuz yerlesen karar yok: durum korunur
+        if yeni != self.tk_hedef:
+            self.tk_hedef = yeni
+            self.tk_hedef_kaynak = kaynak
 
     def _tk_stop_kur(self, q, fiyat: float, candles: list) -> None:
         """TK pozisyonu icin SL seviyesi kurar (ATR esnek) + risk ozu.
@@ -2723,7 +2720,7 @@ class PaperTrader:
         yukselen = bool(kap_mum is not None and
                         getattr(kap_mum, "close", kap_mum.open) >= kap_mum.open)
         if self.mode == "tk2":
-            # TİK2 KARARI (kullanici kurali 2026-11-02): yalniz-SHORT.
+            # TİK2 KARARI (2026-11-06): AL=LONG, SAT=SHORT, NÖTR=kapat.
             self._tk2_karar()
         elif rib == 0 and yeni is not None and yeni != self.tk_hedef:
             if sig == "NÖTR":
@@ -3116,10 +3113,6 @@ class PaperTrader:
             self.tk_pend_entry = None
             return None
         yon = self.tk_hedef
-        if self.mode == "tk2" and yon > 0:
-            # TİK2 güvenlik kapısı: strateji asla LONG acamaz.
-            self.tk_pend_entry = None
-            return None
 
         # ZARAR SONRASI BEKLEME (canli duzeltme 2026-10-31): son TK
         # kapanisi zararla olduysa PAPER_TK_PAUSE_BARS bar boyunca AYNI
@@ -3159,7 +3152,9 @@ class PaperTrader:
         # CIZGI SIRASI KAPISI (kullanici kurali): dizilim yukari iken
         # SHORT, asagi iken LONG giris yok — trend yonunde kalinir.
         # Yildiz ters yonde kalsa bile trende karsi pozisyon acilmaz.
-        if rib != 0 and (yon > 0) != (rib > 0):
+        # TİK2 ISTISNASI (2026-11-06): TİK2'de TEK karar kaynagi kullanici
+        # kural listesidir; ek trend filtreleri kural sinyalini kesemez.
+        if self.mode != "tk2" and rib != 0 and (yon > 0) != (rib > 0):
             self.tk_pend_entry = None
             return None
 
@@ -3167,7 +3162,9 @@ class PaperTrader:
         # (EMA'lar ayrismamis / olu bant) yildiz tek basina giris
         # acamaz. Canli desen: yatay bantta girisler donus tepelerine
         # denk geliyordu; trend yoksa beklemek kayiptan iyidir.
-        if getattr(self, "tk_require_trend", False) and rib == 0:
+        # TİK2: ayni istisna (karar kural listesinden gelir).
+        if self.mode != "tk2" and \
+                getattr(self, "tk_require_trend", False) and rib == 0:
             self.tk_pend_entry = None
             return None
 
@@ -3192,28 +3189,25 @@ class PaperTrader:
         # yesil yildiz hedef ile ayni yonde DEGILSE giris YOK — hedef
         # ya confirm (2-bar sabitleme) ya da mum-yildiz uyusmazligi
         # bekliyor demektir (kullanici kurali: sabitlenmeyen yildizla
-        # islem acilmaz). Gri yildiz yalnizca hedefi ayni gri-cevirme
-        # kurduysa (TERS giris) girise izinlidir. TİK2: gri-dogumlu
-        # (TİK2-GRI) hedef de gri karari ile kurulur — cevirme kazani.
-        t2_gri = (self.mode == "tk2" and
-                  str(self.tk_hedef_kaynak or "").startswith("TİK2"))
-        if sig == "NÖTR":
-            if self.tk_hedef_kaynak != "NÖTR" and not t2_gri:
+        # islem acilmaz). TİK2: karar zaten kural serisinden gelir ve
+        # hedef dogrudan o seriden kurulur — ek kapi gerekmez.
+        if self.mode != "tk2":
+            if sig == "NÖTR":
+                if self.tk_hedef_kaynak != "NÖTR":
+                    self.tk_pend_entry = None
+                    return None
+            elif yeni is not None and yeni != self.tk_hedef:
                 self.tk_pend_entry = None
                 return None
-        elif yeni is not None and yeni != self.tk_hedef:
-            self.tk_pend_entry = None
-            return None
 
-        # MUM YONU (kullanici kurali: "kirmizi mum atarken long
-        # acmak cok mantiksiz"): giris yonu ile KAPALI bar ayni yonde
-        # olmali. Istisna: NÖTR kaynakli TERS giris — gri karari mum
-        # yonunden bagimsizdir (TİK2 gri-dogumlu giris ayni istisna).
-        if (yon > 0 and not yukselen) or (yon < 0 and yukselen):
-            if not (sig == "NÖTR" and
-                    (self.tk_hedef_kaynak == "NÖTR" or t2_gri)):
-                self.tk_pend_entry = None
-                return None
+            # MUM YONU (kullanici kurali: "kirmizi mum atarken long
+            # acmak cok mantiksiz"): giris yonu ile KAPALI bar ayni
+            # yonde olmali. Istisna: NÖTR kaynakli TERS giris.
+            if (yon > 0 and not yukselen) or (yon < 0 and yukselen):
+                if not (sig == "NÖTR" and
+                        self.tk_hedef_kaynak == "NÖTR"):
+                    self.tk_pend_entry = None
+                    return None
 
         # Yildiz degistiyse bekleyen eski-yon ARM gecersiz (ters acilma).
         if self.tk_pend_entry is not None and self.tk_pend_entry[0] != yon:
