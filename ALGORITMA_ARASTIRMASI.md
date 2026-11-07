@@ -1676,3 +1676,81 @@ serisi = kural serisi, service.mode_signal_series/bar_info/canlı sinyal).
 `node --check app.js` temiz. Gösterge/grafik kodu değişmedi; sw ta-v35
 (app.js/index.html metinleri: TİK2 artık yalnız-SHORT değil, kural
 listesi).
+
+
+### OTURUM 17 — TİK2 stabilizasyon: HULL giriş kapısı + 3 bar minimum tutma (2026-11-07)
+
+KULLANICI GERİ BİLDİRİMİ: "İki mum AL, üçüncü mum SAT olunca pozisyon
+hemen bozuluyor; bekliyor, sonra aynı yönde devam ediyor. Kayıplar bu
+geçişlerde ve komisyonda oluşuyor. HULL değeri LONG/SHORT yönü için
+belirleyici." İstek: kural listesi dışına çıkmadan daha stabil bir
+uygulama.
+
+TEŞHİS: Ham kural serisi 1m'de ortalama ~2,1 barda bir yön değiştiriyor
+(500 barda ~237 geçiş). Pozisyon aç/kapa her geçişte komisyon üretiyor;
+ters sinyal çoğu zaman trend dönüşü değil, kısa süreli salınım.
+
+ARAŞTIRMA (gerçek Binance Futures 1m verisi, `tools/research_tk2_stab.py`,
+`research_tk2_cross.py`, `research_tk2_final.py`; 1000$, 10x, sabit
+bahis, maker). Adaylar nedensel (yalnız o bar ve öncesi):
+  * Onay (giriş/çıkış/flip için K bar) — ENA 5.000 barda çıkış onayı
+    zararlı: çıkış2 −873$, çıkış3 −617$, çıkış4 −1.009$ (ham +725$).
+    Bu strateji trend değil, hızlı mean-reversion; çıkışı geciktirmek
+    kazancı kaçırıyor.
+  * Ters sinyali 2+ bar tolere etmek (`flip2`) — ENA 4.000 barda
+    −293$ (ham +318$); ciddi zararlı, terk edildi.
+  * Tam HULL vetosu (açık pozisyonu da kapatır) — giriş kapısından
+    daha kötü; varsayılan KAPALI.
+  * Tek başına giriş onayı (`giris2`) ve oy (`vote`) — karışık;
+    ENA'da iyi, BTC'de zayıf; varsayılan KAPALI.
+
+SEÇİLEN HİBRİT (kural listesi aynen kalır):
+  1) HULL GİRİŞ KAPISI: yeni AL yalnız HULL +1 iken (veya HULL nötrken),
+     yeni SAT yalnız HULL −1 iken açılabilir. HULL yönü belirler, kural
+     listesi zamanlama verir. Açık pozisyonun çıkışı HULL yüzünden
+     GECİKTİRİLMEZ; stop/banka her zaman anında çalışır.
+  2) MİNİMUM TUTMA: sinyal ters dönse de pozisyon en az 3 bar tutulur
+     (NÖTR ve ters sinyal ilk 2 barda kapatmaz). Stop/banka bu kapıdan
+     etkilenmez. 1m'de 2 dk bekleme zaten 2 bar tuttuğu için pratikte
+     +1 bar ekler.
+
+ÇAPRAZ DOĞRULAMA (4 sembol × 8 × 500 bar 1m; 32 dilim):
+  aday            net       PF     pozitif dilim   DD
+  ham             +338$     1,13   15/32           −92,60$
+  HULLg+hold3     +726$     1,29   18/32           −85,83$
+  Sembol bazında ham → HULLg+hold3:
+    ENA  +318$ → +592$   BTC  −95$ → −55$
+    ETH   +74$ → +114$   SOL  +42$ → +75$
+  Dört sembolün dördünde de hamdan iyi; komisyon 1.599$ → 1.548$.
+  Tek 500-barlık pencerede sıralama değişebiliyor (ör. ENA son 500:
+  ham +111,55$ / HULLg+hold3 +66,77$); 8 dilimli sonuç daha güvenilir
+  kabul edildi. Varyantlar arasında en tutarlı iyileşme bu adayda.
+
+UYGULAMA:
+  * `core/tk2_rules.py`: `HULL_LABEL`, `hull_direction()`,
+    `stabilize()`, `series_stable()`. Gösterge hesapları ve grafik
+    serileri değişmedi; `osc_codes`/`ma_codes` yalnız OKUNUR.
+  * `paper._build_signal_series`, `service._signal_for_mode`,
+    `service.mode_signal_series` artık `series_stable(...)` çağırır:
+    canlı, geriye dönük test ve grafik yıldızları birebir aynı.
+  * `config.py`: `PAPER_TK2_MIN_HOLD = 3`, `PAPER_TK2_STAB_ON = True`,
+    `..._HULL_ENTRY = True`, `..._HULL_FULL = False`,
+    `..._HULL_SMOOTH = 1`, `..._CONFIRM_ENTRY/EXIT/FLIP = 1`,
+    `..._VOTE = 1`, `..._MIN_DWELL = 0`, `..._HULL_FAST/GOVERNOR =
+    False` (araştırma anahtarları; varsayılan seçilen hibrit).
+  * `paper.py`: `_tk2_min_hold` (`__init__` + `configure` reload);
+    sinyal çıkışı `t2_hold`/`t2_kapan` ile 3 bara kadar geciktirilir.
+  * Arayüz metni: "HULL yön kapısı + 3 bar tutma"; cache `?v=36`,
+    `sw.js` `ta-v36`.
+
+DOĞRULAMA: `test_tk2.py` 58/58 (yeni bölüm 10 HULL giriş kapısı,
+bölüm 11 minimum tutma: 1./2. bar kapatmaz, 3. bar kapatır, NÖTR de
+kapıya tabi, stop tutmayı deler). `test_paper` 90/90,
+`test_tk_fix` 37/37, `py_compile` ve `node --check app.js` temiz.
+
+PRODUCTION DOĞRULAMA (`tools/research_tk2_prod_check.py`, aynı 4 sembol
+× 8 × 500 bar, production `series_stable` + config varsayılanları):
+  ham  +338,18$  15/32 pozitif  kom 1.598,84$  DD −92,60$
+  prod +726,02$  18/32 pozitif  kom 1.548,42$  DD −85,83$
+Production serisi araştırma prototipiyle birebir aynı (fark 0 bar);
+seçilen hibrit production kodda da doğrulandı.

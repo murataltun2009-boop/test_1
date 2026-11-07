@@ -781,7 +781,7 @@ class MarketService:
                         return seri[idx].value
                 except Exception:      # noqa: BLE001
                     pass
-            seri = tk2_rules.series(res.osc_codes, res.ma_codes)
+            seri = tk2_rules.series_stable(res.osc_codes, res.ma_codes)
             return seri[idx] if idx < len(seri) else None
         if mode == "tk":
             # YILDIZ SETTLE (2026-10-28 kullanici kurali): yildiz OLUSAN
@@ -873,7 +873,9 @@ class MarketService:
         elif mode == "tk2":
             # TİK2 kural serisi: AL/SAT/NÖTR -> grafik yildizlari.
             # Karar kaynagi core/tk2_rules.py; gosterge hesaplari OKUNUR.
-            karar = tk2_rules.series(res.osc_codes, res.ma_codes)
+            # STABİLİZASYON: canlı/backtest ile aynı seri (HULL giriş
+            # kapısı + config.PAPER_TK2_STAB_*).
+            karar = tk2_rules.series_stable(res.osc_codes, res.ma_codes)
             series = [_LABEL_TO_SIGNAL.get(k, Signal.NEUTRAL)
                       for k in karar]
         else:

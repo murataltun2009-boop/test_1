@@ -30,6 +30,7 @@ from typing import Optional
 
 import numpy as np
 
+import config
 from core.analysis import MA_PERIODS, ma_labels
 
 # --------------------------------------------------------------------------
@@ -339,6 +340,217 @@ def decision_at(osc_codes: dict, ma_codes: dict, idx: int) -> str:
     if 0 <= idx < len(s):
         return s[idx]
     return "NÖTR"
+
+
+# --------------------------------------------------------------------------
+# STABİLİZASYON (2026-11-07, kullanıcı geri bildirimi)
+# --------------------------------------------------------------------------
+# Sorun: kural serisi ortalama ~2 barda bir yön değiştiriyor. Kullanıcı
+# canlıda "iki mum AL, üçüncü mum SAT -> pozisyon hemen bozuluyor,
+# bekliyor, sonra aynı yönde devam ediyor; kayıplar bu geçişlerde"
+# gözlemini bildirdi. HULL'ın yön için belirleyici olduğunu vurguladı.
+#
+# Çözüm iki katmanlı ve NEDENSELDİR (yalnızca o bar ve önceki barlar):
+#   1) HULL GİRİŞ KAPISI: yeni bir AL yalnızca HULL +1 iken (veya HULL
+#      nötrken), yeni bir SAT yalnızca HULL -1 iken açılabilir. Açık
+#      pozisyonun çıkışı HULL yüzünden GECİKTİRİLMEZ; stop/banka her
+#      zaman anındadır. Böylece HULL yönü belirler, kural listesi
+#      zamanlama verir; kural listesi dışına yeni sinyal üretilmez.
+#   2) MİNİMUM TUTMA (paper.py): sinyal ters döndü diye pozisyon ilk
+#      barda kapatılmaz; K bar beklenir (varsayılan 3). Stop/banka
+#      çıkışları bu kapıdan etkilenmez.
+#
+# Ölçüm (1m, 4 sembol x 8 x 500 bar, gerçek veri; 2026-11-07):
+#   ham +338$, PF 1.13, 15/32 pozitif dilim
+#   HULL giriş kapısı + 3 bar tutma: +726$, PF 1.29, 18/32 pozitif,
+#   komisyon 1599$ -> 1548$, DD -92,6$ -> -85,8$. Dört sembolün
+#   dördünde de hamdan iyi (ENA +318->+592, BTC -95->-55,
+#   ETH +74->+114, SOL +42->+75). Ayrıntı: ALGORITMA_ARASTIRMASI.md
+#   OTURUM 17 ve tools/research_tk2_cross.py.
+HULL_LABEL = MA_GROUPS["HULL"][0]
+
+
+def _dir_of(label: str) -> int:
+    if label == "AL":
+        return 1
+    if label == "SAT":
+        return -1
+    return 0
+
+
+def _label_of(direction: int) -> str:
+    if direction > 0:
+        return "AL"
+    if direction < 0:
+        return "SAT"
+    return "NÖTR"
+
+
+def _smooth_dirs(values, window: int) -> list[int]:
+    """Pencere içi çoğunluk: |toplam| >= ceil(window/2) ise yön."""
+    arr = [int(x) for x in values]
+    n = len(arr)
+    if window <= 1:
+        return arr
+    need = window // 2 + 1
+    out: list[int] = []
+    acc = 0
+    for i, v in enumerate(arr):
+        acc += v
+        if i >= window:
+            acc -= arr[i - window]
+        if acc >= need:
+            out.append(1)
+        elif acc <= -need:
+            out.append(-1)
+        else:
+            out.append(0)
+    return out
+
+
+def hull_direction(ma_codes: dict, n: int) -> Optional[list[int]]:
+    """HULL(9) yön serisi: +1 fiyat üstünde, -1 altında, 0 eksik."""
+    arr = _array(ma_codes or {}, HULL_LABEL, n)
+    if arr is None:
+        return None
+    return [int(x) for x in arr]
+
+
+def stabilize(raw: list[str], hull=None, *, vote: int = 1,
+              vote_min: int = 0, confirm_entry: int = 1,
+              confirm_exit: int = 1, confirm_flip: int = 1,
+              min_dwell: int = 0, hull_entry_veto: bool = False,
+              hull_veto: bool = False, hull_smooth: int = 1,
+              hull_entry_fast: bool = False, hull_governor: bool = False,
+              hull_fast_exit: bool = True) -> list[str]:
+    """Ham kural serisini nedensel olarak yumuşatır.
+
+    Parametreler (hepsi opsiyonel; varsayılan yalnızca HULL giriş
+    kapısını uygular, çıkışları geciktirmez):
+
+    vote          : son N barın yön toplamı (1 = kapalı)
+    vote_min      : toplamın bu büyüklüğe ulaşması gerekir (0=otomatik)
+    confirm_entry : 0'dan yöne geçiş için arka arkaya K bar
+    confirm_exit  : yönden 0'a (nötr) çıkış için K bar
+    confirm_flip  : yönden ters yöne geçiş için K bar
+    min_dwell     : bir yönde en az K bar kal (erken çıkış/flip engeli)
+    hull_entry_veto: yalnızca YENİ girişte HULL'a ters sinyali engelle
+    hull_veto     : açık pozisyon dahil HULL'a ters sinyali nötr yap
+    hull_smooth   : HULL yönünü son K barlık çoğunlukla yumuşat
+    hull_entry_fast: HULL yeni yönü doğruluyorsa giriş onayını bekleme
+    hull_governor : HULL pozisyon yönündeyken çıkışa K bar sabır;
+                    HULL ters döndüyse hızlı çıkış (hull_fast_exit)
+    """
+    n = len(raw)
+    if n == 0:
+        return []
+    dirs = np.asarray([_dir_of(x) for x in raw], dtype=np.int8)
+
+    if vote and vote > 1:
+        need = vote_min or (vote // 2 + 1)
+        cand = np.zeros(n, dtype=np.int8)
+        for i in range(n):
+            a = max(0, i - vote + 1)
+            s = int(dirs[a:i + 1].sum())
+            if s >= need:
+                cand[i] = 1
+            elif s <= -need:
+                cand[i] = -1
+    else:
+        cand = dirs.copy()
+
+    hs: Optional[list[int]] = None
+    if hull is not None:
+        hv = list(hull)
+        if len(hv) == n:
+            hs = _smooth_dirs(hv, max(1, int(hull_smooth)))
+    if hs is not None and hull_veto:
+        for i in range(n):
+            if cand[i] != 0 and hs[i] != 0 and cand[i] != hs[i]:
+                cand[i] = 0
+
+    out = np.zeros(n, dtype=np.int8)
+    state = 0
+    pending = 0
+    pc = 0
+    last_change = -10 ** 9
+    for i in range(n):
+        c = int(cand[i])
+        # GİRİŞ KAPISI: pozisyon yokken HULL'a ters yön açılmaz.
+        if state == 0 and hs is not None and hull_entry_veto:
+            if c != 0 and hs[i] != 0 and c != hs[i]:
+                c = 0
+        if c == state:
+            pending = 0
+            pc = 0
+            out[i] = state
+            continue
+        if state != 0 and min_dwell > 0 and (i - last_change) < min_dwell:
+            out[i] = state
+            continue
+        need = confirm_entry if state == 0 else (
+            confirm_exit if c == 0 else confirm_flip)
+        if state == 0 and hull_entry_fast and hs is not None and c != 0 \
+                and hs[i] == c:
+            need = 1
+        if state != 0 and hull_governor and hs is not None:
+            if hs[i] == state:
+                need = max(need, confirm_exit if c == 0 else confirm_flip)
+            elif hull_fast_exit:
+                need = 1
+        need = max(1, int(need))
+        if c == pending:
+            pc += 1
+        else:
+            pending = c
+            pc = 1
+        if pc >= need:
+            state = c
+            last_change = i
+            pending = 0
+            pc = 0
+        out[i] = state
+    return [_label_of(int(x)) for x in out]
+
+
+def series_stable(osc_codes: dict, ma_codes: dict, **overrides) -> list[str]:
+    """Kural serisi + varsayılan stabilizasyon (config'ten okunur).
+
+    `paper._build_signal_series` ve `service.mode_signal_series` AYNI
+    fonksiyonu çağırır; böylece canlı, geriye dönük test ve grafik
+    yıldızları birebir aynı kararı gösterir.
+
+    `overrides` yalnızca test/araştırma içindir (config'i ezmez).
+    """
+    raw = series(osc_codes, ma_codes)
+    if not raw:
+        return raw
+    if not bool(getattr(config, "PAPER_TK2_STAB_ON", True)):
+        return raw
+    hull = hull_direction(ma_codes, len(raw))
+    kw = {
+        "vote": int(getattr(config, "PAPER_TK2_STAB_VOTE", 1) or 1),
+        "confirm_entry": int(getattr(
+            config, "PAPER_TK2_STAB_CONFIRM_ENTRY", 1) or 1),
+        "confirm_exit": int(getattr(
+            config, "PAPER_TK2_STAB_CONFIRM_EXIT", 1) or 1),
+        "confirm_flip": int(getattr(
+            config, "PAPER_TK2_STAB_CONFIRM_FLIP", 1) or 1),
+        "min_dwell": int(getattr(
+            config, "PAPER_TK2_STAB_MIN_DWELL", 0) or 0),
+        "hull_entry_veto": bool(getattr(
+            config, "PAPER_TK2_STAB_HULL_ENTRY", True)),
+        "hull_veto": bool(getattr(
+            config, "PAPER_TK2_STAB_HULL_FULL", False)),
+        "hull_smooth": int(getattr(
+            config, "PAPER_TK2_STAB_HULL_SMOOTH", 1) or 1),
+        "hull_entry_fast": bool(getattr(
+            config, "PAPER_TK2_STAB_HULL_FAST", False)),
+        "hull_governor": bool(getattr(
+            config, "PAPER_TK2_STAB_HULL_GOVERNOR", False)),
+    }
+    kw.update(overrides)
+    return stabilize(raw, hull, **kw)
 
 
 def summary() -> dict:

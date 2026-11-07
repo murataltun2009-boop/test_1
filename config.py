@@ -415,6 +415,39 @@ PAPER_TK2_ENTRY_OFFSET = 0.0      # TIK2: sinyal barinin kapanisinda aninda gir 
 # kuralina gore pozisyon acildiktan/kapandiktan sonra 2 DAKIKA yeni
 # islem yok. TK1'in PAPER_TK_AFTER_SEC=60 degeri DEGISMEZ.
 PAPER_TK2_AFTER_SEC = 120         # TIK2: ac/kapa sonrasi 2 dk bekleme
+# TIK2 MINIMUM TUTMA (2026-11-07, kullanici geri bildirimi): sinyal
+# ters dondu diye pozisyonu ILK barda kapatma. Stop/banka cikislari
+# her zaman aninda calisir; yalnizca SINYAL cikisi K bar gecikir.
+# 0 = kapali. 1m olcumu: 3 bar en iyi (4/5 biraz daha zayif).
+PAPER_TK2_MIN_HOLD = 3
+# TIK2 STABILIZASYON (2026-11-07): kural serisi ~2 barda bir donuyordu.
+# HULL giris kapisi + minimum tutma ile 1m'de 4 sembolun 4'unde de
+# hamdan iyi; ayrinti ALGORITMA_ARASTIRMASI.md OTURUM 17.
+# STAB_ON=False -> eski ham kural serisi (karsilastirma icin).
+PAPER_TK2_STAB_ON = True
+# Yeni giris yalnizca HULL ayni yondeyse (veya HULL notrse). Acik
+# pozisyonun cikisini HULL geciktirmez.
+PAPER_TK2_STAB_HULL_ENTRY = True
+# True: HULL'a ters TUM sinyaller notr olur (acik pozisyonu da kapatir).
+# Olcumde giris kapisindan daha kotu; varsayilan kapali.
+PAPER_TK2_STAB_HULL_FULL = False
+# HULL yonunu son K barlik cogunlukla yumusat (1 = ham HULL).
+PAPER_TK2_STAB_HULL_SMOOTH = 1
+# GIRIS onayi: yeni yon K kapanmis bar ayni yonde olmali (1 = hemen).
+PAPER_TK2_STAB_CONFIRM_ENTRY = 1
+# CIKIS toleransi: yonden notr'e K bar (1 = hemen).
+PAPER_TK2_STAB_CONFIRM_EXIT = 1
+# TERS YON toleransi: yonden ters yone K bar (1 = hemen). NOT: 2+
+# olcumde ciddi zararli (trend degil, hizli mean-reversion); kapali.
+PAPER_TK2_STAB_CONFIRM_FLIP = 1
+# Son N barin cogunluk oyu (1 = kapali). Olcumde tek basina faydasiz.
+PAPER_TK2_STAB_VOTE = 1
+# Bir yonde en az K bar kal (0 = kapali). Olcumde faydasiz.
+PAPER_TK2_STAB_MIN_DWELL = 0
+# Arastirma icin opsiyonel: HULL yeni yonu dogruluyorsa giris onayini
+# atla / HULL pozisyon yonundeyken cikisa sabir goster.
+PAPER_TK2_STAB_HULL_FAST = False
+PAPER_TK2_STAB_HULL_GOVERNOR = False
 PAPER_TK_REQUIRE_TREND = True     # True: rib==0 iken (trend yok) yildiz tek basina giris acamaz
 PAPER_TK_STREAK_N = 2             # arka arkaya N zarar -> TUM yonlerde K bar fren (0=kapali)
 PAPER_TK_STREAK_BARS = 10         # seri freni suresi (bar); dolunca sayac sifirlanir

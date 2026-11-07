@@ -471,6 +471,8 @@ class PaperTrader:
         # Karar, core/tk2_rules.py kural listesinden uretilir. Kirmizi
         # (SAT) SHORT, yesil (AL) LONG acar; gri (NÖTR) pozisyonu kapatir.
         self._tk2_yesil = False       # yerlesen yesil gordu mu (gri tipi)
+        self._tk2_min_hold = int(getattr(
+            config, "PAPER_TK2_MIN_HOLD", 0) or 0)
         self._tk_son_islem_t = 0.0    # son ac/kapa bar zamani (1 dk bekleme)
         self.tk_after_ms = float(getattr(
             config, "PAPER_TK_AFTER_SEC", 60)) * 1000.0
@@ -730,6 +732,8 @@ class PaperTrader:
                 # Yildiz hesabi degismez, yalniz dolum mekanigi.
                 self.tk_entry_offset = float(getattr(
                     config, "PAPER_TK2_ENTRY_OFFSET", 0.0))
+                self._tk2_min_hold = int(getattr(
+                    config, "PAPER_TK2_MIN_HOLD", 0) or 0)
         if min_hold is not None and 0 <= int(min_hold) <= 500:
             self.min_hold_bars = int(min_hold)
         if risk_pct is not None and 0 < float(risk_pct) <= 0.50:
@@ -1988,8 +1992,11 @@ class PaperTrader:
         # hesaplarindan DEGIL, osilator + hareketli ortalama ciftlerinin
         # bar bazli kararlarindan uretilir. analyze() cikisi yalnizca
         # OKUNUR; gosterge/grafik hesaplarina dokunulmaz.
+        # STABİLİZASYON (2026-11-07): HULL giriş kapısı + isteğe bağlı
+        # onay/tutma filtreleri. Canlı ve geriye dönük test AYNI fonksiyonu
+        # kullanır (config.PAPER_TK2_STAB_*).
         if self.mode == "tk2":
-            return tk2_rules.series(res.osc_codes, res.ma_codes)
+            return tk2_rules.series_stable(res.osc_codes, res.ma_codes)
 
         if self.mode == "ma_only":
             seriler = res.ma_scores
@@ -3047,8 +3054,15 @@ class PaperTrader:
             # TİK2'ye ozel: hedef 0'a (TİK2-GRI-KAPA / YESIL-KAPA)
             # dustugunde de pozisyon kapanir — TİK2'de kapanislarda
             # otomatik ters giro yoktu, aksiyon yalnizca KAPANISTIR.
-            t2_kapan = self.mode == "tk2" and self.tk_hedef == 0
-            if (not esit and self.tk_hedef != 0) or t2_kapan:
+            # TİK2 MINIMUM TUTMA (2026-11-07): sinyal ters dondu diye
+            # pozisyonu ilk barda kapatma. Stop/banka cikislari bu
+            # kapidan ETKILENMEZ (yukarida aninda calisir).
+            t2_hold = bool(self.mode == "tk2" and
+                           int(getattr(self, "_tk2_min_hold", 0) or 0) > 0
+                           and self._bars_held < int(self._tk2_min_hold))
+            t2_kapan = self.mode == "tk2" and self.tk_hedef == 0 and not t2_hold
+            if ((not esit and self.tk_hedef != 0 and not t2_hold)
+                    or t2_kapan):
                 if bar_high is not None:
                     if self.tk_pend_close is None and not bekle:
                         self.tk_pend_close = price

@@ -68,6 +68,9 @@ def tk(**kw):
     p.tk_be_risk = 0.0
     p.tk_time_bars = 0
     p.tk_after_ms = 0.0
+    # Yön testleri HAM davranışı ölçer; minimum tutma ayrı bölümde test
+    # edilir (bölüm 11).
+    p._tk2_min_hold = 0
     p.running = True
     for k, v in kw.items():
         setattr(p, k, v)
@@ -259,11 +262,11 @@ res7 = analyze(
     l=[c.low for c in m7], c=[c.close for c in m7],
     v=[c.volume for c in m7],
     close_times=[c.close_time for c in m7])
-beklenen = tk2_rules.series(res7.osc_codes, res7.ma_codes)
+beklenen = tk2_rules.series_stable(res7.osc_codes, res7.ma_codes)
 p7 = tk()
 gelen = p7._build_signal_series(m7, "1m")
 kontrol("7.1 seri uzunluğu eşit", len(gelen) == len(beklenen))
-kontrol("7.2 seri kural motoruyla birebir aynı", gelen == beklenen)
+kontrol("7.2 seri stabilize kural motoruyla birebir aynı", gelen == beklenen)
 kontrol("7.3 seride AL ve SAT üretildi",
         "AL" in gelen and "SAT" in gelen)
 kontrol("7.4 geçersiz etiket yok",
@@ -309,7 +312,7 @@ svc9._analyses["1h"] = res9
 svc9._buffers["1h"] = mums9
 svc9._versions["1h"] = 1
 seri9 = svc9.mode_signal_series("1h")
-beklenen9 = tk2_rules.series(res9.osc_codes, res9.ma_codes)
+beklenen9 = tk2_rules.series_stable(res9.osc_codes, res9.ma_codes)
 kontrol("9.1 mode_signal_series kural serisiyle aynı",
         [x.value for x in seri9] == beklenen9)
 bilgi9 = svc9.bar_info("1h", int(ot9[75]))
@@ -322,6 +325,90 @@ kontrol("9.4 canlı sinyal geçerli etiket",
         canli9 in ("AL", "SAT", "NÖTR"))
 canli9b = svc9._signal_for_mode(res9, mums9, "1h")
 kontrol("9.5 cache'li seri yolu aynı kararı verir", canli9b == canli9)
+
+
+# ==================================================================
+# 10) HULL GİRİŞ KAPISI (stabilizasyon, 2026-11-07)
+# ==================================================================
+print("10) HULL giriş kapısı")
+kontrol("10.0 HULL etiketi ma_codes ile uyumlu",
+        tk2_rules.HULL_LABEL == "Hull Hareketli Ortalama (9)")
+
+# HULL tersken yeni AL açılmaz; HULL aynı yöne dönünce açılır.
+_raw10 = ["AL", "AL", "AL", "AL"]
+_hull10 = [-1, -1, 1, 1]
+_gate10 = tk2_rules.stabilize(_raw10, _hull10, hull_entry_veto=True)
+kontrol("10.1 HULL tersken AL girişi engellendi",
+        _gate10 == ["NÖTR", "NÖTR", "AL", "AL"])
+
+# HULL nötrken giriş serbesttir (yön belirlemez, engellemez).
+kontrol("10.2 HULL nötrken giriş serbest",
+        tk2_rules.stabilize(["SAT"], [0], hull_entry_veto=True)
+        == ["SAT"])
+
+# Açık pozisyonun çıkışı HULL yüzünden geciktirilmez.
+_out10 = tk2_rules.stabilize(["AL", "AL", "NÖTR", "SAT"],
+                             [1, 1, -1, -1], hull_entry_veto=True)
+kontrol("10.3 çıkış/ters giriş HULL kapısından etkilenmez",
+        _out10 == ["AL", "AL", "NÖTR", "SAT"])
+
+# Tam veto (varsayılan kapalı) açık pozisyonu da kapatır: farkı göster.
+kontrol("10.4 tam HULL vetosu açık pozisyonu kapatır",
+        tk2_rules.stabilize(["AL", "AL", "SAT"], [1, -1, -1],
+                            hull_entry_veto=True, hull_veto=True)
+        == ["AL", "NÖTR", "SAT"])
+
+# series_stable, kapı kapatılınca ham kural serisine döner.
+_ham10 = tk2_rules.series(res7.osc_codes, res7.ma_codes)
+_stab10 = tk2_rules.series_stable(res7.osc_codes, res7.ma_codes,
+                                  hull_entry_veto=False)
+kontrol("10.5 kapı kapalıyken seri ham kural serisine eşit",
+        _stab10 == _ham10)
+
+
+# ==================================================================
+# 11) MİNİMUM TUTMA: ters sinyal ilk barda kapatmaz (stop hariç)
+# ==================================================================
+print("11) Minimum tutma")
+p11a = PaperTrader("DOGEUSDT")
+p11a.configure(balance=1000.0, leverage=10, fee_rate=0.0005,
+               wallet_fraction=0.8, mode="tk2", risk_pct=0.03)
+kontrol("11.1 varsayılan minimum tutma 3 bar",
+        p11a._tk2_min_hold == 3 == config.PAPER_TK2_MIN_HOLD)
+
+# Ters sinyal (SAT): 1. ve 2. barda pozisyon korunur, 3. barda kapanır.
+p11 = tk(_tk2_min_hold=3)
+m11 = barlar(60)
+yildiz_var(p11, m11, "AL")
+kontrol("11.2 LONG açıldı", p11.position is not None)
+yildiz_var(p11, m11, "SAT")            # bars_held=1
+kontrol("11.3 ters sinyal 1. barda kapatmaz", p11.position is not None)
+yildiz_var(p11, m11, "SAT")            # bars_held=2
+kontrol("11.4 ters sinyal 2. barda kapatmaz", p11.position is not None)
+yildiz_var(p11, m11, "SAT")            # bars_held=3
+kontrol("11.5 ters sinyal 3. barda kapatır", p11.position is None)
+
+# NÖTR de aynı kapıya tabidir.
+p11b = tk(_tk2_min_hold=3)
+m11b = barlar(60)
+yildiz_var(p11b, m11b, "AL")
+yildiz_var(p11b, m11b, "NÖTR")
+kontrol("11.6 NÖTR 1. barda kapatmaz", p11b.position is not None)
+yildiz_var(p11b, m11b, "NÖTR")
+kontrol("11.7 NÖTR 2. barda kapatmaz", p11b.position is not None)
+yildiz_var(p11b, m11b, "NÖTR")
+kontrol("11.8 NÖTR 3. barda kapatır", p11b.position is None)
+
+# STOP minimum tutmayı DELER: koruyucu çıkış her zaman anında çalışır.
+p11c = tk(_tk2_min_hold=3, tk_sl=0.001, tk_sl_atr=0.0, tk_bank_pct=0.0)
+m11c = barlar(60)
+yildiz_var(p11c, m11c, "AL")
+_t11 = int(m11c[-1].open_time) + 60_000
+_px11 = float(m11c[-1].close) * 0.997          # stopun altına düş
+m11c.append(C(_t11, _px11, _px11 * 1.0002))
+_ev11 = p11c.on_price(_px11, m11c, "1m", "SAT")
+kontrol("11.9 stop minimum tutmayı deler (anında kapanır)",
+        p11c.position is None and "stop" in (_ev11 or ""))
 
 
 print("-" * 60)
