@@ -1754,3 +1754,52 @@ PRODUCTION DOĞRULAMA (`tools/research_tk2_prod_check.py`, aynı 4 sembol
   prod +726,02$  18/32 pozitif  kom 1.548,42$  DD −85,83$
 Production serisi araştırma prototipiyle birebir aynı (fark 0 bar);
 seçilen hibrit production kodda da doğrulandı.
+
+---
+
+## OTURUM 18 — HULL nötr iken pozisyonu koruma (2026-11-07)
+
+KULLANICI KURALI (özet):
+> "HULL nötr olduğunda pozisyonu kapatma; HULL nötr iken yukarı yönlü ise
+> long'a, aşağı yönlü ise short'a devam et. Mevcut pozisyonları böyle koru."
+
+Ayrıca canlı gözlem: "1 mum kırmızı iken short açılıyor, arkasındaki yeşil
+mumla kapanıyor; sonra tekrar dönüyor." Bu nedenle giriş için 2 ardışık mum
+onayı da aday olarak ölçüldü.
+
+HULL NÖTR SIKLIĞI (1m, `_ma_v` ±%0,02 ölü bölge):
+  ENA %14,60 · BTC %46,85 · ETH %34,60 · SOL %28,70
+Kuralın kararların büyük bölümüne dokunduğu görüldü.
+
+ÖLÇÜM (`tools/research_tk2_hullneutral.py`, 4 sembol × 8 × 500 bar 1m,
+sabit lot, production 3 bar minimum tutma ile):
+  Varyant                              Net        Pozitif   DD
+  prod (mevcut)                        +726,02$   18/32     −85,83$
+  Nötrde kapatma (yalnız sinyal NÖTR)  +105,62$   11/32     −94,02$
+  Nötr + HULL eğimi uyuyorsa koru      +256,44$   15/32     −88,25$
+  Nötrken hiç kapatma (freeze)         −205,29$   10/32     −105,56$
+  Nötrde yönü HULL eğimi belirlesin    +105,29$   19/32     −99,64$
+  Girişte 2 mum onayı                   −66,10$   14/32     −94,20$
+  Giriş 2 onay + nötr koruma           −404,70$   12/32     −95,32$
+  Giriş 2 onay + freeze                −607,87$    7/32     −80,06$
+  Giriş 2 onay + trend                 −704,48$    8/32    −111,85$
+
+İŞLEM BAZLI TEŞHİS (`tools/research_tk2_whipsaw.py`, prod serisi):
+  tutma 6+ bar : 443 işlem  +1.192,91$
+  tutma 3-5 bar: 485 işlem    −598,07$
+  tutma 2 bar  :  17 işlem     −92,58$
+  tutma 1 bar  :   0 işlem (3 bar minimum tutma zaten engelliyor)
+Kâr yalnızca uzun tutulan trend işlemlerinden geliyor; "nötrken kapatma"
+kuralı kazananı da kaybedeni de aynı sürede uzattığı için zarar tarafı daha
+ağır basıyor.
+
+PENCERE TESTİ (`tools/research_tk2_enafold.py`, ENA 8 × 500 bar):
+  Nötrde-kapatma yalnız 1. ve 8. dilimde production'dan iyi; 4., 5. ve 6.
+  dilimde belirgin kötü. Son 500 barda görülen iyileşme (+254,86$ / 2 dilim)
+  pencereye özgü; 8 dilim toplamında +439,70$ vs prod +592,49$.
+
+KARAR: **Production değiştirilmedi.** Kullanıcı ölçüm sonrası "production'ı
+olduğu gibi bırak" seçeneğini seçti. Mevcut 3 bar minimum tutma + HULL giriş
+kapısı korunuyor; tek mumluk whipsaw'ı zaten bu kapı engelliyor. Araştırma
+betikleri yalnızca kayıt/teşhis amacıyla `tools/` altında bırakıldı.
+
