@@ -1856,4 +1856,53 @@ sonuç, canlı olmayan işlem yazılmıyor). `test_paper` 90/90,
 Arayüz metni "beklemesiz giriş/çıkış" olarak güncellendi; cache `?v=37`,
 `sw.js` `ta-v37`.
 
+---
+
+## OTURUM 20 — TİK2: HULL nötrken yeni giriş yasağı (2026-11-08)
+
+KULLANICI KURALI:
+> "HULL nötr durumdayken yeni pozisyon açma, beklemede kal hep."
+
+UYGULAMA:
+  * `tk2_rules.stabilize()` yeni parametre: `hull_neutral_block`
+    (varsayılan `False` — yalnız test/araştırma için).
+  * Kapı yalnızca **pozisyon yokken** (`state == 0`) ve HULL kodu `0`
+    iken yeni yön sinyalini `NÖTR` yapar; yani giriş bir sonraki
+    HULL yönlü bara ertelenir.
+  * Açık pozisyonun çıkışı bu kapıdan **etkilenmez**: ters sinyal /
+    NÖTR sinyal pozisyonu her zamanki gibi anında kapatır; stop ve
+    kâr bankası zaten anındadır.
+  * `config.PAPER_TK2_STAB_HULL_NEUTRAL_BLOCK = True` (production).
+    `series_stable()` bu değeri okur; canlı, geriye dönük test ve
+    grafik yıldızları aynı kapıyı kullanır.
+  * Kural tablosu, gösterge hesapları ve grafik üretimi DEĞİŞMEDİ;
+    yalnızca `res.osc_codes` / `res.ma_codes` okunuyor.
+
+ÖLÇÜM (`tools/research_tk2_hullblock.py`, 4 sembol × 8 × 500 bar 1m,
+beklemesiz production ayarlarıyla):
+  Varyant            Net        Pozitif   DD        İşlem
+  yasak KAPALI       +649,87$   18/32     −85,25$   1041
+  yasak AÇIK         +509,35$   15/32     −93,59$   1032
+
+  Sembol bazında (yasak kapalı -> açık):
+    ENA  +468,80 -> +438,26   BTC  −71,89 -> −11,10
+    ETH  +185,64 -> +11,81    SOL  +67,32 -> +70,38
+  BTC'de belirgin iyileşme ve DD küçülmesi (−52,71 -> −27,59), buna
+  karşılık ETH'te büyük düşüş ve toplamda 140$ daha az kâr. HULL nötr
+  oranı: ENA %14,60, BTC %46,85, ETH %34,60, SOL %28,70.
+
+KARAR: Kullanıcı kuralı açıkça istediği için yasak **production'da
+AÇIK**. Ölçümde toplam kâr azalsa da kullanıcı nötr bölgede giriş
+istemiyor; karar kullanıcıya aittir. Kapalıyken ölçüm betiğiyle
+karşılaştırma yapılabilir.
+
+DOĞRULAMA: `test_tk2.py` 74/74 — bölüm 13: varsayılan yasak açık;
+nötr HULL'da AL engellenir ve HULL +1 olunca girer; yasak kapalıyken
+aynı seri girer; açık pozisyon nötr HULL'da korunur; ters sinyal nötr
+HULL'da anında kapatır; production serisinde nötr HULL barı varken
+yeni giriş yok; kapı kapalıyken seri ham kural serisine eşit.
+`test_paper` 90/90, `test_tk_fix` 37/37, `py_compile`,
+`node --check app.js/sw.js` temiz. Arayüz metni "HULL nötrken giriş
+yok" olarak güncellendi; cache `?v=38`, `sw.js` `ta-v38`.
+
 

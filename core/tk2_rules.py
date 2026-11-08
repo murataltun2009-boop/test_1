@@ -424,6 +424,7 @@ def stabilize(raw: list[str], hull=None, *, vote: int = 1,
               vote_min: int = 0, confirm_entry: int = 1,
               confirm_exit: int = 1, confirm_flip: int = 1,
               min_dwell: int = 0, hull_entry_veto: bool = False,
+              hull_neutral_block: bool = False,
               hull_veto: bool = False, hull_smooth: int = 1,
               hull_entry_fast: bool = False, hull_governor: bool = False,
               hull_fast_exit: bool = True) -> list[str]:
@@ -439,6 +440,8 @@ def stabilize(raw: list[str], hull=None, *, vote: int = 1,
     confirm_flip  : yönden ters yöne geçiş için K bar
     min_dwell     : bir yönde en az K bar kal (erken çıkış/flip engeli)
     hull_entry_veto: yalnızca YENİ girişte HULL'a ters sinyali engelle
+    hull_neutral_block: HULL NÖTR (0) iken YENİ giriş yapma; açık
+                    pozisyonun çıkışı etkilenmez (kullanıcı kuralı)
     hull_veto     : açık pozisyon dahil HULL'a ters sinyali nötr yap
     hull_smooth   : HULL yönünü son K barlık çoğunlukla yumuşat
     hull_entry_fast: HULL yeni yönü doğruluyorsa giriş onayını bekleme
@@ -484,6 +487,12 @@ def stabilize(raw: list[str], hull=None, *, vote: int = 1,
         if state == 0 and hs is not None and hull_entry_veto:
             if c != 0 and hs[i] != 0 and c != hs[i]:
                 c = 0
+        # HULL NÖTR İKEN YENİ GİRİŞ YOK (kullanıcı kuralı 2026-11-08).
+        # Yalnızca state==0 (pozisyon yok) iken uygulanır; açık
+        # pozisyonun çıkışı bu kapıdan ETKİLENMEZ.
+        if state == 0 and hs is not None and hull_neutral_block \
+                and c != 0 and hs[i] == 0:
+            c = 0
         if c == state:
             pending = 0
             pc = 0
@@ -544,6 +553,8 @@ def series_stable(osc_codes: dict, ma_codes: dict, **overrides) -> list[str]:
             config, "PAPER_TK2_STAB_MIN_DWELL", 0) or 0),
         "hull_entry_veto": bool(getattr(
             config, "PAPER_TK2_STAB_HULL_ENTRY", True)),
+        "hull_neutral_block": bool(getattr(
+            config, "PAPER_TK2_STAB_HULL_NEUTRAL_BLOCK", True)),
         "hull_veto": bool(getattr(
             config, "PAPER_TK2_STAB_HULL_FULL", False)),
         "hull_smooth": int(getattr(

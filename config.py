@@ -433,9 +433,14 @@ PAPER_TK2_MIN_HOLD = 0
 # kaldirildi; bkz. PAPER_TK2_AFTER_SEC / PAPER_TK2_MIN_HOLD.)
 # STAB_ON=False -> eski ham kural serisi (karsilastirma icin).
 PAPER_TK2_STAB_ON = True
-# Yeni giris yalnizca HULL ayni yondeyse (veya HULL notrse). Acik
-# pozisyonun cikisini HULL geciktirmez.
+# Yeni giris yalnizca HULL ayni yondeyse. HULL notrken giris YOK
+# (asagidaki PAPER_TK2_STAB_HULL_NEUTRAL_BLOCK). Acik pozisyonun
+# cikisini HULL geciktirmez.
 PAPER_TK2_STAB_HULL_ENTRY = True
+# HULL NOTR (0) iken YENI GIRIS YOK (kullanici kurali 2026-11-08):
+# "hull notr durumdayken yeni pozisyon acma, beklemede kal". Yalnizca
+# pozisyon yokken uygulanir; acik pozisyonun cikisi etkilenmez.
+PAPER_TK2_STAB_HULL_NEUTRAL_BLOCK = True
 # True: HULL'a ters TUM sinyaller notr olur (acik pozisyonu da kapatir).
 # Olcumde giris kapisindan daha kotu; varsayilan kapali.
 PAPER_TK2_STAB_HULL_FULL = False

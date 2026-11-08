@@ -28,13 +28,14 @@
 // v9: TIK2 stabilizasyon — HULL giris kapisi + 3 bar minimum tutma.
 // v10: TIK2 beklemesiz giris/cikis (2 dk ve 3 bar beklemesi kaldirildi)
 //      + islem gunlugu (logs/islemler.csv: yon/giris/cikis/kar/komisyon).
-const VERSION = "ta-v37";
+// v11: HULL notrken yeni giris yasagi (acik pozisyonun cikisi etkilenmez).
+const VERSION = "ta-v38";
 const SHELL = "shell-" + VERSION;
 
 const PRECACHE = [
   "/",
-  "/static/style.css?v=37",
-  "/static/app.js?v=37",
+  "/static/style.css?v=38",
+  "/static/app.js?v=38",
   "/static/vendor/echarts.min.js",
   "/static/icon-192.png",
   "/static/icon-512.png",

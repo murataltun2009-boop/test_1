@@ -356,11 +356,12 @@ kontrol("10.4 tam HULL vetosu açık pozisyonu kapatır",
                             hull_entry_veto=True, hull_veto=True)
         == ["AL", "NÖTR", "SAT"])
 
-# series_stable, kapı kapatılınca ham kural serisine döner.
+# series_stable, kapılar kapatılınca ham kural serisine döner.
 _ham10 = tk2_rules.series(res7.osc_codes, res7.ma_codes)
 _stab10 = tk2_rules.series_stable(res7.osc_codes, res7.ma_codes,
-                                  hull_entry_veto=False)
-kontrol("10.5 kapı kapalıyken seri ham kural serisine eşit",
+                                  hull_entry_veto=False,
+                                  hull_neutral_block=False)
+kontrol("10.5 kapılar kapalıyken seri ham kural serisine eşit",
         _stab10 == _ham10)
 
 
@@ -457,6 +458,60 @@ finally:
         os.rmdir(_tmp12)
     except OSError:
         pass
+
+
+# ==================================================================
+# 13) HULL NÖTR İKEN YENİ GİRİŞ YASAĞI (kullanıcı kuralı 2026-11-08)
+# ==================================================================
+print("13) HULL nötr giriş yasağı")
+kontrol("13.1 varsayılan yasak açık (config)",
+        bool(config.PAPER_TK2_STAB_HULL_NEUTRAL_BLOCK))
+
+# HULL nötrken AL girişi engellenir; HULL +1 olunca girer.
+_g13 = tk2_rules.stabilize(["AL", "AL", "AL", "AL"], [0, 0, 1, 1],
+                           hull_entry_veto=True, hull_neutral_block=True)
+kontrol("13.2 HULL nötrken AL girişi engellendi (bekler)",
+        _g13 == ["NÖTR", "NÖTR", "AL", "AL"])
+# Aynı seri yasak kapalıyken girer: kapının gerçekten devrede olduğunu
+# gösterir (aksi halde test boşuna geçerdi).
+_g13b = tk2_rules.stabilize(["AL", "AL", "AL", "AL"], [0, 0, 1, 1],
+                            hull_entry_veto=True, hull_neutral_block=False)
+kontrol("13.3 yasak kapalıyken nötr HULL'da giriş var",
+        _g13b == ["AL", "AL", "AL", "AL"])
+
+# AÇIK POZİSYON: nötr HULL çıkışı geciktirmez/kapatmaz. Seri HULL +1
+# iken AL açar, nötr barlarda AL olarak devam eder, ters sinyalde anında
+# kapanır.
+_ser13 = tk2_rules.stabilize(["AL", "AL", "SAT", "SAT"], [1, 0, 0, -1],
+                             hull_entry_veto=True, hull_neutral_block=True)
+kontrol("13.4 nötr HULL açık pozisyonu bozmaz (seri AL/AL/SAT/SAT)",
+        _ser13 == ["AL", "AL", "SAT", "SAT"])
+p13 = tk()
+m13 = barlar(60)
+yildiz_var(p13, m13, _ser13[0])             # AL, HULL +1
+kontrol("13.5 HULL +1 iken LONG açıldı", p13.position is not None)
+yildiz_var(p13, m13, _ser13[1])             # AL, HULL 0
+kontrol("13.6 HULL nötrken açık pozisyon korunur",
+        p13.position is not None)
+yildiz_var(p13, m13, _ser13[2])             # SAT, HULL 0
+kontrol("13.7 HULL nötrken ters sinyal ANINDA kapatır",
+        p13.position is None)
+
+# PRODUCTION SERİSİ: nötr HULL barı varken yeni giriş üretilmemeli.
+_hs13 = tk2_rules.hull_direction(res7.ma_codes, len(_ham10))
+_ser13p = tk2_rules.series_stable(res7.osc_codes, res7.ma_codes)
+_ent13 = [i for i in range(1, len(_ser13p))
+          if _ser13p[i] in ("AL", "SAT")
+          and _ser13p[i - 1] != _ser13p[i]]
+kontrol("13.8 production serisinde nötr HULL barı var (test anlamlı)",
+        any(h == 0 for h in _hs13))
+kontrol("13.9 production serisinde nötr HULL'da yeni giriş YOK",
+        bool(_ent13) and all(_hs13[i] != 0 for i in _ent13))
+# Kapı kapalıyken aynı seri ham kural serisine döner (regresyon).
+kontrol("13.10 yasak kapalıyken seri ham kural serisine eşit",
+        tk2_rules.series_stable(res7.osc_codes, res7.ma_codes,
+                                hull_entry_veto=False,
+                                hull_neutral_block=False) == _ham10)
 
 
 print("-" * 60)
