@@ -26,13 +26,15 @@
 //     MA kisa anahtar -> tam etiket eslemesi. Statik dosyalar ?v=36 ile
 //     servis edilir; boylece cache-first SW eski app.js'i gostermez.
 // v9: TIK2 stabilizasyon — HULL giris kapisi + 3 bar minimum tutma.
-const VERSION = "ta-v36";
+// v10: TIK2 beklemesiz giris/cikis (2 dk ve 3 bar beklemesi kaldirildi)
+//      + islem gunlugu (logs/islemler.csv: yon/giris/cikis/kar/komisyon).
+const VERSION = "ta-v37";
 const SHELL = "shell-" + VERSION;
 
 const PRECACHE = [
   "/",
-  "/static/style.css?v=36",
-  "/static/app.js?v=36",
+  "/static/style.css?v=37",
+  "/static/app.js?v=37",
   "/static/vendor/echarts.min.js",
   "/static/icon-192.png",
   "/static/icon-512.png",

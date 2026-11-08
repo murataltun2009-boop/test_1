@@ -1803,3 +1803,57 @@ olduğu gibi bırak" seçeneğini seçti. Mevcut 3 bar minimum tutma + HULL giri
 kapısı korunuyor; tek mumluk whipsaw'ı zaten bu kapı engelliyor. Araştırma
 betikleri yalnızca kayıt/teşhis amacıyla `tools/` altında bırakıldı.
 
+---
+
+## OTURUM 19 — TİK2 beklemesiz giriş/çıkış + işlem günlüğü (2026-11-07)
+
+KULLANICI İSTEĞİ:
+> "Long/short pozisyon kapatmalarındaki beklemeyi iptal et; bekleme
+> pozisyonu kaçırmasına ve zarara sebep oluyor. Ayrıca loglarda yön,
+> giriş, çıkış, kâr/zarar, komisyon ve zamanı da kaydet."
+
+KALDIRILAN BEKLEMELER:
+  * `PAPER_TK2_AFTER_SEC`: 120 -> **0** (aç/kapa sonrası 2 dk yeni işlem
+    yok kuralı; hem girişi hem kapanışı geciktiriyordu).
+  * `PAPER_TK2_MIN_HOLD`: 3 -> **0** (ters sinyalde kapanışı 3 bar
+    geciktiren kapı).
+  * Stop ve kâr bankası zaten bu kapılardan etkilenmiyordu; anında
+    çalışmaya devam ediyor.
+  * TK1'in `PAPER_TK_AFTER_SEC=60` değeri DEĞİŞMEDİ.
+
+ÖLÇÜM (`tools/research_tk2_wait.py`, 4 sembol × 8 × 500 bar 1m):
+  Varyant                         Net        Pozitif   DD
+  prod (120 sn + hold3)           +726,02$   18/32     −85,83$
+  yalnız after=0 (hold3)          +746,71$   15/32     −95,47$
+  bekleme yok (0 + 0)             +649,87$   18/32     −85,25$
+  yalnız hold=0 (after 120)       +427,93$   16/32     −84,58$
+Bekleme tamamen kaldırıldığında toplam kâr 76$ azalıyor ama pozitif dilim
+sayısı (18/32) ve DD (−85,25$) production ile aynı kalıyor. Kullanıcı
+canlıda beklemenin pozisyon kaçırdığını bildirdiği için karar uygulandı.
+
+PRODUCTION DOĞRULAMA (`tools/research_tk2_prod_check.py`):
+  ham  +543,52$  17/32  kom 1.740,49$  DD −109,04$
+  prod +649,87$  18/32  kom 1.746,41$  DD  −85,25$
+Production serisi artık "bekleme yok (0+0)" varyantıyla birebir aynı.
+
+İŞLEM GÜNLÜĞÜ (yeni):
+  * `config.TRADE_LOG_FILE = logs/islemler.csv`
+  * Her KAPANAN canlı işlem için bir satır (';' ayraçlı):
+    `kapanis_zamani; acilis_zamani; sembol; mod; yon; giris; cikis; adet;
+     brut_kar; komisyon; net_kar; sonuc; bakiye; tutulan_bar; sebep;
+     cikis_sebebi`
+  * `sonuc` = KAR / ZARAR / BASABAS; komisyon = giriş + çıkış ücreti.
+  * Yalnızca canlı işlemler yazılır; geriye dönük test ve birim testleri
+    günlüğü kirletmez (`_backtesting` + `_quiet`/test süreci kapısı;
+    testler `trader.trade_log = True` ile açar).
+  * Metin logu da zenginleştirildi: kapanış satırında artık giriş fiyatı,
+    giriş zamanı ve KAR/ZARAR etiketi var; zaman damgası log ön ekinde.
+
+DOĞRULAMA: `test_tk2.py` 64/64 (bölüm 4 beklemesiz davranış, bölüm 11
+varsayılan 0, bölüm 12 CSV günlüğü: başlık, yön, zamanlar, komisyon,
+sonuç, canlı olmayan işlem yazılmıyor). `test_paper` 90/90,
+`test_tk_fix` 37/37, `py_compile`, `node --check app.js/sw.js` temiz.
+Arayüz metni "beklemesiz giriş/çıkış" olarak güncellendi; cache `?v=37`,
+`sw.js` `ta-v37`.
+
+

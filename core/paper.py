@@ -15,10 +15,14 @@ Kullanicinin koydugu kurallar:
 """
 from __future__ import annotations
 
+import csv
 import logging
+import os
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Optional
 
 import config
@@ -30,6 +34,13 @@ from core import fib as fib_mod
 from core import tk2_rules
 
 logger = logging.getLogger("ta.paper")
+
+# Birim testleri ve arastirma betikleri GERCEK islem gunlugunu
+# kirletmesin: yalnizca canli uygulama sureci (main.py / main_desktop.py)
+# yazar. Test/arastirma icinde `trader.trade_log = True` ile acilabilir.
+_KOMUT = os.path.basename(sys.argv[0] or "").lower()
+_TEST_SURECI = _KOMUT.startswith(
+    ("test_", "pytest", "research_", "analiz_"))
 
 LONG = "LONG"
 SHORT = "SHORT"
@@ -114,6 +125,22 @@ def _onceki_kapanis(candles: list, price: float) -> float:
     if candles and len(candles) >= 2:
         return float(candles[-2].close)
     return float(price)
+
+
+def _zaman_metni(value: Any) -> str:
+    """Epoch (ms veya sn) -> 'YYYY-MM-DD HH:MM:SS'. Gecersizse bos."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return ""
+    if v <= 0:
+        return ""
+    if v > 1e11:               # milisaniye (canli girisler open_time)
+        v /= 1000.0
+    try:
+        return datetime.fromtimestamp(v).strftime("%Y-%m-%d %H:%M:%S")
+    except (OSError, OverflowError, ValueError):
+        return ""
 
 
 def _kapali_mumlar(candles: list) -> list:
@@ -273,6 +300,9 @@ class PaperTrader:
         # Sinyal modunda surekli ac-kapa (ve komisyon) engellemek icin
         # minimum tutma suresi (bar). 0 = kisit yok.
         self.min_hold_bars = int(config.PAPER_MIN_HOLD_BARS)
+        # Islem gunlugu: None = otomatik (yalniz canli surecte yaz),
+        # True = zorla ac, False = kapat. Testler True ile dogrular.
+        self.trade_log: Optional[bool] = None
         # ---- Trend (Supertrend) modu ---------------------------------
         # Bu degerler arayuzden degistirilebilir (configure(risk_pct=...)).
         self.trend_period = int(config.PAPER_TREND_PERIOD)
@@ -722,10 +752,11 @@ class PaperTrader:
                 # olarak ENGELLENIR (kural disi yon uretmemeli).
                 self.tk_sar = False
                 self.tk_ribbon_flip = False
-                # AC/KAPA SONRASI BEKLEME: kullanici kurali 2 dakika.
-                # (TK1 60 sn'de kalir; yalniz TİK2 icin gecerlidir.)
+                # AC/KAPA SONRASI BEKLEME: 2026-11-07 kullanici karariyla
+                # KALDIRILDI (0 sn). Onceki kural 2 dakikaydi; canlida
+                # pozisyonu kaciriyordu. TK1'in 60 sn'si DEGISMEZ.
                 self.tk_after_ms = float(getattr(
-                    config, "PAPER_TK2_AFTER_SEC", 120)) * 1000.0
+                    config, "PAPER_TK2_AFTER_SEC", 0)) * 1000.0
                 # GIRIS: TİK2 yildiz kurali "o anda" calisir; TK1'in
                 # pullback limiti dusuk dilimlerde hic dolmuyor ya da
                 # gec giriyordu (olcum: config.PAPER_TK2_ENTRY_OFFSET).
@@ -3362,13 +3393,15 @@ class PaperTrader:
         else:
             self.losses += 1
 
-        self.trades.append(Trade(
+        trade = Trade(
             side=p.side, entry=p.entry, exit=price, qty=p.qty, margin=p.margin,
             gross_pnl=gross, fee_open=p.fee_open, fee_close=fee_close,
             net_pnl=net, opened_at=p.opened_at, closed_at=time.time(),
             timeframe=timeframe, reason=p.reason, exit_reason=reason,
             symbol=self.symbol,
-        ))
+        )
+        self.trades.append(trade)
+        self._log_trade_csv(trade)
         self.position = None
 
         # TK modu disinda: zarar sonrasi 8-bar giris engeli + zarar-yonu
@@ -3406,10 +3439,69 @@ class PaperTrader:
         if reset_signal:
             self.last_signal = None
 
+        _gz = _zaman_metni(p.opened_at)
+        _gz_metin = f" ({_gz})" if _gz else ""
+        _sonuc = "KAR" if net > 0 else ("ZARAR" if net < 0 else "BASABAS")
         self._emit("trade",
-                   f"{p.side} kapandı @ {_px(price)} · net {net:+,.2f} "
+                   f"{p.side} kapandı @ {_px(price)} · giriş "
+                   f"{_px(p.entry)}{_gz_metin} · {_sonuc} net {net:+,.2f} "
                    f"(brüt {gross:+,.2f}, komisyon {p.fee_open + fee_close:,.4f})"
                    f" · {reason}")
+
+    def _log_trade_csv(self, trade: Trade) -> None:
+        """Kapanan islemi `logs/islemler.csv` dosyasina yaz.
+
+        Kullanici istegi (2026-11-07): yon, giris, cikis, kar/zarar,
+        komisyon ve zaman tek satirda kayitli olsun. Yalnizca CANLI
+        islemler yazilir; geriye donuk test ve birim testleri disarida
+        kalir (aksi halde her test calistirmasi gunlugu kirletirdi).
+        Hata islem akisini ASLA bozmaz.
+        """
+        if self._backtesting:
+            return
+        izin = self.trade_log
+        if izin is None:
+            izin = not (_TEST_SURECI or self._quiet)
+        if not izin:
+            return
+        path = getattr(config, "TRADE_LOG_FILE", "")
+        if not path:
+            return
+        komisyon = float(trade.fee_open) + float(trade.fee_close)
+        net = float(trade.net_pnl)
+        sonuc = "KAR" if net > 0 else ("ZARAR" if net < 0 else "BASABAS")
+        satir = [
+            _zaman_metni(trade.closed_at),
+            _zaman_metni(trade.opened_at),
+            trade.symbol,
+            self.mode,
+            trade.side,
+            f"{float(trade.entry):.8f}",
+            f"{float(trade.exit):.8f}",
+            f"{float(trade.qty):.8f}",
+            f"{float(trade.gross_pnl):.4f}",
+            f"{komisyon:.4f}",
+            f"{net:.4f}",
+            sonuc,
+            f"{float(self.balance):.4f}",
+            int(getattr(self, "_bars_held", 0) or 0),
+            trade.reason or "",
+            trade.exit_reason or "",
+        ]
+        try:
+            yeni = not os.path.exists(path)
+            with open(path, "a", encoding="utf-8", newline="") as fh:
+                w = csv.writer(fh, delimiter=";")
+                if yeni:
+                    w.writerow([
+                        "kapanis_zamani", "acilis_zamani", "sembol", "mod",
+                        "yon", "giris", "cikis", "adet", "brut_kar",
+                        "komisyon", "net_kar", "sonuc", "bakiye",
+                        "tutulan_bar", "sebep", "cikis_sebebi",
+                    ])
+                w.writerow(satir)
+        except OSError:
+            pass
 
     # ------------------------------------------------------------------
     def _emit(self, kind: str, message: str) -> None:

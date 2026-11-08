@@ -61,10 +61,12 @@ def new_agg():
 def main():
     assert bool(getattr(config, "PAPER_TK2_STAB_ON", True))
     assert bool(getattr(config, "PAPER_TK2_STAB_HULL_ENTRY", True))
-    assert int(getattr(config, "PAPER_TK2_MIN_HOLD", 0)) == 3
+    assert int(getattr(config, "PAPER_TK2_MIN_HOLD", 0)) == 0
+    assert int(getattr(config, "PAPER_TK2_AFTER_SEC", 0)) == 0
     print(f"config: STAB_ON={config.PAPER_TK2_STAB_ON} "
           f"HULL_ENTRY={config.PAPER_TK2_STAB_HULL_ENTRY} "
           f"MIN_HOLD={config.PAPER_TK2_MIN_HOLD} "
+          f"AFTER_SEC={config.PAPER_TK2_AFTER_SEC} "
           f"FLIP={config.PAPER_TK2_STAB_CONFIRM_FLIP}", flush=True)
 
     agg = {"ham": new_agg(), "prod": new_agg()}

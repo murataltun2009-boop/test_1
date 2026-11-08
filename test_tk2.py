@@ -6,7 +6,7 @@ Kullanıcı kuralı:
     osilatör(ler) + hareketli ortalama(lar) AYNI yönde ise sinyal.
   * AL = LONG, SAT = SHORT, NÖTR = pozisyonu kapat.
   * Satırlar arası VEYA; aynı barda AL+SAT çakışırsa NÖTR.
-  * Pozisyon aç/kapa sonrası 2 DAKİKA bekleme.
+  * Pozisyon aç/kapa sonrası bekleme YOK (2026-11-07 kullanıcı kararı).
   * Giriş/çıkış LIMIT (maker) — komisyon düşük.
   * Gösterge hesapları ve grafik üretimi DEĞİŞMEZ.
 
@@ -14,7 +14,9 @@ Not: Bu dosya pytest değil, düz Python betiğidir:
     python test_tk2.py
 """
 import math
+import os
 import sys
+import tempfile
 
 sys.path.insert(0, ".")
 
@@ -182,29 +184,25 @@ kontrol("3.7 NÖTR ters pozisyon (LONG) açmadı",
 
 
 # ==================================================================
-# 4) 2 DAKİKA BEKLEME (1m barlarda tam 2 bar)
+# 4) BEKLEME YOK (kullanıcı kararı 2026-11-07)
 # ==================================================================
-print("4) 2 dakika bekleme")
+print("4) Bekleme yok (kapatma beklemesi kaldırıldı)")
 p4c = PaperTrader("DOGEUSDT")
 p4c.configure(balance=1000.0, leverage=10, fee_rate=0.0005,
               wallet_fraction=0.8, mode="tk2", risk_pct=0.03)
-kontrol("4.1 configure tk2 -> 120 sn",
-        p4c.tk_after_ms == 120_000.0 ==
+kontrol("4.1 configure tk2 -> bekleme 0 sn",
+        p4c.tk_after_ms == 0.0 ==
         config.PAPER_TK2_AFTER_SEC * 1000.0)
-p4 = tk(tk_after_ms=config.PAPER_TK2_AFTER_SEC * 1000.0)
+p4 = tk()
 m4 = barlar(60)
 yildiz_var(p4, m4, "AL")              # LONG aç (bar T)
 kontrol("4.2 ilk LONG açıldı", p4.position is not None)
-yildiz_var(p4, m4, "SAT")             # T+1: kapanış da beklemeye tabi
-kontrol("4.3 açılıştan 1 dk sonra kapanış BEKLER (pozisyon kaldı)",
-        p4.position is not None)
-yildiz_var(p4, m4, "SAT")             # T+2: bekleme doldu -> kapat
-kontrol("4.4 2 dk sonra SAT kapattı", p4.position is None)
-yildiz_var(p4, m4, "AL")              # T+3: kapanıştan 1 dk sonra
-kontrol("4.5 kapanıştan 1 dk sonra giriş YOK", p4.position is None)
-yildiz_var(p4, m4, "AL")              # T+4: 2 dk doldu
-kontrol("4.6 2 dk sonra LONG açıldı",
-        p4.position is not None and p4.position.side == "LONG")
+yildiz_var(p4, m4, "SAT")             # T+1: bekleme yok -> ANINDA kapat
+kontrol("4.3 açılıştan 1 dk sonra SAT ANINDA kapatır",
+        p4.position is None)
+yildiz_var(p4, m4, "SAT")             # T+2: kapanıştan 1 dk sonra
+kontrol("4.4 kapanıştan sonraki ilk barda SHORT açıldı",
+        p4.position is not None and p4.position.side == "SHORT")
 
 
 # ==================================================================
@@ -373,8 +371,8 @@ print("11) Minimum tutma")
 p11a = PaperTrader("DOGEUSDT")
 p11a.configure(balance=1000.0, leverage=10, fee_rate=0.0005,
                wallet_fraction=0.8, mode="tk2", risk_pct=0.03)
-kontrol("11.1 varsayılan minimum tutma 3 bar",
-        p11a._tk2_min_hold == 3 == config.PAPER_TK2_MIN_HOLD)
+kontrol("11.1 varsayılan minimum tutma 0 (bekleme yok)",
+        p11a._tk2_min_hold == 0 == config.PAPER_TK2_MIN_HOLD)
 
 # Ters sinyal (SAT): 1. ve 2. barda pozisyon korunur, 3. barda kapanır.
 p11 = tk(_tk2_min_hold=3)
@@ -409,6 +407,56 @@ m11c.append(C(_t11, _px11, _px11 * 1.0002))
 _ev11 = p11c.on_price(_px11, m11c, "1m", "SAT")
 kontrol("11.9 stop minimum tutmayı deler (anında kapanır)",
         p11c.position is None and "stop" in (_ev11 or ""))
+
+
+# ==================================================================
+# 12) İŞLEM GÜNLÜĞÜ (logs/islemler.csv)
+# ==================================================================
+print("12) İşlem günlüğü (CSV)")
+_tmp12 = tempfile.mkdtemp(prefix="tik2log_")
+_eski_log = config.TRADE_LOG_FILE
+config.TRADE_LOG_FILE = os.path.join(_tmp12, "islemler.csv")
+try:
+    p12 = tk()
+    p12.trade_log = True                        # günlüğü zorla aç
+    m12 = barlar(60)
+    yildiz_var(p12, m12, "AL")
+    yildiz_var(p12, m12, "SAT")                 # kapat -> satır yazılmalı
+    kontrol("12.1 kapanan canlı işlem dosyaya yazıldı",
+            os.path.exists(config.TRADE_LOG_FILE))
+    with open(config.TRADE_LOG_FILE, encoding="utf-8") as fh:
+        _satirlar = [ln.rstrip("\n").split(";") for ln in fh if ln.strip()]
+    kontrol("12.2 başlık + 1 satır", len(_satirlar) == 2)
+    _h = _satirlar[0]
+    kontrol("12.3 başlıkta yön/giriş/çıkış/kar/komisyon/zaman var",
+            all(k in _h for k in ("kapanis_zamani", "acilis_zamani", "yon",
+                                  "giris", "cikis", "net_kar", "komisyon")))
+    _r = _satirlar[1]
+    kontrol("12.4 yön LONG kaydedildi", _r[4] == "LONG")
+    kontrol("12.5 zamanlar dolu", len(_r[0]) == 19 and len(_r[1]) == 19)
+    kontrol("12.6 komisyon > 0 ve net sayısal",
+            float(_r[9]) > 0 and abs(float(_r[10])) >= 0)
+    kontrol("12.7 sonuç etiketi geçerli",
+            _r[11] in ("KAR", "ZARAR", "BASABAS"))
+    # Geriye dönük test / sessiz mod günlüğe YAZMAMALI.
+    _once = len(_satirlar)
+    p12b = tk()
+    p12b._quiet = True                          # backtest bu bayrağı açar
+    m12b = barlar(60)
+    yildiz_var(p12b, m12b, "AL")
+    yildiz_var(p12b, m12b, "SAT")
+    with open(config.TRADE_LOG_FILE, encoding="utf-8") as fh:
+        _son = len([ln for ln in fh if ln.strip()])
+    kontrol("12.8 canlı olmayan işlem günlüğe yazılmaz",
+            _son == _once)
+finally:
+    config.TRADE_LOG_FILE = _eski_log
+    try:
+        for _f in os.listdir(_tmp12):
+            os.remove(os.path.join(_tmp12, _f))
+        os.rmdir(_tmp12)
+    except OSError:
+        pass
 
 
 print("-" * 60)

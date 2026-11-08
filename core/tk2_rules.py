@@ -357,8 +357,10 @@ def decision_at(osc_codes: dict, ma_codes: dict, idx: int) -> str:
 #      zaman anındadır. Böylece HULL yönü belirler, kural listesi
 #      zamanlama verir; kural listesi dışına yeni sinyal üretilmez.
 #   2) MİNİMUM TUTMA (paper.py): sinyal ters döndü diye pozisyon ilk
-#      barda kapatılmaz; K bar beklenir (varsayılan 3). Stop/banka
-#      çıkışları bu kapıdan etkilenmez.
+#      barda kapatılmaz; K bar beklenir. Stop/banka çıkışları bu
+#      kapıdan etkilenmez. (2026-11-07 kullanıcı kararı: bu bekleme
+#      varsayılan olarak KAPATILDI — PAPER_TK2_MIN_HOLD=0. Mekanizma
+#      test/araştırma için kodda duruyor.)
 #
 # Ölçüm (1m, 4 sembol x 8 x 500 bar, gerçek veri; 2026-11-07):
 #   ham +338$, PF 1.13, 15/32 pozitif dilim
@@ -367,6 +369,8 @@ def decision_at(osc_codes: dict, ma_codes: dict, idx: int) -> str:
 #   dördünde de hamdan iyi (ENA +318->+592, BTC -95->-55,
 #   ETH +74->+114, SOL +42->+75). Ayrıntı: ALGORITMA_ARASTIRMASI.md
 #   OTURUM 17 ve tools/research_tk2_cross.py.
+#   Beklemesiz sürüm (2 dk + min tutma kaldırıldı, production ayarı):
+#   +650$, 18/32 pozitif, DD -85,3$ (OTURUM 19).
 HULL_LABEL = MA_GROUPS["HULL"][0]
 
 

@@ -20,6 +20,9 @@ os.makedirs(LOG_DIR, exist_ok=True)
 
 DB_PATH = os.path.join(DATA_DIR, "signals.db")
 LOG_FILE = os.path.join(LOG_DIR, "sinyal.log")
+# Islem gunlugu (2026-11-07 kullanici istegi): her kapanan islem icin
+# zaman, yon, giris/cikis, brut/net kar, komisyon ve sebep. CSV (';').
+TRADE_LOG_FILE = os.path.join(LOG_DIR, "islemler.csv")
 
 # --------------------------------------------------------------------------
 # Binance Futures
@@ -411,18 +414,23 @@ PAPER_TK_ENTRY_OFFSET = -0.001    # giris: sinyal fiyatinin GERISINE %0,10 pasif
 # Aninda girisde 15 pencerenin 13'u pozitif; pullback'te 5m/1m 0/3.
 # Yildiz hesabi ve diger TIK2 kurallari DEGISMEDI; yalniz dolum mekanigi.
 PAPER_TK2_ENTRY_OFFSET = 0.0      # TIK2: sinyal barinin kapanisinda aninda gir (0 = market)
-# TIK2 ac/kapa sonrasi bekleme (kullanici kurali 2026-11-06): AL/SAT
-# kuralina gore pozisyon acildiktan/kapandiktan sonra 2 DAKIKA yeni
-# islem yok. TK1'in PAPER_TK_AFTER_SEC=60 degeri DEGISMEZ.
-PAPER_TK2_AFTER_SEC = 120         # TIK2: ac/kapa sonrasi 2 dk bekleme
+# TIK2 ac/kapa sonrasi bekleme (kullanici kurali 2026-11-06, KALDIRILDI
+# 2026-11-07): AL/SAT kuralina gore pozisyon acildiktan/kapandiktan
+# sonra 2 DAKIKA yeni islem yoktu. Kullanici canlida bunun pozisyonu
+# kacirdigini ve zarara sebep oldugunu bildirdi; bekleme tamamen
+# kaldirildi. 0 = bekleme yok. TK1'in PAPER_TK_AFTER_SEC=60 degeri
+# DEGISMEZ.
+PAPER_TK2_AFTER_SEC = 0           # TIK2: ac/kapa sonrasi bekleme YOK
 # TIK2 MINIMUM TUTMA (2026-11-07, kullanici geri bildirimi): sinyal
 # ters dondu diye pozisyonu ILK barda kapatma. Stop/banka cikislari
 # her zaman aninda calisir; yalnizca SINYAL cikisi K bar gecikir.
-# 0 = kapali. 1m olcumu: 3 bar en iyi (4/5 biraz daha zayif).
-PAPER_TK2_MIN_HOLD = 3
+# 2026-11-07 kullanici karari: bu bekleme de kaldirildi (kapatmayi
+# geciktirip zarara sebep oluyordu). 0 = kapali.
+PAPER_TK2_MIN_HOLD = 0
 # TIK2 STABILIZASYON (2026-11-07): kural serisi ~2 barda bir donuyordu.
-# HULL giris kapisi + minimum tutma ile 1m'de 4 sembolun 4'unde de
-# hamdan iyi; ayrinti ALGORITMA_ARASTIRMASI.md OTURUM 17.
+# HULL giris kapisi ile 1m'de 4 sembolun 4'unde de hamdan iyi; ayrinti
+# ALGORITMA_ARASTIRMASI.md OTURUM 17. (Beklemeler 2026-11-07'de
+# kaldirildi; bkz. PAPER_TK2_AFTER_SEC / PAPER_TK2_MIN_HOLD.)
 # STAB_ON=False -> eski ham kural serisi (karsilastirma icin).
 PAPER_TK2_STAB_ON = True
 # Yeni giris yalnizca HULL ayni yondeyse (veya HULL notrse). Acik
