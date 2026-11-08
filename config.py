@@ -441,6 +441,16 @@ PAPER_TK2_STAB_HULL_ENTRY = True
 # "hull notr durumdayken yeni pozisyon acma, beklemede kal". Yalnizca
 # pozisyon yokken uygulanir; acik pozisyonun cikisi etkilenmez.
 PAPER_TK2_STAB_HULL_NEUTRAL_BLOCK = True
+# HULL + HACIM AGIRLIKLI MA BIRLIKTE (kullanici kurali 2026-11-08):
+# Osilatorlerin cogunlugu AL (notrler sayilmaz), HULL SAT ve hacim
+# agirlikli MA AL ise SHORT acma; LONG ac. VWMA AL iken HULL notr ise
+# pozisyon tehlikeli sayilir ve LONG'a cevrilmez (HULL notr yasagi da
+# ayrica devrededir). Asagidaki simetrik SAT kurali varsayilan kapali.
+PAPER_TK2_STAB_VWMA_HULL_LONG = True
+PAPER_TK2_STAB_VWMA_HULL_LONG_NEUTRAL = False
+PAPER_TK2_STAB_VWMA_HULL_HOLD = True
+PAPER_TK2_STAB_VWMA_HULL_ALWAYS = False
+PAPER_TK2_STAB_VWMA_HULL_SHORT = False
 # True: HULL'a ters TUM sinyaller notr olur (acik pozisyonu da kapatir).
 # Olcumde giris kapisindan daha kotu; varsayilan kapali.
 PAPER_TK2_STAB_HULL_FULL = False

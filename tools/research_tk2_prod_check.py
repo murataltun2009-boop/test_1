@@ -24,7 +24,7 @@ import config  # noqa: E402
 from core import tk2_rules  # noqa: E402
 from core.analysis import analyze  # noqa: E402
 from core.paper import PaperTrader  # noqa: E402
-from tools.research_tk2_stab import HULL, load, stabilize  # noqa: E402
+from tools.research_tk2_stab import load  # noqa: E402
 
 DATASETS = [
     ("ENAUSDT", "1m", 4000, 500),
@@ -63,8 +63,15 @@ def main():
     assert bool(getattr(config, "PAPER_TK2_STAB_HULL_ENTRY", True))
     assert int(getattr(config, "PAPER_TK2_MIN_HOLD", 0)) == 0
     assert int(getattr(config, "PAPER_TK2_AFTER_SEC", 0)) == 0
+    assert bool(getattr(config, "PAPER_TK2_STAB_HULL_NEUTRAL_BLOCK", True))
+    assert bool(getattr(config, "PAPER_TK2_STAB_VWMA_HULL_LONG", True))
+    assert bool(getattr(config, "PAPER_TK2_STAB_VWMA_HULL_HOLD", True))
+    assert not bool(getattr(config, "PAPER_TK2_STAB_VWMA_HULL_ALWAYS", False))
     print(f"config: STAB_ON={config.PAPER_TK2_STAB_ON} "
           f"HULL_ENTRY={config.PAPER_TK2_STAB_HULL_ENTRY} "
+          f"HULL_NEUTRAL_BLOCK={config.PAPER_TK2_STAB_HULL_NEUTRAL_BLOCK} "
+          f"VWMA_LONG={config.PAPER_TK2_STAB_VWMA_HULL_LONG} "
+          f"VWMA_HOLD={config.PAPER_TK2_STAB_VWMA_HULL_HOLD} "
           f"MIN_HOLD={config.PAPER_TK2_MIN_HOLD} "
           f"AFTER_SEC={config.PAPER_TK2_AFTER_SEC} "
           f"FLIP={config.PAPER_TK2_STAB_CONFIRM_FLIP}", flush=True)
@@ -83,7 +90,20 @@ def main():
         ham = tk2_rules.series(res.osc_codes, res.ma_codes)
         prod = tk2_rules.series_stable(res.osc_codes, res.ma_codes)
         # Production serisi, arastirma prototipinin varsayilaniyla ayni mi?
-        proto = stabilize(ham, res.ma_codes[HULL], hull_entry_veto=True)
+        proto = tk2_rules.stabilize(
+            ham, res.ma_codes[tk2_rules.HULL_LABEL],
+            osc_major=tk2_rules.oscillator_majority(
+                res.osc_codes, len(ham)),
+            vwma=tk2_rules.ma_direction(
+                res.ma_codes, tk2_rules.VWMA_LABEL, len(ham)),
+            hull_entry_veto=True,
+            hull_neutral_block=bool(config.PAPER_TK2_STAB_HULL_NEUTRAL_BLOCK),
+            vwma_hull_long=bool(config.PAPER_TK2_STAB_VWMA_HULL_LONG),
+            vwma_hull_long_neutral=bool(
+                config.PAPER_TK2_STAB_VWMA_HULL_LONG_NEUTRAL),
+            vwma_hull_hold=bool(config.PAPER_TK2_STAB_VWMA_HULL_HOLD),
+            vwma_hull_always=bool(config.PAPER_TK2_STAB_VWMA_HULL_ALWAYS),
+            vwma_hull_short=bool(config.PAPER_TK2_STAB_VWMA_HULL_SHORT))
         if prod != proto:
             diff = sum(1 for a, b in zip(prod, proto) if a != b)
             print(f"  UYARI: production/prototip farki {diff} bar", flush=True)

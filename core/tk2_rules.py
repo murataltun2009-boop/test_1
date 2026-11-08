@@ -372,6 +372,7 @@ def decision_at(osc_codes: dict, ma_codes: dict, idx: int) -> str:
 #   Beklemesiz sürüm (2 dk + min tutma kaldırıldı, production ayarı):
 #   +650$, 18/32 pozitif, DD -85,3$ (OTURUM 19).
 HULL_LABEL = MA_GROUPS["HULL"][0]
+VWMA_LABEL = MA_GROUPS["VWMA"][0]
 
 
 def _dir_of(label: str) -> int:
@@ -420,11 +421,51 @@ def hull_direction(ma_codes: dict, n: int) -> Optional[list[int]]:
     return [int(x) for x in arr]
 
 
+def ma_direction(ma_codes: dict, label: str, n: int) -> Optional[list[int]]:
+    """Tek bir hareketli ortalamanın yön serisi (+1/0/-1)."""
+    arr = _array(ma_codes or {}, label, n)
+    if arr is None:
+        return None
+    return [int(x) for x in arr]
+
+
+def oscillator_majority(osc_codes: dict, n: int) -> Optional[list[int]]:
+    """Osilatör çoğunluğu: AL sayısı SAT'tan fazlaysa +1, azsa -1.
+
+    NÖTR kodlar sayılmaz (kullanıcı kuralı 2026-11-08). Eşitlik -> 0.
+    Eksik/bozuk seriler sessizce atlanır; hiç geçerli seri yoksa None.
+    """
+    if not osc_codes or n <= 0:
+        return None
+    al = np.zeros(n, dtype=np.int16)
+    sat = np.zeros(n, dtype=np.int16)
+    used = 0
+    for arr in osc_codes.values():
+        a = np.asarray(arr)
+        if a.size != n:
+            continue
+        used += 1
+        al += (a > 0)
+        sat += (a < 0)
+    if used == 0:
+        return None
+    out = np.zeros(n, dtype=np.int8)
+    out[al > sat] = 1
+    out[sat > al] = -1
+    return [int(x) for x in out]
+
+
 def stabilize(raw: list[str], hull=None, *, vote: int = 1,
               vote_min: int = 0, confirm_entry: int = 1,
               confirm_exit: int = 1, confirm_flip: int = 1,
               min_dwell: int = 0, hull_entry_veto: bool = False,
               hull_neutral_block: bool = False,
+              osc_major=None, vwma=None,
+              vwma_hull_long: bool = False,
+              vwma_hull_long_neutral: bool = False,
+              vwma_hull_hold: bool = False,
+              vwma_hull_always: bool = False,
+              vwma_hull_short: bool = False,
               hull_veto: bool = False, hull_smooth: int = 1,
               hull_entry_fast: bool = False, hull_governor: bool = False,
               hull_fast_exit: bool = True) -> list[str]:
@@ -442,6 +483,18 @@ def stabilize(raw: list[str], hull=None, *, vote: int = 1,
     hull_entry_veto: yalnızca YENİ girişte HULL'a ters sinyali engelle
     hull_neutral_block: HULL NÖTR (0) iken YENİ giriş yapma; açık
                     pozisyonun çıkışı etkilenmez (kullanıcı kuralı)
+    osc_major     : osilatör çoğunluğu (+1 AL fazla, -1 SAT fazla, 0 eşit)
+    vwma          : hacim ağırlıklı MA yönü (+1 AL, -1 SAT, 0 NÖTR)
+    vwma_hull_long: osilatör çoğunluğu AL, HULL SAT ve VWMA AL ise
+                    SHORT yerine LONG aç (kullanıcı kuralı 2026-11-08)
+    vwma_hull_long_neutral: aynı LONG geçişini kural serisi NÖTR iken de
+                    uygula (varsayılan kapalı)
+    vwma_hull_hold: koşul açık LONG pozisyon varken de geçerli olsun;
+                    LONG'u SAT sinyaliyle kapatma (kullanıcı kuralı)
+    vwma_hull_always: koşul açık pozisyon varken de geçerli olsun
+                    (LONG'u korur / SHORT'u LONG'a çevirir)
+    vwma_hull_short: simetrik durum: osilatör çoğunluğu SAT, HULL AL ve
+                    VWMA SAT ise LONG yerine SHORT aç
     hull_veto     : açık pozisyon dahil HULL'a ters sinyali nötr yap
     hull_smooth   : HULL yönünü son K barlık çoğunlukla yumuşat
     hull_entry_fast: HULL yeni yönü doğruluyorsa giriş onayını bekleme
@@ -471,6 +524,16 @@ def stabilize(raw: list[str], hull=None, *, vote: int = 1,
         hv = list(hull)
         if len(hv) == n:
             hs = _smooth_dirs(hv, max(1, int(hull_smooth)))
+    vs: Optional[list[int]] = None
+    if vwma is not None:
+        vv = list(vwma)
+        if len(vv) == n:
+            vs = [int(x) for x in vv]
+    os_major: Optional[list[int]] = None
+    if osc_major is not None:
+        ov = list(osc_major)
+        if len(ov) == n:
+            os_major = [int(x) for x in ov]
     if hs is not None and hull_veto:
         for i in range(n):
             if cand[i] != 0 and hs[i] != 0 and cand[i] != hs[i]:
@@ -483,8 +546,34 @@ def stabilize(raw: list[str], hull=None, *, vote: int = 1,
     last_change = -10 ** 9
     for i in range(n):
         c = int(cand[i])
+        # HULL + VWMA BİRLİKTE (kullanıcı kuralı 2026-11-08):
+        # Osilatörlerin çoğunluğu AL, HULL SAT ve VWMA AL ise SHORT
+        # açma; LONG aç. VWMA AL iken HULL NÖTR ise pozisyon tehlikeli
+        # sayılır ve bu geçiş uygulanmaz (HULL nötr giriş yasağı da
+        # ayrıca devrededir). Girişte (state==0) ve -- hold açıksa --
+        # açık LONG'u korurken uygulanır.
+        vw_override = False
+        _vw_apply = (state == 0 or vwma_hull_always
+                     or (vwma_hull_hold and state > 0))
+        if _vw_apply and hs is not None \
+                and vs is not None and os_major is not None:
+            if vwma_hull_long and c == -1 and hs[i] < 0 \
+                    and vs[i] > 0 and os_major[i] > 0:
+                c = 1
+                vw_override = True
+            elif vwma_hull_long and vwma_hull_long_neutral and c == 0 \
+                    and hs[i] < 0 and vs[i] > 0 and os_major[i] > 0:
+                c = 1
+                vw_override = True
+            elif vwma_hull_short and c == 1 and hs[i] > 0 \
+                    and vs[i] < 0 and os_major[i] < 0:
+                c = -1
+                vw_override = True
         # GİRİŞ KAPISI: pozisyon yokken HULL'a ters yön açılmaz.
-        if state == 0 and hs is not None and hull_entry_veto:
+        # VWMA/HULL birleşik kuralı LONG'u açıkça istediyse bu kapı
+        # atlanır (kullanıcı kuralı HULL'dan önce gelir).
+        if state == 0 and hs is not None and hull_entry_veto \
+                and not vw_override:
             if c != 0 and hs[i] != 0 and c != hs[i]:
                 c = 0
         # HULL NÖTR İKEN YENİ GİRİŞ YOK (kullanıcı kuralı 2026-11-08).
@@ -541,6 +630,8 @@ def series_stable(osc_codes: dict, ma_codes: dict, **overrides) -> list[str]:
     if not bool(getattr(config, "PAPER_TK2_STAB_ON", True)):
         return raw
     hull = hull_direction(ma_codes, len(raw))
+    osc_major = oscillator_majority(osc_codes, len(raw))
+    vwma = ma_direction(ma_codes, VWMA_LABEL, len(raw))
     kw = {
         "vote": int(getattr(config, "PAPER_TK2_STAB_VOTE", 1) or 1),
         "confirm_entry": int(getattr(
@@ -555,6 +646,18 @@ def series_stable(osc_codes: dict, ma_codes: dict, **overrides) -> list[str]:
             config, "PAPER_TK2_STAB_HULL_ENTRY", True)),
         "hull_neutral_block": bool(getattr(
             config, "PAPER_TK2_STAB_HULL_NEUTRAL_BLOCK", True)),
+        "osc_major": osc_major,
+        "vwma": vwma,
+        "vwma_hull_long": bool(getattr(
+            config, "PAPER_TK2_STAB_VWMA_HULL_LONG", True)),
+        "vwma_hull_long_neutral": bool(getattr(
+            config, "PAPER_TK2_STAB_VWMA_HULL_LONG_NEUTRAL", False)),
+        "vwma_hull_hold": bool(getattr(
+            config, "PAPER_TK2_STAB_VWMA_HULL_HOLD", False)),
+        "vwma_hull_always": bool(getattr(
+            config, "PAPER_TK2_STAB_VWMA_HULL_ALWAYS", False)),
+        "vwma_hull_short": bool(getattr(
+            config, "PAPER_TK2_STAB_VWMA_HULL_SHORT", False)),
         "hull_veto": bool(getattr(
             config, "PAPER_TK2_STAB_HULL_FULL", False)),
         "hull_smooth": int(getattr(

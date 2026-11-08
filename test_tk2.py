@@ -360,7 +360,10 @@ kontrol("10.4 tam HULL vetosu açık pozisyonu kapatır",
 _ham10 = tk2_rules.series(res7.osc_codes, res7.ma_codes)
 _stab10 = tk2_rules.series_stable(res7.osc_codes, res7.ma_codes,
                                   hull_entry_veto=False,
-                                  hull_neutral_block=False)
+                                  hull_neutral_block=False,
+                                  vwma_hull_long=False,
+                                  vwma_hull_long_neutral=False,
+                                  vwma_hull_short=False)
 kontrol("10.5 kapılar kapalıyken seri ham kural serisine eşit",
         _stab10 == _ham10)
 
@@ -511,7 +514,76 @@ kontrol("13.9 production serisinde nötr HULL'da yeni giriş YOK",
 kontrol("13.10 yasak kapalıyken seri ham kural serisine eşit",
         tk2_rules.series_stable(res7.osc_codes, res7.ma_codes,
                                 hull_entry_veto=False,
-                                hull_neutral_block=False) == _ham10)
+                                hull_neutral_block=False,
+                                vwma_hull_long=False,
+                                vwma_hull_long_neutral=False,
+                                vwma_hull_short=False) == _ham10)
+
+
+# ==================================================================
+# 14) HULL + VWMA BİRLİKTE (kullanıcı kuralı 2026-11-08)
+# ==================================================================
+print("14) HULL + VWMA birlikte")
+# Osilatör çoğunluğu: NÖTR kodlar sayılmaz.
+_osc14 = {
+    "a": np.asarray([1, 1, 0, 0], dtype=np.int8),
+    "b": np.asarray([1, -1, 0, 0], dtype=np.int8),
+    "c": np.asarray([0, -1, 0, 0], dtype=np.int8),
+}
+kontrol("14.1 osilatör çoğunluğu (nötr hariç): AL/SAT/eşit",
+        tk2_rules.oscillator_majority(_osc14, 4) == [1, -1, 0, 0])
+
+# Osilatör çoğunluğu AL, HULL SAT, VWMA AL -> SHORT değil LONG.
+_raw14 = ["SAT", "NÖTR", "NÖTR", "NÖTR"]
+_hull14 = [-1, -1, -1, -1]
+_vwma14 = [1, 1, 1, 1]
+_omaj14 = [1, 1, 1, 1]
+_ov14 = tk2_rules.stabilize(
+    _raw14, _hull14, osc_major=_omaj14, vwma=_vwma14,
+    vwma_hull_long=True, hull_entry_veto=True)
+kontrol("14.2 HULL SAT + VWMA AL + osilatör AL -> LONG",
+        _ov14[0] == "AL")
+kontrol("14.3 kural kapalıyken ham SAT korunur",
+        tk2_rules.stabilize(
+            _raw14, _hull14, osc_major=_omaj14, vwma=_vwma14,
+            vwma_hull_long=False, hull_entry_veto=True)[0] == "SAT")
+kontrol("14.4 osilatör çoğunluğu AL değilse LONG'a çevrilmez",
+        tk2_rules.stabilize(
+            _raw14, _hull14, osc_major=[0, 0, 0, 0], vwma=_vwma14,
+            vwma_hull_long=True, hull_entry_veto=True)[0] == "SAT")
+kontrol("14.5 VWMA AL ama HULL NÖTR -> giriş yok (tehlikeli)",
+        tk2_rules.stabilize(
+            ["AL", "AL", "AL", "AL"], [0, 0, 0, 0],
+            osc_major=_omaj14, vwma=_vwma14,
+            vwma_hull_long=True, hull_neutral_block=True)
+        == ["NÖTR", "NÖTR", "NÖTR", "NÖTR"])
+
+# Production serisi: ham kural SAT üretirken birleşik kural LONG verir.
+_n14 = 4
+_osc14p = {lab: np.full(_n14, 1, dtype=np.int8)
+           for lab in OSCILLATOR_LABELS}
+_osc14p["Emtia Kanal Endeksi(CCI) (20)"] = np.full(
+    _n14, -1, dtype=np.int8)
+# AL|MOMENTUM,MACD,...|HACIM AGIRLIKLI satırı tetiklenmesin.
+_osc14p[tk2_rules.OSC_BY_ALIAS["MOMENTUM"]] = np.full(
+    _n14, -1, dtype=np.int8)
+_ma14p = {lab: np.full(_n14, 1, dtype=np.int8) for lab in ma_labels()}
+_ma14p[tk2_rules.HULL_LABEL] = np.full(_n14, -1, dtype=np.int8)
+_ma14p[tk2_rules.VWMA_LABEL] = np.full(_n14, 1, dtype=np.int8)
+_ham14p = tk2_rules.series(_osc14p, _ma14p)
+kontrol("14.6 senaryoda ham kural serisi SAT",
+        _ham14p == ["SAT", "SAT", "SAT", "SAT"])
+kontrol("14.7 production serisi SAT yerine AL üretir (koşul sürdükçe LONG)",
+        tk2_rules.series_stable(_osc14p, _ma14p)
+        == ["AL", "AL", "AL", "AL"])
+kontrol("14.8 kural kapalıyken production serisi SAT'a döner",
+        tk2_rules.series_stable(_osc14p, _ma14p, vwma_hull_long=False)
+        == ["SAT", "SAT", "SAT", "SAT"])
+kontrol("14.9 config: LONG + koşul sürerken koru açık; 'hep' ve simetrik kapalı",
+        bool(config.PAPER_TK2_STAB_VWMA_HULL_LONG)
+        and bool(config.PAPER_TK2_STAB_VWMA_HULL_HOLD)
+        and not bool(config.PAPER_TK2_STAB_VWMA_HULL_ALWAYS)
+        and not bool(config.PAPER_TK2_STAB_VWMA_HULL_SHORT))
 
 
 print("-" * 60)

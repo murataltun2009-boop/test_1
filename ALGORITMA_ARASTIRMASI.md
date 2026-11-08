@@ -1905,4 +1905,67 @@ yeni giriş yok; kapı kapalıyken seri ham kural serisine eşit.
 `node --check app.js/sw.js` temiz. Arayüz metni "HULL nötrken giriş
 yok" olarak güncellendi; cache `?v=38`, `sw.js` `ta-v38`.
 
+---
+
+## OTURUM 21 — HULL + hacim ağırlıklı MA birlikte (2026-11-08)
+
+KULLANICI KURALI:
+> "Osilatörlerin SAT'tan daha fazla AL verirken (nötr dahil değil),
+> HULL SAT, hacim ağırlıklı hareketli ortalamalar ise AL veriyorsa
+> SHORT pozisyon açma, LONG pozisyon açman lazım. HULL ile hacim
+> ağırlıklı hareketli ortalamaları beraber değerlendir. Hacim ağırlıklı
+> hareketli ortalamalar AL verirken HULL nötr ise o pozisyon tehlikeli."
+
+UYGULAMA:
+  * `tk2_rules.oscillator_majority()`: 11 osilatörün AL/SAT sayısı.
+    NÖTR kodlar sayılmaz; AL fazlaysa +1, SAT fazlaysa -1, eşitse 0.
+  * `tk2_rules.ma_direction()`: tek MA yönü (VWMA için kullanılır).
+  * `stabilize()` yeni girdiler: `osc_major`, `vwma`,
+    `vwma_hull_long`, `vwma_hull_long_neutral`, `vwma_hull_hold`,
+    `vwma_hull_always`, `vwma_hull_short`.
+  * Koşul: osilatör çoğunluğu AL (+1), HULL SAT (-1), VWMA AL (+1).
+    Bu durumda ham kural SAT üretse bile SHORT açılmaz; LONG açılır.
+  * `vwma_hull_hold=True`: LONG açıldıktan sonra koşul sürdükçe LONG
+    SAT sinyaliyle kapatılmaz. Koşul bitince normal kural işler.
+  * `vwma_hull_always=False`: açık SHORT'u zorla LONG'a çevirmez.
+  * `vwma_hull_short=False`: simetrik SAT kuralı (kullanıcı istemedi).
+  * `vwma_hull_long_neutral=False`: ham kural NÖTR iken LONG açmaz;
+    yalnız "SHORT açılacakken" devreye girer.
+  * VWMA AL iken HULL NÖTR ise giriş yapılmaz: mevcut
+    `PAPER_TK2_STAB_HULL_NEUTRAL_BLOCK` kuralı bu tehlikeli durumu
+    zaten kapsıyor. Açık pozisyonun çıkışı etkilenmez.
+  * Stop/kâr bankası anında çalışmaya devam eder.
+
+ÖLÇÜM (`tools/research_tk2_vwma_hull.py`, 4 sembol × 8 × 500 bar 1m,
+HULL nötr yasağı açık):
+  Varyant                    Net        Pozitif   İşlem   DD
+  taban (kural)              +509,35$   15/32     1032    −93,59$
+  LONG giriş                 +499,74$   14/32     1026    −93,59$
+  LONG giriş + koşul sürerken koru  +276,77$  12/32  1030  −110,45$
+  LONG giriş + koru + NÖTR   + 59,92$   12/32     1054    −104,88$
+  LONG her durumda           +252,09$   13/32     1009    −116,84$
+  simetrik giriş             +499,74$   14/32     1026    −93,59$
+
+Koşul barları sembol başına ~75–99 kez görülüyor; çoğu 1 bar sürüyor
+(ortalama 1,1; en fazla 3). Kullanıcı, ölçüm sunulduktan sonra
+"koşul sürerken LONG'u koru" seçeneğini seçti. Bu nedenle production
+ayarı: `VWMA_HULL_LONG=True`, `VWMA_HULL_HOLD=True`,
+`VWMA_HULL_ALWAYS=False`, `VWMA_HULL_SHORT=False`,
+`VWMA_HULL_LONG_NEUTRAL=False`.
+
+PRODUCTION DOĞRULAMA (`tools/research_tk2_prod_check.py`):
+  ham  +543,52$  17/32  DD −109,04$
+  prod +276,77$  12/32  DD −110,45$
+Production serisi, seçilen "giriş + koşul sürerken koru" varyantıyla
+birebir aynı.
+
+DOĞRULAMA: `test_tk2.py` 83/83 — bölüm 14: osilatör çoğunluğu (nötr
+hariç), HULL SAT + VWMA AL + osilatör AL -> LONG, kural kapalıyken ham
+SAT, osilatör çoğunluğu yoksa çevrilmez, VWMA AL + HULL NÖTR -> giriş
+yok, production serisi SAT yerine AL (koşul sürdükçe), config bayrakları.
+`test_paper` 90/90, `test_tk_fix` 37/37, `py_compile`,
+`node --check app.js/sw.js` temiz. Arayüz metni HULL/VWMA birleşik
+kuralını gösterecek şekilde güncellendi; cache `?v=39`,
+`sw.js` `ta-v39`.
+
 
