@@ -1,11 +1,17 @@
 # -*- coding: utf-8 -*-
-"""TİK2 — KULLANICI KURAL LİSTESİ testi (2026-11-06).
+"""TİK2 — KULLANICI KURAL TABLOSU testi (2026-11-09).
 
-Kullanıcı kuralı:
+Kullanıcı kuralı (`list2.xlsx`, BTCUSDT 5m, 85 satır):
   * Karar kaynağı `core/tk2_rules.py` kural tablosudur: her satırda
-    osilatör(ler) + hareketli ortalama(lar) AYNI yönde ise sinyal.
+    osilatör ve hareketli ortalamaların DURUMLARI yazılıdır.
   * AL = LONG, SAT = SHORT, NÖTR = pozisyonu kapat.
-  * Satırlar arası VEYA; aynı barda AL+SAT çakışırsa NÖTR.
+  * Satır, yazılan TÜM durumlar aynen sağlandığında geçerlidir;
+    yazılmayan göstergeler serbesttir.
+  * Birden çok satır tutarsa en çok gösterge belirten (en özel) satır
+    kazanır; eşitlikte SONRAKİ satır.
+  * Hiçbir satır tutmuyorsa NÖTR.
+  * HULL nötr yasağı ve VWMA/HULL birleşik kuralı KAPALI; tablo tek
+    karar kaynağıdır.
   * Pozisyon aç/kapa sonrası bekleme YOK (2026-11-07 kullanıcı kararı).
   * Giriş/çıkış LIMIT (maker) — komisyon düşük.
   * Gösterge hesapları ve grafik üretimi DEĞİŞMEZ.
@@ -92,12 +98,12 @@ def yildiz_var(p, m, yildiz, also_mum=None):
 
 
 # ==================================================================
-# 1) KURAL TABLOSU: 74 satır, 25 AL / 49 SAT, etiketler geçerli
+# 1) KURAL TABLOSU: 85 satır (list2.xlsx), 41 AL / 44 SAT
 # ==================================================================
 print("1) Kural tablosu")
 s = tk2_rules.summary()
-kontrol("1.1 74 satır", s["rows"] == 74)
-kontrol("1.2 25 AL / 49 SAT", s["al"] == 25 and s["sat"] == 49)
+kontrol("1.1 85 satır", s["rows"] == 85)
+kontrol("1.2 41 AL / 44 SAT", s["al"] == 41 and s["sat"] == 44)
 kontrol("1.3 tüm osilatör etiketleri analysis ile uyumlu",
         all(o in OSCILLATOR_LABELS for o in s["oscillators"]))
 kontrol("1.4 tüm MA etiketleri analysis ile uyumlu",
@@ -108,53 +114,82 @@ kontrol("1.6 USTEL+BASIT+HULL = 13 MA",
         len(tk2_rules.MA_GROUPS["EMA"]) +
         len(tk2_rules.MA_GROUPS["SMA"]) +
         len(tk2_rules.MA_GROUPS["HULL"]) == 13)
+kontrol("1.7 her satırda açık DURUM yazılı", s["state_rules"] == 85)
+kontrol("1.8 özgüllük 4..11 gösterge",
+        s["specificity"]["min"] == 4 and s["specificity"]["max"] == 11)
+kontrol("1.9 tabloda HULL ve HACIM AGIRLIKLI var",
+        tk2_rules.HULL_LABEL in s["mas"]
+        and tk2_rules.VWMA_LABEL in s["mas"])
+kontrol("1.10 NÖTR durumu ayrıştırıldı",
+        tk2_rules.RULES[0].ma_pairs()[1]
+        == (tk2_rules.HULL_LABEL, 0))
+# Excel satır 29: WILLIAMS YUZDE(AL), WILLIAMS(NOTR) aynı gösterge;
+# parser son durumu (NÖTR) korur.
+kontrol("1.11 aynı gösterge iki kez yazılırsa son durum kazanır",
+        (tk2_rules.OSC_BY_ALIAS["WILLIAMS"], 0)
+        in tk2_rules.RULES[27].osc_pairs())
 
 
 # ==================================================================
-# 2) KURAL SERİSİ: AL / SAT / NÖTR / çakışma
+# 2) KURAL SERİSİ: durum eşleşmesi, özgüllük, eşitlikte son satır
 # ==================================================================
 print("2) Kural serisi")
 
 
-def seri(osc_up=(), osc_dn=(), ma_up=(), ma_dn=()):
-    """Sentetik kod serisi: verilen kısa adları +1 / -1 yapar."""
-    n = 4
+def kural_kodlari(rule, n=1):
+    """Bir kuralın yazdığı durumları koda çevirir; diğerleri NÖTR (0)."""
     osc = {lab: np.zeros(n, dtype=np.int8) for lab in OSCILLATOR_LABELS}
     ma = {lab: np.zeros(n, dtype=np.int8) for lab in ma_labels()}
-    for ad in osc_up:
-        osc[tk2_rules.OSC_BY_ALIAS[ad]] = np.full(n, 1, dtype=np.int8)
-    for ad in osc_dn:
-        osc[tk2_rules.OSC_BY_ALIAS[ad]] = np.full(n, -1, dtype=np.int8)
-    for ad in ma_up:
-        for lab in tk2_rules.MA_GROUPS[tk2_rules.MA_GROUP_BY_ALIAS[ad]]:
-            ma[lab] = np.full(n, 1, dtype=np.int8)
-    for ad in ma_dn:
-        for lab in tk2_rules.MA_GROUPS[tk2_rules.MA_GROUP_BY_ALIAS[ad]]:
-            ma[lab] = np.full(n, -1, dtype=np.int8)
+    for lab, st in rule.osc_pairs():
+        osc[lab] = np.full(n, st, dtype=np.int8)
+    for lab, st in rule.ma_pairs():
+        ma[lab] = np.full(n, st, dtype=np.int8)
+    return osc, ma
+
+
+def seri_kural(rule, n=1, **degistir):
+    osc, ma = kural_kodlari(rule, n)
+    for lab, st in degistir.items():
+        d = osc if lab in osc else ma
+        d[lab] = np.full(n, st, dtype=np.int8)
     return tk2_rules.series(osc, ma)
 
 
-kontrol("2.1 boş kodlar -> NÖTR", seri() == ["NÖTR"] * 4)
-kontrol("2.2 EMTIA+HULL sat -> SAT",
-        seri(osc_dn=("EMTIA",), ma_dn=("HULL",)) == ["SAT"] * 4)
-kontrol("2.3 EMTIA+HULL al -> AL",
-        seri(osc_up=("EMTIA",), ma_up=("HULL",)) == ["AL"] * 4)
-# Satır 1 (SAT MACD + EMA/SMA/HULL) ile satır 46 (SAT MOMENTUM/MACD + VWMA)
-# aynı anda tutabilir; VWMA tek başına yön belirler.
-kontrol("2.4 SAT çoklu MA (EMA+SMA+HULL) -> SAT",
-        seri(osc_dn=("MACD",),
-             ma_dn=("USTEL HAREKETLI", "BASIT HAREKETLI", "HULL"))
-        == ["SAT"] * 4)
-# ÇAKIŞMA: satır 6 (AL STOKR+WILLIAMS+HULL) ve satır 46 (SAT
-# MOMENTUM+MACD+VWMA) aynı barda tutar -> NÖTR.
-kontrol("2.5 AL+SAT çakışması -> NÖTR",
-        seri(osc_up=("STOKASTIK RSI HIZLI", "WILLIAMS"),
-             osc_dn=("MOMENTUM", "MACD"),
-             ma_up=("HULL",), ma_dn=("HACIM AGIRLIKLI",))
-        == ["NÖTR"] * 4)
-# AL satırı eksik bileşen (yalnız HULL) tutmaz.
-kontrol("2.6 eksik bileşen -> NÖTR",
-        seri(ma_up=("HULL",)) == ["NÖTR"] * 4)
+osc_bos = {lab: np.zeros(4, dtype=np.int8) for lab in OSCILLATOR_LABELS}
+ma_bos = {lab: np.zeros(4, dtype=np.int8) for lab in ma_labels()}
+kontrol("2.1 boş kodlar -> NÖTR",
+        tk2_rules.series(osc_bos, ma_bos) == ["NÖTR"] * 4)
+# Satır 1: AL | MOMENTUM(AL), MACD(AL) | VWMA(AL), HULL(NÖTR)
+kontrol("2.2 satır 1 kendi durumlarıyla AL",
+        seri_kural(tk2_rules.RULES[0]) == ["AL"])
+# Yazılan durum AYNEN aranır: MOMENTUM SAT yapılırsa satır 1 tutmaz.
+kontrol("2.3 yazılan durum bozulunca satır tutmaz",
+        seri_kural(tk2_rules.RULES[0],
+                   **{tk2_rules.OSC_BY_ALIAS["MOMENTUM"]: -1}) == ["NÖTR"])
+# EN ÖZEL SATIR: Excel satır 3 (AL, 5 gösterge) ile satır 56 (SAT, 10
+# gösterge) aynı anda tutar; daha özel olan SAT kazanır.
+_kontrol3 = tk2_rules.series(*kural_kodlari(tk2_rules.RULES[1]))
+kontrol("2.4 en özel satır kazanır (5 AL < 10 SAT)",
+        _kontrol3 == ["SAT"])
+# EŞİTLİKTE SON SATIR: 79/81/83 aynı deseni paylaşır (SAT, AL, AL);
+# aynı özgüllükte sonuncu (AL) kazanır.
+kontrol("2.5 eşit özgüllükte son satır kazanır",
+        seri_kural(tk2_rules.RULES[79]) == ["AL"])
+# Öncelik sırası: özgüllük büyük olan üstte, eşitlikte büyük index üstte.
+_prio = tk2_rules._rule_priority()
+_ok_prio = True
+for _i, _ri in enumerate(tk2_rules.RULES):
+    for _j, _rj in enumerate(tk2_rules.RULES):
+        if _ri.specificity < _rj.specificity and not _prio[_i] < _prio[_j]:
+            _ok_prio = False
+        if _ri.specificity == _rj.specificity and _i < _j \
+                and not _prio[_i] < _prio[_j]:
+            _ok_prio = False
+kontrol("2.6 öncelik: özgüllük, eşitlikte satır sırası", _ok_prio)
+# Yazılmayan göstergeler serbest: RSI tabloda yok, değişmesi sonucu bozmaz.
+kontrol("2.7 yazılmayan göstergeler serbest (wildcard)",
+        seri_kural(tk2_rules.RULES[0],
+                   **{OSCILLATOR_LABELS[0]: -1}) == ["AL"])
 
 
 # ==================================================================
@@ -464,66 +499,47 @@ finally:
 
 
 # ==================================================================
-# 13) HULL NÖTR İKEN YENİ GİRİŞ YASAĞI (kullanıcı kuralı 2026-11-08)
+# 13) KATMANLAR KAPALI: TABLO TEK KARAR KAYNAĞI (2026-11-09)
 # ==================================================================
-print("13) HULL nötr giriş yasağı")
-kontrol("13.1 varsayılan yasak açık (config)",
-        bool(config.PAPER_TK2_STAB_HULL_NEUTRAL_BLOCK))
+print("13) HULL/VWMA katmanı kapalı")
+kontrol("13.1 config: stabilizasyon kapalı",
+        not bool(config.PAPER_TK2_STAB_ON))
+kontrol("13.2 config: HULL giriş ve nötr kapıları kapalı",
+        not bool(config.PAPER_TK2_STAB_HULL_ENTRY)
+        and not bool(config.PAPER_TK2_STAB_HULL_NEUTRAL_BLOCK))
+kontrol("13.3 config: VWMA/HULL birleşik kuralı kapalı",
+        not bool(config.PAPER_TK2_STAB_VWMA_HULL_LONG)
+        and not bool(config.PAPER_TK2_STAB_VWMA_HULL_LONG_NEUTRAL)
+        and not bool(config.PAPER_TK2_STAB_VWMA_HULL_HOLD)
+        and not bool(config.PAPER_TK2_STAB_VWMA_HULL_ALWAYS)
+        and not bool(config.PAPER_TK2_STAB_VWMA_HULL_SHORT))
 
-# HULL nötrken AL girişi engellenir; HULL +1 olunca girer.
+# Production serisi = ham kural serisi (başka katman karar değiştirmez).
+_ham13 = tk2_rules.series(res7.osc_codes, res7.ma_codes)
+_ser13p = tk2_rules.series_stable(res7.osc_codes, res7.ma_codes)
+kontrol("13.4 production serisi ham kural serisine eşit",
+        _ser13p == _ham13)
+kontrol("13.5 seride AL ve SAT üretildi",
+        "AL" in _ham13 and "SAT" in _ham13)
+
+# HULL(NÖTR) satırları artık tablonun kendisinde tanımlı.
+_hull0 = [r for r in tk2_rules.RULES
+          if (tk2_rules.HULL_LABEL, 0) in r.ma_pairs()]
+kontrol("13.6 HULL(NOTR) satırları tabloda var (AL ve SAT)",
+        any(r.direction > 0 for r in _hull0)
+        and any(r.direction < 0 for r in _hull0))
+
+# Mekanizma kodu duruyor (test/araştırma); açıkça istenirse çalışır.
 _g13 = tk2_rules.stabilize(["AL", "AL", "AL", "AL"], [0, 0, 1, 1],
                            hull_entry_veto=True, hull_neutral_block=True)
-kontrol("13.2 HULL nötrken AL girişi engellendi (bekler)",
+kontrol("13.7 HULL nötr kapısı mekanizma olarak çalışıyor",
         _g13 == ["NÖTR", "NÖTR", "AL", "AL"])
-# Aynı seri yasak kapalıyken girer: kapının gerçekten devrede olduğunu
-# gösterir (aksi halde test boşuna geçerdi).
-_g13b = tk2_rules.stabilize(["AL", "AL", "AL", "AL"], [0, 0, 1, 1],
-                            hull_entry_veto=True, hull_neutral_block=False)
-kontrol("13.3 yasak kapalıyken nötr HULL'da giriş var",
-        _g13b == ["AL", "AL", "AL", "AL"])
-
-# AÇIK POZİSYON: nötr HULL çıkışı geciktirmez/kapatmaz. Seri HULL +1
-# iken AL açar, nötr barlarda AL olarak devam eder, ters sinyalde anında
-# kapanır.
-_ser13 = tk2_rules.stabilize(["AL", "AL", "SAT", "SAT"], [1, 0, 0, -1],
-                             hull_entry_veto=True, hull_neutral_block=True)
-kontrol("13.4 nötr HULL açık pozisyonu bozmaz (seri AL/AL/SAT/SAT)",
-        _ser13 == ["AL", "AL", "SAT", "SAT"])
-p13 = tk()
-m13 = barlar(60)
-yildiz_var(p13, m13, _ser13[0])             # AL, HULL +1
-kontrol("13.5 HULL +1 iken LONG açıldı", p13.position is not None)
-yildiz_var(p13, m13, _ser13[1])             # AL, HULL 0
-kontrol("13.6 HULL nötrken açık pozisyon korunur",
-        p13.position is not None)
-yildiz_var(p13, m13, _ser13[2])             # SAT, HULL 0
-kontrol("13.7 HULL nötrken ters sinyal ANINDA kapatır",
-        p13.position is None)
-
-# PRODUCTION SERİSİ: nötr HULL barı varken yeni giriş üretilmemeli.
-_hs13 = tk2_rules.hull_direction(res7.ma_codes, len(_ham10))
-_ser13p = tk2_rules.series_stable(res7.osc_codes, res7.ma_codes)
-_ent13 = [i for i in range(1, len(_ser13p))
-          if _ser13p[i] in ("AL", "SAT")
-          and _ser13p[i - 1] != _ser13p[i]]
-kontrol("13.8 production serisinde nötr HULL barı var (test anlamlı)",
-        any(h == 0 for h in _hs13))
-kontrol("13.9 production serisinde nötr HULL'da yeni giriş YOK",
-        bool(_ent13) and all(_hs13[i] != 0 for i in _ent13))
-# Kapı kapalıyken aynı seri ham kural serisine döner (regresyon).
-kontrol("13.10 yasak kapalıyken seri ham kural serisine eşit",
-        tk2_rules.series_stable(res7.osc_codes, res7.ma_codes,
-                                hull_entry_veto=False,
-                                hull_neutral_block=False,
-                                vwma_hull_long=False,
-                                vwma_hull_long_neutral=False,
-                                vwma_hull_short=False) == _ham10)
 
 
 # ==================================================================
-# 14) HULL + VWMA BİRLİKTE (kullanıcı kuralı 2026-11-08)
+# 14) HULL + VWMA: KAPALI, MEKANİZMA TESTLERİ
 # ==================================================================
-print("14) HULL + VWMA birlikte")
+print("14) HULL + VWMA birlikte (kapalı)")
 # Osilatör çoğunluğu: NÖTR kodlar sayılmaz.
 _osc14 = {
     "a": np.asarray([1, 1, 0, 0], dtype=np.int8),
@@ -533,7 +549,7 @@ _osc14 = {
 kontrol("14.1 osilatör çoğunluğu (nötr hariç): AL/SAT/eşit",
         tk2_rules.oscillator_majority(_osc14, 4) == [1, -1, 0, 0])
 
-# Osilatör çoğunluğu AL, HULL SAT, VWMA AL -> SHORT değil LONG.
+# Mekanizma: osilatör çoğunluğu AL, HULL SAT, VWMA AL -> SHORT değil LONG.
 _raw14 = ["SAT", "NÖTR", "NÖTR", "NÖTR"]
 _hull14 = [-1, -1, -1, -1]
 _vwma14 = [1, 1, 1, 1]
@@ -558,32 +574,20 @@ kontrol("14.5 VWMA AL ama HULL NÖTR -> giriş yok (tehlikeli)",
             vwma_hull_long=True, hull_neutral_block=True)
         == ["NÖTR", "NÖTR", "NÖTR", "NÖTR"])
 
-# Production serisi: ham kural SAT üretirken birleşik kural LONG verir.
+# Production serisi bu birleşik kuralı UYGULAMAZ: ham tablo ne diyorsa o.
 _n14 = 4
 _osc14p = {lab: np.full(_n14, 1, dtype=np.int8)
            for lab in OSCILLATOR_LABELS}
 _osc14p["Emtia Kanal Endeksi(CCI) (20)"] = np.full(
     _n14, -1, dtype=np.int8)
-# AL|MOMENTUM,MACD,...|HACIM AGIRLIKLI satırı tetiklenmesin.
 _osc14p[tk2_rules.OSC_BY_ALIAS["MOMENTUM"]] = np.full(
     _n14, -1, dtype=np.int8)
 _ma14p = {lab: np.full(_n14, 1, dtype=np.int8) for lab in ma_labels()}
 _ma14p[tk2_rules.HULL_LABEL] = np.full(_n14, -1, dtype=np.int8)
 _ma14p[tk2_rules.VWMA_LABEL] = np.full(_n14, 1, dtype=np.int8)
-_ham14p = tk2_rules.series(_osc14p, _ma14p)
-kontrol("14.6 senaryoda ham kural serisi SAT",
-        _ham14p == ["SAT", "SAT", "SAT", "SAT"])
-kontrol("14.7 production serisi SAT yerine AL üretir (koşul sürdükçe LONG)",
+kontrol("14.6 production serisi ham tablo serisine eşit",
         tk2_rules.series_stable(_osc14p, _ma14p)
-        == ["AL", "AL", "AL", "AL"])
-kontrol("14.8 kural kapalıyken production serisi SAT'a döner",
-        tk2_rules.series_stable(_osc14p, _ma14p, vwma_hull_long=False)
-        == ["SAT", "SAT", "SAT", "SAT"])
-kontrol("14.9 config: LONG + koşul sürerken koru açık; 'hep' ve simetrik kapalı",
-        bool(config.PAPER_TK2_STAB_VWMA_HULL_LONG)
-        and bool(config.PAPER_TK2_STAB_VWMA_HULL_HOLD)
-        and not bool(config.PAPER_TK2_STAB_VWMA_HULL_ALWAYS)
-        and not bool(config.PAPER_TK2_STAB_VWMA_HULL_SHORT))
+        == tk2_rules.series(_osc14p, _ma14p))
 
 
 print("-" * 60)

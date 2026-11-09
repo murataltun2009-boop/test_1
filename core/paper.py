@@ -497,9 +497,10 @@ class PaperTrader:
         self.tk_pend_close = None     # flip kapanis dokunma seviyesi
         self.tk_pend_entry = None     # (yon, seviye) giris limit ARM
         self.tk_pend_bar = 0          # ARM edildigi bar acilis zamani
-        # ---- TİK2 (2026-11-06, kullanici kurali): AL=LONG / SAT=SHORT ----
-        # Karar, core/tk2_rules.py kural listesinden uretilir. Kirmizi
-        # (SAT) SHORT, yesil (AL) LONG acar; gri (NÖTR) pozisyonu kapatir.
+        # ---- TİK2 (2026-11-09, list2.xlsx): AL=LONG / SAT=SHORT ----
+        # Karar, core/tk2_rules.py 85 satırlık durum tablosundan üretilir:
+        # yazılan durumlar aynen eşleşir, en özel satır kazanır. AL LONG,
+        # SAT SHORT, NÖTR pozisyonu kapatır.
         self._tk2_yesil = False       # yerlesen yesil gordu mu (gri tipi)
         self._tk2_min_hold = int(getattr(
             config, "PAPER_TK2_MIN_HOLD", 0) or 0)
@@ -746,10 +747,12 @@ class PaperTrader:
                 self.tk_vol_mult = 1.0
                 self.tk_leg_flip = False
             if mode == "tk2":
-                # TİK2 (kullanici kurali 2026-11-06): karar kaynagi
-                # core/tk2_rules.py kural listesidir; AL=LONG, SAT=SHORT,
-                # NÖTR=kapat. SAR (stop→ters) ve ribbon-flip mekaniksel
-                # olarak ENGELLENIR (kural disi yon uretmemeli).
+                # TİK2 (kullanici kurali 2026-11-09, list2.xlsx): karar
+                # kaynagi core/tk2_rules.py 85 satirlik durum tablosudur;
+                # yazilan durumlar aynen eslesir, en ozel satir kazanir.
+                # AL=LONG, SAT=SHORT, NÖTR=kapat. HULL/VWMA katmani kapali.
+                # SAR (stop→ters) ve ribbon-flip mekaniksel olarak
+                # ENGELLENIR (kural disi yon uretmemeli).
                 self.tk_sar = False
                 self.tk_ribbon_flip = False
                 # AC/KAPA SONRASI BEKLEME: 2026-11-07 kullanici karariyla

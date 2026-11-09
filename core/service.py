@@ -773,7 +773,7 @@ class MarketService:
                 return None
             idx = len(cs) - 1
             # Ayni analiz versiyonu icin seri zaten cache'li: her tikte
-            # 74 satiri yeniden hesaplamak yerine cache'ten oku.
+            # 85 satiri yeniden hesaplamak yerine cache'ten oku.
             if tf:
                 try:
                     seri = self.mode_signal_series(tf)

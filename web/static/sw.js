@@ -29,15 +29,17 @@
 // v10: TIK2 beklemesiz giris/cikis (2 dk ve 3 bar beklemesi kaldirildi)
 //      + islem gunlugu (logs/islemler.csv: yon/giris/cikis/kar/komisyon).
 // v11: HULL notrken yeni giris yasagi (acik pozisyonun cikisi etkilenmez).
-// v12: HULL SAT + VWMA AL + osilator cogunlugu AL -> SHORT yerine LONG;
-//      kosul surdukce LONG korunur. VWMA AL iken HULL notr -> giris yok.
-const VERSION = "ta-v39";
+// v12: HULL SAT + VWMA AL + osilator cogunlugu AL -> SHORT yerine LONG
+//      (giris barinda). VWMA AL iken HULL notr -> giris yok.
+// v13: list2.xlsx 85 satirlik durum tablosu; en ozel satir kazanir,
+//      esitlikte son satir. HULL/VWMA katmani KAPALI (tablo tek kaynak).
+const VERSION = "ta-v41";
 const SHELL = "shell-" + VERSION;
 
 const PRECACHE = [
   "/",
-  "/static/style.css?v=39",
-  "/static/app.js?v=39",
+  "/static/style.css?v=41",
+  "/static/app.js?v=41",
   "/static/vendor/echarts.min.js",
   "/static/icon-192.png",
   "/static/icon-512.png",

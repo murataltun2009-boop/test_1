@@ -1,21 +1,22 @@
-"""TİK2 kural listesi — osilatör + hareketli ortalama çiftleri.
+"""TİK2 kural listesi — kullanıcı karar tablosu (2026-11-09).
 
-KULLANICI KURALI (2026-11-06)
------------------------------
+KULLANICI KURALI (2026-11-09, `list2.xlsx`, BTCUSDT 5m)
+--------------------------------------------------------
 TİK2'nin grafik/hesaplamaları DEĞİŞMEZ. Yalnızca pozisyon açma/kapama
-kararı, kullanıcının verdiği satır listesine göre üretilir:
+kararı, kullanıcının verdiği 85 satırlık tablodan üretilir:
 
-    * Her satırda bir DURUM (AL veya SAT), bir osilatör kümesi ve bir
-      hareketli ortalama kümesi vardır.
-    * SAT = SHORT, AL = LONG.
-    * Bir satırın geçerli olması için o satırdaki **tüm osilatörler**
-      ve **tüm hareketli ortalamalar** satırın yönünde olmalıdır
-      (AL satırı: hepsi +1, SAT satırı: hepsi -1).
-    * Satırlar arasında VEYA vardır: herhangi bir satır tutuyorsa sinyal
-      o yöndedir.
-    * Aynı barda hem AL hem SAT satırı tutuyorsa karar NÖTR'dür
-      (çakışma -> işlem yok).
+    * Her satırda bir POZİYON (AL veya SAT) ve gösterge durumları
+      vardır. AL = LONG, SAT = SHORT.
+    * Osilatör ve hareketli ortalama sütunlarında her gösterge için
+      durum yazılıdır: AL (+1), SAT (-1), NÖTR (0).
+    * Bir satır, yazılan **tüm göstergelerin durumu aynen**
+      sağlandığında geçerlidir. Yazılmayan göstergeler serbesttir.
+    * Birden çok satır tutarsa **en çok gösterge belirten (en özel)**
+      satır kazanır. Eşitlikte **sonraki satır** geçerlidir.
     * Hiçbir satır tutmuyorsa karar NÖTR'dür.
+
+Eski "tüm göstergeler satır yönünde" biçimi geriye dönük uyumluluk
+için desteklenir: durum yazılmayan gösterge satır yönünde kabul edilir.
 
 Girdi: `analysis.analyze()` çıktısındaki `osc_codes` ve `ma_codes`
 sözlükleri. Bunlar TAM Türkçe etiket -> bar başına karar kodu
@@ -50,12 +51,18 @@ OSC_BY_ALIAS: dict[str, str] = {
     "SKOTASTIK RSI HIZLI": "Stokastik RSI Hızlı (3, 3, 14, 14)",
     "WILLIAMS": "Williams Yüzde Aralığı (14)",
     "WILLIAMS YUZDE": "Williams Yüzde Aralığı (14)",
+    "WILLIAMSYUZDE": "Williams Yüzde Aralığı (14)",
     "WILLAMS": "Williams Yüzde Aralığı (14)",
     "BOGA AYI": "Boğa Ayı Gücü",
+    "BOGAAYI": "Boğa Ayı Gücü",
     "BOGA GUCU": "Boğa Ayı Gücü",
     "MUTHIS OSILATOR": "Müthiş Osilatör",
+    "MUTHISOSILATOR": "Müthiş Osilatör",
     "NUTHIS OSILATOR": "Müthiş Osilatör",
     "NIHAI OSILATOR": "Nihai Osilatör(UO) (7, 14, 28)",
+    "NIHAIOSILATOR": "Nihai Osilatör(UO) (7, 14, 28)",
+    "YONSEL ENDEKS": "Ortalama Yönsel Endeks(ADX) (14)",
+    "YONSELENDEKS": "Ortalama Yönsel Endeks(ADX) (14)",
 }
 
 # Hareketli ortalama grupları. Kısa ad -> grup anahtarı.
@@ -104,98 +111,140 @@ MA_GROUPS: dict[str, tuple[str, ...]] = {
 
 @dataclass(frozen=True)
 class Rule:
-    """Tek bir kural satırı."""
+    """Tek bir kural satırı.
+
+    `osc_states` / `ma_states` : (tam etiket, istenen kod) çiftleri.
+    Kodlar +1 AL, 0 NÖTR, -1 SAT. Eski biçimde (durum yazılmamış)
+    çiftler satır yönüyle doldurulur; bu durumda eşleşme eski
+    "hepsi satır yönünde" kuralına döner.
+    """
 
     direction: int                    # +1 AL/LONG, -1 SAT/SHORT
     oscillators: tuple[str, ...]      # tam osilatör etiketleri
     mas: tuple[str, ...]              # tam MA etiketleri
     source: str                       # ham satır (denetim için)
+    osc_states: tuple[tuple[str, int], ...] = ()
+    ma_states: tuple[tuple[str, int], ...] = ()
 
     @property
     def label(self) -> str:
         return "AL" if self.direction > 0 else "SAT"
 
+    @property
+    def specificity(self) -> int:
+        """Koşuldaki gösterge sayısı (en özel satır seçimi için)."""
+        n = len(self.osc_states) + len(self.ma_states)
+        if n:
+            return n
+        return len(self.oscillators) + len(self.mas)
+
+    def osc_pairs(self) -> tuple[tuple[str, int], ...]:
+        if self.osc_states:
+            return self.osc_states
+        return tuple((lab, self.direction) for lab in self.oscillators)
+
+    def ma_pairs(self) -> tuple[tuple[str, int], ...]:
+        if self.ma_states:
+            return self.ma_states
+        return tuple((lab, self.direction) for lab in self.mas)
+
 
 # --------------------------------------------------------------------------
-# Kullanıcının verdiği kural listesi (74 satır, tekrarlar dahil).
-# Biçim: DURUM | osilatörler | hareketli ortalamalar
+# Kullanıcının verdiği kural listesi (85 satır, `list2.xlsx`, BTCUSDT 5m).
+# Biçim: POZİYON | osilatörler (DURUM) | hareketli ortalamalar (DURUM)
+# DURUM: AL (+1) / SAT (-1) / NOTR (0). Durum yazılmayan gösterge satır
+# yönünde kabul edilir (eski biçim uyumluluğu).
 # --------------------------------------------------------------------------
 RAW_RULES = """
-SAT|MACD|USTEL HAREKETLI,BASIT HAREKETLI,HULL HAREKETLI
-AL|NUTHIS OSILATOR,MOMENTUM|HAREKETLI HEPSI
-SAT|EMTIA|HULL
-AL|SKOTASTIK, MOMENTUM, STOKASTIK RSI HIZLI|HAREKETLI HEPSI
-SAT|MACD|HULL
-AL|STOKASTIK RSI HIZLI,WILLIAMS YUZDE|HULL
-SAT|MOMENTUM,MACD, WILLIAMS|HULL
-AL|STOKASTIK RSI HIZLI,WILLIAMS YUZDE|HULL
-SAT|WILLIAMS YUZDE|HULL
-SAT|MOMENTUM,MACD, STOKASTIK RSI HIZLI|HULL, HACIM AGIRLIKI
-SAT|MOMENTUM,MACD|HULL,HACIM AGIRLIKLI
-SAT|MOMENTUM,MACD|HULL,HACIM AGIRLIKLI
-AL|MACD|HULL, HACIM AGIRLIK
-AL|STOKASTIK RSI HIZLI,WILLIAMS YUZDE|HULL
-SAT|MOMENTUM,MACD|HULL,HACIM AGIRLIKLI
-SAT|MOMENTUM,MACD|HULL,HACIM AGIRLIKLI
-SAT|WILLIAMS,STOKASTIK RSI HIZLI,BOGA AYI|HULL
-SAT|WILLIAMS,STOKASTIK RSI HIZLI,BOGA AYI|HULL
-SAT|WILLAMS,STOKASTIK RSI HIZLI|HULL
-SAT|MOMENTUM,MACD|HULL, HACIM AGIRLIKI
-AL|EMTIA|HULL
-AL|WILLIAMS,STOKASTIK RSI HIZLI,BOGA AYI|HULL
-SAT|MOMENTUM|HULL
-AL|MOMENTUM,MACD|HULL,HACIM AGIRLIKLI
-SAT|EMTIA,SKOTASTIK RSI HIZLI|HULL
-AL|BOGA AYI|HULL
-SAT|MACD,STOKASTIK RSI HIZLI|HULL
-SAT|MOMENTUM,MACD|HULL
-SAT|MOMENTUM,MACD|HULL
-AL|WILLIAMS,STOKASTIK RSI HIZLI|HULL
-SAT|WILLIAMS,STOKASTIK RSI HIZLI,BOGA AYI|HULL
-SAT|MOMENTUM|HULL
-SAT|MOMENTUM, MACD|HULL
-SAT|MOMENTUM,MACD,STOKASTIK RSI HIZLI|HULL, HACIM AGIRLIKI
-AL|MOMENTUM,MACD,STOKASTIK RSI HIZLI, WILLIAMS|HULL, HACIM AGIRLIKI
-SAT|MOMENTUM,MACD,STOKASTIK RSI HIZLI|HULL, HACIM AGIRLIKLI
-AL|MOMENTUM,STOKASTIK RSI HIZLI, WILLIAMS|HULL
-SAT|MOMENTUM,MACD,STOKASTIK RSI HIZLI|HULL, HACIM AGIRLIKLI
-SAT|MOMENTUM,MACD,STOKASTIK RSI HIZLI|HULL, HACIM AGIRLIKLI
-AL|STOKASTIK RSI HIZLI, WILLIAMS|HULL
-SAT|WILLIAMS,STOKASTIK RSI HIZLI,BOGA AYI|HULL
-SAT|MOMENTUM,STOKASTIK RSI HIZLI|HULL, HACIM AGIRLIKLI
-AL|MOMENTUM,MACD,STOKASTIK RSI HIZLI, WILLIAMS,BOGA AYI|HULL, HACIM AGIRLIKLI
-SAT|WILLIAMS,STOKASTIK RSI HIZLI|HULL
-SAT|MOMENTUM,BOGA AYI|HULL
-SAT|MOMENTUM,MACD|HACIM AGIRLIKLI
-AL|MOMENTUM,STOKASTIK RSI HIZLI, WILLIAMS,BOGA AYI|HULL
-SAT|WILLIAMS|HULL
-SAT|STOKASTIK RSI HIZLI,BOGA AYI|HULL
-SAT|MOMENTUM, MACD|HULL
-AL|EMTIA KANAL ENDEKS|HULL
-AL|STOKASTIK RSI HIZLI, WILLIAMS,BOGA AYI|HULL
-SAT|MOMENTUM,MACD|HULL, HACIM AGIRLIKLI
-SAT|MOMENTUM,MACD,STOKASTIK RSI HIZLI,|HACIM AGIRLIKLI
-SAT|MACD,STOKASTIK RSI HIZLI|HULL, HACIM AGIRLIKLI
-AL|STOKASTIK,EMTIA|HULL
-AL|WILLIAMS, BOGA AYI|HULL, HACIM AGIRLIKLI
-SAT|WILLIAMS|HULL
-AL|MOMENTUM, MACD|HULL, HACIM AGIRLIKLI
-SAT|STOKASTIK,EMTIA,NIHAI OSILATOR|HULL
-SAT|WILLIAMS|HULL
-AL|MOMENTUM, MACD|HULL, HACIM AGIRLIKLI
-SAT|MOMENTUM, MACD|HACIM AGIRLIKLI
-SAT|MOMENTUM, MACD|HULL, HACIM AGIRLIKLI
-SAT|MUTHIS OSILATOR,MOMENTUM, MACD|HULL, HACIM AGIRLIKLI
-AL|MOMENTUM, MACD|HULL, HACIM AGIRLIKLI
-AL|MOMENTUM,MACD,STOKASTIK RSI HIZLI,|HACIM AGIRLIKLI
-SAT|EMTIA KANAL ENDEKS|HULL
-SAT|MOMENTUM, WILLIAMS|HULL
-SAT|STOKASTIK, MOMENTUM,MACD,STOKASTIK RSI HIZLI,|HULL, HACIM AGIRLIKLI
-AL|MOMENTUM|HULL, HACIM AGIRLIKLI
-SAT|EMTIA,SKOTASTIK RSI HIZLI|HULL
-SAT|STOKASTIK, WILLIAMS,BOGA GUCU,STOKASTIK RSI HIZLI,|HULL
-SAT|MOMENTUM,MACD,STOKASTIK RSI HIZLI,|HULL
+AL|MOMENTUM(AL),MACD(AL)|HACIM AGIRLIKLI(AL),HULL(NOTR)
+AL|MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(AL)|HACIM AGIRLIKLI(AL),HULL(NOTR)
+AL|MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(SAT)|HACIM AGIRLIKLI(AL),HULL(NOTR)
+AL|MOMENTUM(AL),MACD(AL)|HACIM AGIRLIKLI(AL),HULL(NOTR)
+AL|MOMENTUM(AL),MACD(AL)|HACIM AGIRLIKLI(AL),HULL(AL)
+AL|MOMENTUM(AL),MACD(AL),EMTIA(SAT)|HACIM AGIRLIKLI(AL),HULL(AL)
+AL|MOMENTUM(AL),MACD(AL)|HACIM AGIRLIKLI(AL),HULL(NOTR)
+AL|MOMENTUM(AL),MACD(AL)|HACIM AGIRLIKLI(AL),HULL(NOTR)
+AL|MOMENTUM(AL),MACD(AL)|HACIM AGIRLIKLI(AL),HULL(AL)
+AL|MOMENTUM(AL),MACD(AL)|HACIM AGIRLIKLI(AL),HULL(NOTR)
+SAT|EMTIA(SAT),MOMENTUM(AL),MACD(AL)|HACIM AGIRLIKLI(AL),HULL(AL)
+SAT|MOMENTUM(AL),MACD(AL)|HACIM AGIRLIKLI(NOTR),HULL(SAT)
+SAT|MOMENTUM(AL),MACD(AL),BOGA AYI(SAT)|HACIM AGIRLIKLI(NOTR),HULL(SAT)
+SAT|MOMENTUM(AL),MACD(AL)|HACIM AGIRLIKLI(NOTR),HULL(SAT)
+SAT|MOMENTUM(AL),MACD(SAT)|HACIM AGIRLIKLI(NOTR),HULL(NOTR)
+SAT|MOMENTUM(SAT),MACD(SAT),NIHAI OSILATOR(AL)|HACIM AGIRLIKLI(SAT),HULL(NOTR)
+SAT|MOMENTUM(SAT),MACD(SAT),NIHAI OSILATOR(AL)|HACIM AGIRLIKLI(SAT),HULL(NOTR)
+AL|MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(AL)|HACIM AGIRLIKLI(SAT),HULL(NOTR)
+AL|MOMENTUM(SAT),MACD(SAT),STOKASTIK(AL),WILLIAMS YUZDE(AL)|HACIM AGIRLIKLI(SAT),HULL(AL)
+AL|MOMENTUM(SAT),MACD(SAT)|HACIM AGIRLIKLI(SAT),HULL(AL)
+AL|MOMENTUM(AL),MACD(SAT),BOGA AYI(SAT)|HACIM AGIRLIKLI(SAT),HULL(NOTR)
+SAT|MOMENTUM(AL),MACD(SAT),BOGA AYI(SAT)|HACIM AGIRLIKLI(NOTR),HULL(NOTR)
+SAT|MOMENTUM(AL),MACD(SAT),MUTHIS OSILATOR(AL)|HACIM AGIRLIKLI(NOTR),HULL(NOTR)
+SAT|MOMENTUM(SAT),MACD(SAT),BOGA AYI(SAT)|HACIM AGIRLIKLI(SAT),HULL(SAT)
+SAT|MOMENTUM(SAT),MACD(SAT),BOGA AYI(SAT),WILLIAMS(SAT),STOKASTIK RSI HIZLI(NOTR)|HACIM AGIRLIKLI(SAT),HULL(SAT)
+SAT|MOMENTUM(AL),MACD(SAT),BOGA AYI(AL),WILLIAMS(NOTR),STOKASTIK RSI HIZLI(NOTR)|HACIM AGIRLIKLI(SAT),HULL(NOTR)
+SAT|MOMENTUM(AL),MACD(SAT),MUTHIS OSILATOR(SAT)|HACIM AGIRLIKLI(NOTR),HULL(NOTR)
+SAT|MOMENTUM(AL),MACD(SAT),STOKASTIK RSI HIZLI(AL),WILLIAMS YUZDE(AL),WILLIAMS(NOTR)|HACIM AGIRLIKLI(NOTR),HULL(NOTR)
+SAT|MOMENTUM(AL),MACD(SAT),BOGA AYI(NOTR)|HACIM AGIRLIKLI(NOTR),HULL(NOTR)
+SAT|MOMENTUM(SAT),MACD(SAT),BOGA AYI(NOTR),WILLIAMS(NOTR),STOKASTIK RSI HIZLI(SAT)|HACIM AGIRLIKLI(NOTR),HULL(NOTR)
+SAT|MOMENTUM(SAT),MACD(SAT),BOGA AYI(NOTR),WILLIAMS(NOTR),STOKASTIK RSI HIZLI(NOTR)|HACIM AGIRLIKLI(SAT),HULL(SAT)
+SAT|EMTIA(AL),MOMENTUM(SAT),MACD(SAT),BOGA AYI(NOTR),WILLIAMS(NOTR),STOKASTIK RSI HIZLI(NOTR)|HACIM AGIRLIKLI(SAT),HULL(NOTR)
+SAT|EMTIA(AL),MOMENTUM(SAT),MACD(SAT),BOGA AYI(NOTR),WILLIAMS(NOTR),STOKASTIK RSI HIZLI(AL)|HACIM AGIRLIKLI(SAT),HULL(NOTR)
+SAT|EMTIA(AL),MOMENTUM(SAT),MACD(SAT),BOGA AYI(NOTR),WILLIAMS(NOTR),STOKASTIK RSI HIZLI(AL)|HACIM AGIRLIKLI(SAT),HULL(NOTR)
+AL|EMTIA(AL),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(AL)|HACIM AGIRLIKLI(SAT),HULL(AL)
+SAT|MOMENTUM(SAT),MACD(SAT),WILLIAMS(NOTR),STOKASTIK RSI HIZLI(NOTR)|HACIM AGIRLIKLI(SAT),HULL(NOTR)
+SAT|EMTIA(AL),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR)|HACIM AGIRLIKLI(SAT),HULL(NOTR)
+SAT|EMTIA(NOTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(SAT),WILLIAMS(NOTR),BOGA AYI(AL)|HACIM AGIRLIKLI(SAT),HULL(NOTR)
+SAT|EMTIA(AL),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR)|HACIM AGIRLIKLI(SAT),HULL(NOTR)
+AL|EMTIA(NOTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(AL),WILLIAMS(NOTR),BOGA AYI(AL)|HACIM AGIRLIKLI(SAT),HULL(AL)
+AL|EMTIA(NOTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR),BOGA AYI(NOTR)|HACIM AGIRLIKLI(AL),HULL(AL)
+AL|EMTIA(SAT),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR),BOGA AYI(NOTR)|HACIM AGIRLIKLI(AL),HULL(AL)
+AL|EMTIA(SAT),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR),BOGA AYI(NOTR),MUTHIS OSILATOR(AL)|HACIM AGIRLIKLI(AL),HULL(NOTR)
+SAT|EMTIA(NOTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR),BOGA AYI(NOTR),MUTHIS OSILATOR(AL)|HACIM AGIRLIKLI(AL),HULL(NOTR)
+SAT|EMTIA(SAT),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR),BOGA AYI(NOTR),MUTHIS OSILATOR(NOTR)|HACIM AGIRLIKLI(AL),HULL(SAT)
+SAT|EMTIA(SAT),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR),BOGA AYI(NOTR),MUTHIS OSILATOR(NOTR)|HACIM AGIRLIKLI(AL),HULL(SAT)
+SAT|EMTIA(SAT),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(SAT),BOGA AYI(NOTR),MUTHIS OSILATOR(NOTR)|HACIM AGIRLIKLI(AL),HULL(SAT)
+AL|EMTIA(NOTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR),BOGA AYI(NOTR),MUTHIS OSILATOR(NOTR)|HACIM AGIRLIKLI(AL),HULL(NOTR)
+AL|EMTIA(NOTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR)|HACIM AGIRLIKLI(AL),HULL(NOTR)
+AL|EMTIA(NOTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(AL),WILLIAMS(NOTR),BOGA AYI(NOTR),MUTHIS OSILATOR(NOTR)|HACIM AGIRLIKLI(AL),HULL(AL)
+AL|EMTIA(NOTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(SAT),BOGA AYI(NOTR),MUTHIS OSILATOR(NOTR)|HACIM AGIRLIKLI(AL),HULL(NOTR)
+AL|EMTIA(NOTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(SAT),BOGA AYI(NOTR),MUTHIS OSILATOR(NOTR)|HACIM AGIRLIKLI(AL),HULL(NOTR)
+AL|EMTIA(NOTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(AL),WILLIAMS(SAT),BOGA AYI(NOTR),MUTHIS OSILATOR(NOTR)|HACIM AGIRLIKLI(AL),HULL(NOTR)
+AL|EMTIA(NOTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(AL),WILLIAMS(NOTR),BOGA AYI(NOTR),MUTHIS OSILATOR(NOTR)|HACIM AGIRLIKLI(AL),HULL(AL)
+AL|EMTIA(NOTR),STOKASTIK(AL),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(AL),WILLIAMS(NOTR),BOGA AYI(NOTR),MUTHIS OSILATOR(NOTR)|HACIM AGIRLIKLI(AL),HULL(AL)
+SAT|EMTIA(NOTR),STOKASTIK(NOTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(AL),WILLIAMS(NOTR),BOGA AYI(NOTR),MUTHIS OSILATOR(NOTR)|HACIM AGIRLIKLI(AL),HULL(NOTR)
+SAT|EMTIA(NOTR),STOKASTIK(NOTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(SAT),BOGA AYI(NOTR),MUTHIS OSILATOR(NOTR)|HACIM AGIRLIKLI(AL),HULL(NOTR)
+SAT|EMTIA(NOTR),STOKASTIK(NOTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(SAT),WILLIAMS(NOTR),BOGA AYI(SAT),MUTHIS OSILATOR(NOTR)|HACIM AGIRLIKLI(NOTR),HULL(SAT)
+SAT|EMTIA(NOTR),STOKASTIK(NOTR),MOMENTUM(AL),MACD(SAT),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR),BOGA AYI(NOTR),MUTHIS OSILATOR(NOTR)|HACIM AGIRLIKLI(NOTR),HULL(SAT)
+SAT|EMTIA(NOTR),STOKASTIK(NOTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR),BOGA AYI(NOTR),NIHAI OSILATOR(AL)|HACIM AGIRLIKLI(SAT),HULL(SAT)
+AL|EMTIA(NOTR),STOKASTIK(NOTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR),BOGA AYI(NOTR),NIHAI OSILATOR(AL)|HACIM AGIRLIKLI(SAT),HULL(NOTR)
+AL|EMTIA(NOTR),STOKASTIK(NOTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(AL),WILLIAMS(NOTR),BOGA AYI(NOTR),NIHAI OSILATOR(AL)|HACIM AGIRLIKLI(SAT),HULL(AL)
+AL|EMTIA(NOTR),STOKASTIK(AL),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(AL),WILLIAMS(AL),BOGA AYI(NOTR),NIHAI OSILATOR(NOTR)|HACIM AGIRLIKLI(SAT),HULL(AL)
+SAT|EMTIA(NOTR),STOKASTIK(AL),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR),BOGA AYI(SAT),NIHAI OSILATOR(NOTR),YONSEL ENDEKS(SAT)|HACIM AGIRLIKLI(SAT),HULL(NOTR)
+SAT|EMTIA(NOTR),STOKASTIK(NOTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(SAT),BOGA AYI(NOTR),NIHAI OSILATOR(NOTR)|HACIM AGIRLIKLI(AL),HULL(NOTR)
+SAT|EMTIA(NOTR),STOKASTIK(NOTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(SAT),WILLIAMS(NOTR),BOGA AYI(NOTR),NIHAI OSILATOR(NOTR)|HACIM AGIRLIKLI(NOTR),HULL(SAT)
+SAT|EMTIA(NOTR),STOKASTIK(NOTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(SAT),WILLIAMS(NOTR),BOGA AYI(NOTR),NIHAI OSILATOR(NOTR)|HACIM AGIRLIKLI(NOTR),HULL(SAT)
+SAT|EMTIA(NOTR),STOKASTIK(NOTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR),BOGA AYI(NOTR),NIHAI OSILATOR(AL)|HACIM AGIRLIKLI(SAT),HULL(SAT)
+AL|EMTIA(NOTR),STOKASTIK(NOTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(AL),WILLIAMS(NOTR),BOGA AYI(NOTR),NIHAI OSILATOR(AL)|HACIM AGIRLIKLI(SAT),HULL(AL)
+AL|EMTIA(NOTR),STOKASTIK(AL),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(AL),BOGA AYI(NOTR),NIHAI OSILATOR(NOTR)|HACIM AGIRLIKLI(SAT),HULL(AL)
+AL|EMTIA(NOTR),STOKASTIK(NOTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR),BOGA AYI(AL),NIHAI OSILATOR(NOTR)|HACIM AGIRLIKLI(NOTR),HULL(AL)
+AL|EMTIA(NOTR),STOKASTIK(NOTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR),BOGA AYI(NOTR),NIHAI OSILATOR(NOTR)|HACIM AGIRLIKLI(NOTR),HULL(AL)
+SAT|EMTIA(NOTR),YONSEL ENDEKS(SAT),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR),BOGA AYI(SAT),NIHAI OSILATOR(NOTR)|HACIM AGIRLIKLI(SAT),HULL(NOTR)
+SAT|EMTIA(NOTR),STOKASTIK(SAT),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(SAT),WILLIAMS(NOTR),BOGA AYI(NOTR),NIHAI OSILATOR(NOTR)|HACIM AGIRLIKLI(SAT),HULL(SAT)
+SAT|EMTIA(NOTR),STOKASTIK(NOTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR),BOGA AYI(NOTR),NIHAI OSILATOR(NOTR)|HACIM AGIRLIKLI(SAT),HULL(NOTR)
+SAT|EMTIA(NOTR),STOKASTIK(NOTR),MUTHIS OSILATOR(SAT),MOMENTUM(AL),MACD(SAT),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR),BOGA AYI(NOTR),NIHAI OSILATOR(NOTR)|HACIM AGIRLIKLI(SAT),HULL(SAT)
+SAT|EMTIA(NOTR),STOKASTIK(NOTR),MUTHIS OSILATOR(SAT),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR),BOGA AYI(NOTR),NIHAI OSILATOR(NOTR)|HACIM AGIRLIKLI(SAT),HULL(SAT)
+SAT|EMTIA(AL),STOKASTIK(NOTR),MUTHIS OSILATOR(NOTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR),BOGA AYI(NOTR),NIHAI OSILATOR(AL)|HACIM AGIRLIKLI(SAT),HULL(NOTR)
+AL|EMTIA(AL),STOKASTIK(NOTR),MUTHIS OSILATOR(NOTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR),BOGA AYI(NOTR),NIHAI OSILATOR(AL)|HACIM AGIRLIKLI(SAT),HULL(AL)
+AL|EMTIA(AL),STOKASTIK(NOTR),MUTHIS OSILATOR(NOTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR),BOGA AYI(NOTR),NIHAI OSILATOR(AL)|HACIM AGIRLIKLI(SAT),HULL(NOTR)
+AL|EMTIA(AL),STOKASTIK(SAT),MUTHIS OSILATOR(NOTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(SAT),WILLIAMS(NOTR),BOGA AYI(NOTR),NIHAI OSILATOR(NOTR)|HACIM AGIRLIKLI(SAT),HULL(NOTR)
+AL|EMTIA(AL),STOKASTIK(NOTR),MUTHIS OSILATOR(NOTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR),BOGA AYI(NOTR),NIHAI OSILATOR(AL)|HACIM AGIRLIKLI(SAT),HULL(NOTR)
+AL|EMTIA(NOTR),STOKASTIK(AL),MUTHIS OSILATOR(NOTR),MOMENTUM(AL),MACD(SAT),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR),BOGA AYI(AL),NIHAI OSILATOR(NOTR)|HACIM AGIRLIKLI(NOTR),HULL(NOTR)
+AL|EMTIA(NOTR),STOKASTIK(NOTR),MUTHIS OSILATOR(NOTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(AL),WILLIAMS(NOTR),BOGA AYI(NOTR),NIHAI OSILATOR(NOTR)|HACIM AGIRLIKLI(NOTR),HULL(AL)
+AL|EMTIA(NOTR),STOKASTIK(NOTR),MUTHIS OSILATOR(NOTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR),BOGA AYI(NOTR),NIHAI OSILATOR(NOTR)|HACIM AGIRLIKLI(AL),HULL(AL)
 """.strip()
+
+
+_STATE_CODES = {"AL": 1, "SAT": -1, "NOTR": 0}
 
 
 def _split(text: str) -> list[str]:
@@ -205,6 +254,35 @@ def _split(text: str) -> list[str]:
         n = norm(part)
         if n:
             out.append(n)
+    return out
+
+
+def _tokens(text: str) -> list[tuple[str, Optional[int]]]:
+    """`AD(DURUM)` parçalarını (normalize ad, durum kodu) olarak ayırır.
+
+    Durum yazılmamışsa kod None döner; çağıran satır yönüyle doldurur.
+    Parantezler `norm()` çağrılmadan ÖNCE ayrılır, çünkü norm parantezi
+    siler ve durum bilgisi kaybolur.
+    """
+    out: list[tuple[str, Optional[int]]] = []
+    for part in str(text).replace(";", ",").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        m = re.match(r"^(.*?)\s*\(\s*([^()]*)\s*\)\s*$", part)
+        if m:
+            name = norm(m.group(1))
+            state = norm(m.group(2))
+            if state not in _STATE_CODES:
+                raise ValueError(
+                    f"TİK2 kuralı: geçersiz gösterge durumu {state!r} "
+                    f"({part!r})")
+            if name:
+                out.append((name, _STATE_CODES[state]))
+        else:
+            name = norm(part)
+            if name:
+                out.append((name, None))
     return out
 
 
@@ -241,27 +319,39 @@ def _parse(raw_rows: str) -> tuple[Rule, ...]:
         direction = 1 if durum == "AL" else -1
 
         osc_labels: list[str] = []
-        for token in _split(parts[1]):
-            lab = _resolve_osc(token, line)
-            if lab not in osc_labels:
+        osc_map: dict[str, int] = {}
+        for name, state in _tokens(parts[1]):
+            lab = _resolve_osc(name, line)
+            if state is None:
+                state = direction
+            if lab not in osc_map:
                 osc_labels.append(lab)
+            osc_map[lab] = state          # aynı gösterge tekrar yazılırsa SON kazanır
         if not osc_labels:
             raise ValueError(f"TİK2 kuralı: osilatör yok: {line!r}")
+        osc_states = [(lab, osc_map[lab]) for lab in osc_labels]
 
         ma_labels_out: list[str] = []
-        for token in _split(parts[2]):
-            group = _resolve_ma(token, line)
+        ma_map: dict[str, int] = {}
+        for name, state in _tokens(parts[2]):
+            group = _resolve_ma(name, line)
+            if state is None:
+                state = direction
             for lab in MA_GROUPS[group]:
-                if lab not in ma_labels_out:
+                if lab not in ma_map:
                     ma_labels_out.append(lab)
+                ma_map[lab] = state       # aynı MA tekrar yazılırsa SON kazanır
         if not ma_labels_out:
             raise ValueError(
                 f"TİK2 kuralı: hareketli ortalama yok: {line!r}")
+        ma_states = [(lab, ma_map[lab]) for lab in ma_labels_out]
 
         rules.append(Rule(direction=direction,
                           oscillators=tuple(osc_labels),
                           mas=tuple(ma_labels_out),
-                          source=line))
+                          source=line,
+                          osc_states=tuple(osc_states),
+                          ma_states=tuple(ma_states)))
     return tuple(rules)
 
 
@@ -283,7 +373,12 @@ def _array(store: dict, label: str, n: int) -> Optional[np.ndarray]:
 
 
 def rule_masks(osc_codes: dict, ma_codes: dict) -> tuple[np.ndarray, np.ndarray]:
-    """Her kural satırının bar başına tutma maskesini döndürür."""
+    """Her kural satırının bar başına tutma maskesini döndürür.
+
+    Dönen `masks`: (kural, bar) bool. `d`: kural yönü (+1 AL / -1 SAT).
+    Bir gösterge kuralda yazılıysa İSTENEN DURUM (AL/SAT/NÖTR) aynen
+    aranır; yazılmayan göstergeler serbesttir.
+    """
     n = 0
     for store in (osc_codes or {}, ma_codes or {}):
         for arr in store.values():
@@ -296,41 +391,50 @@ def rule_masks(osc_codes: dict, ma_codes: dict) -> tuple[np.ndarray, np.ndarray]
     for i, rule in enumerate(RULES):
         m = np.ones(n, dtype=bool)
         ok = True
-        for lab in rule.oscillators:
+        for lab, want in rule.osc_pairs():
             arr = _array(osc_codes, lab, n)
             if arr is None:
                 ok = False
                 break
-            m &= (arr == rule.direction)
+            m &= (arr == want)
         if ok:
-            for lab in rule.mas:
+            for lab, want in rule.ma_pairs():
                 arr = _array(ma_codes, lab, n)
                 if arr is None:
                     ok = False
                     break
-                m &= (arr == rule.direction)
+                m &= (arr == want)
         if ok:
             masks[i] = m
-    # Not: d yalnızca denetim/raporlama için; ayrım mask üzerinden.
-    _ = d
     return masks, d
 
 
+def _rule_priority() -> np.ndarray:
+    """Kural önceliği: önce daha özel (çok gösterge), eşitlikte son satır."""
+    spec = np.asarray([r.specificity for r in RULES], dtype=np.int32)
+    idx = np.arange(len(RULES), dtype=np.int32)
+    order = np.lexsort((idx, spec))          # artan özgüllük, sonra index
+    priority = np.empty(len(RULES), dtype=np.int32)
+    priority[order] = np.arange(len(RULES))  # büyük değer = kazanan
+    return priority
+
+
 def series(osc_codes: dict, ma_codes: dict) -> list[str]:
-    """Bar başına TİK2 kararı: "AL" / "SAT" / "NÖTR"."""
+    """Bar başına TİK2 kararı: "AL" / "SAT" / "NÖTR".
+
+    Tutan satırlar arasından en özel satır seçilir; eşit özgüllükte
+    sonraki (daha alttaki) satır kazanır. Hiçbiri tutmazsa NÖTR.
+    """
     masks, d = rule_masks(osc_codes, ma_codes)
     if masks.shape[1] == 0:
         return []
-    al = (masks & (d[:, None] > 0)).any(axis=0)
-    sat = (masks & (d[:, None] < 0)).any(axis=0)
+    priority = _rule_priority()
+    scores = np.where(masks, priority[:, None], -1)
+    winner = scores.argmax(axis=0)
+    hit = scores.max(axis=0) >= 0
     out: list[str] = []
-    for a, s in zip(al, sat):
-        if a and not s:
-            out.append("AL")
-        elif s and not a:
-            out.append("SAT")
-        else:
-            out.append("NÖTR")
+    for w, h in zip(winner, hit):
+        out.append(_label_of(int(d[w])) if h else "NÖTR")
     return out
 
 
@@ -673,11 +777,20 @@ def series_stable(osc_codes: dict, ma_codes: dict, **overrides) -> list[str]:
 
 def summary() -> dict:
     """Kural tablosunun özeti (test/teşhis)."""
+    osc_pairs = [p for r in RULES for p in r.osc_pairs()]
+    ma_pairs = [p for r in RULES for p in r.ma_pairs()]
     return {
         "rows": len(RULES),
         "al": sum(1 for r in RULES if r.direction > 0),
         "sat": sum(1 for r in RULES if r.direction < 0),
-        "unique": len({(r.direction, r.oscillators, r.mas) for r in RULES}),
-        "oscillators": sorted({o for r in RULES for o in r.oscillators}),
-        "mas": sorted({m for r in RULES for m in r.mas}),
+        "unique": len({(r.direction, tuple(r.osc_pairs()), tuple(r.ma_pairs()))
+                       for r in RULES}),
+        "oscillators": sorted({lab for lab, _ in osc_pairs}),
+        "mas": sorted({lab for lab, _ in ma_pairs}),
+        "state_rules": sum(1 for r in RULES
+                           if r.osc_states or r.ma_states),
+        "specificity": {
+            "min": min(r.specificity for r in RULES),
+            "max": max(r.specificity for r in RULES),
+        },
     }

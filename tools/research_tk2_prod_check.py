@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
-"""TIK2 production dogrulama (2026-11-07).
+"""TIK2 production dogrulama (2026-11-09).
 
-Amac: arastirmada secilen hibritin (HULL giris kapisi + 3 bar minimum
-tutma) PRODUCTION koduyla ayni sonucu verdigini gostermek.
+Amac: `list2.xlsx` 85 satirlik kural tablosunun PRODUCTION kodunda
+tek karar kaynagi oldugunu gostermek.
 
-  * ham seri   : tk2_rules.series(...)
-  * production : tk2_rules.series_stable(...)  + config.PAPER_TK2_MIN_HOLD
+  * ham seri   : tk2_rules.series(...)          (kural tablosu)
+  * production : tk2_rules.series_stable(...)   (config: STAB_ON=False)
+  * Beklenti   : production serisi HAM seriye birebir esit; HULL/VWMA
+                 katmani devrede degil.
 
 4 sembol x 8 x 500 bar 1m, gercek Binance Futures verisi.
 
@@ -54,27 +56,31 @@ def bt(sym, tf, candles, sig, min_hold):
 
 
 def new_agg():
-    return dict(net=0.0, gw=0.0, gl=0.0, trades=0, comm=0.0,
-                dd=0.0, pos=0, folds=0, per=[])
+    return dict(net=0.0, trades=0, comm=0.0, dd=0.0, pos=0, folds=0,
+                per=[])
 
 
 def main():
-    assert bool(getattr(config, "PAPER_TK2_STAB_ON", True))
-    assert bool(getattr(config, "PAPER_TK2_STAB_HULL_ENTRY", True))
+    # 2026-11-09: tablo tek karar kaynagi; HULL/VWMA katmani KAPALI.
+    assert not bool(getattr(config, "PAPER_TK2_STAB_ON", False))
+    assert not bool(getattr(config, "PAPER_TK2_STAB_HULL_ENTRY", False))
+    assert not bool(getattr(config, "PAPER_TK2_STAB_HULL_NEUTRAL_BLOCK",
+                            False))
+    assert not bool(getattr(config, "PAPER_TK2_STAB_VWMA_HULL_LONG", False))
+    assert not bool(getattr(config, "PAPER_TK2_STAB_VWMA_HULL_HOLD", False))
+    assert not bool(getattr(config, "PAPER_TK2_STAB_VWMA_HULL_ALWAYS", False))
+    assert not bool(getattr(config, "PAPER_TK2_STAB_VWMA_HULL_SHORT", False))
     assert int(getattr(config, "PAPER_TK2_MIN_HOLD", 0)) == 0
     assert int(getattr(config, "PAPER_TK2_AFTER_SEC", 0)) == 0
-    assert bool(getattr(config, "PAPER_TK2_STAB_HULL_NEUTRAL_BLOCK", True))
-    assert bool(getattr(config, "PAPER_TK2_STAB_VWMA_HULL_LONG", True))
-    assert bool(getattr(config, "PAPER_TK2_STAB_VWMA_HULL_HOLD", True))
-    assert not bool(getattr(config, "PAPER_TK2_STAB_VWMA_HULL_ALWAYS", False))
     print(f"config: STAB_ON={config.PAPER_TK2_STAB_ON} "
           f"HULL_ENTRY={config.PAPER_TK2_STAB_HULL_ENTRY} "
           f"HULL_NEUTRAL_BLOCK={config.PAPER_TK2_STAB_HULL_NEUTRAL_BLOCK} "
           f"VWMA_LONG={config.PAPER_TK2_STAB_VWMA_HULL_LONG} "
-          f"VWMA_HOLD={config.PAPER_TK2_STAB_VWMA_HULL_HOLD} "
           f"MIN_HOLD={config.PAPER_TK2_MIN_HOLD} "
-          f"AFTER_SEC={config.PAPER_TK2_AFTER_SEC} "
-          f"FLIP={config.PAPER_TK2_STAB_CONFIRM_FLIP}", flush=True)
+          f"AFTER_SEC={config.PAPER_TK2_AFTER_SEC}", flush=True)
+    tbl = tk2_rules.summary()
+    print(f"tablo: {tbl['rows']} satir, {tbl['al']} AL / {tbl['sat']} SAT",
+          flush=True)
 
     agg = {"ham": new_agg(), "prod": new_agg()}
     t_start = time.monotonic()
@@ -89,29 +95,15 @@ def main():
             close_times=[c.close_time for c in candles])
         ham = tk2_rules.series(res.osc_codes, res.ma_codes)
         prod = tk2_rules.series_stable(res.osc_codes, res.ma_codes)
-        # Production serisi, arastirma prototipinin varsayilaniyla ayni mi?
-        proto = tk2_rules.stabilize(
-            ham, res.ma_codes[tk2_rules.HULL_LABEL],
-            osc_major=tk2_rules.oscillator_majority(
-                res.osc_codes, len(ham)),
-            vwma=tk2_rules.ma_direction(
-                res.ma_codes, tk2_rules.VWMA_LABEL, len(ham)),
-            hull_entry_veto=True,
-            hull_neutral_block=bool(config.PAPER_TK2_STAB_HULL_NEUTRAL_BLOCK),
-            vwma_hull_long=bool(config.PAPER_TK2_STAB_VWMA_HULL_LONG),
-            vwma_hull_long_neutral=bool(
-                config.PAPER_TK2_STAB_VWMA_HULL_LONG_NEUTRAL),
-            vwma_hull_hold=bool(config.PAPER_TK2_STAB_VWMA_HULL_HOLD),
-            vwma_hull_always=bool(config.PAPER_TK2_STAB_VWMA_HULL_ALWAYS),
-            vwma_hull_short=bool(config.PAPER_TK2_STAB_VWMA_HULL_SHORT))
-        if prod != proto:
-            diff = sum(1 for a, b in zip(prod, proto) if a != b)
-            print(f"  UYARI: production/prototip farki {diff} bar", flush=True)
+        diff = sum(1 for a, b in zip(prod, ham) if a != b)
+        if diff:
+            print(f"  HATA: production/ham farki {diff} bar", flush=True)
+            raise SystemExit(1)
         sigs = {"ham": ham, "prod": prod}
         holds = {"ham": 0, "prod": int(config.PAPER_TK2_MIN_HOLD)}
         nf = len(candles) // fold
-        print(f"\n--- {sym} {tf} {len(candles)} bar, {nf} x {fold} dilim ---",
-              flush=True)
+        print(f"\n--- {sym} {tf} {len(candles)} bar, {nf} x {fold} dilim "
+              f"(production == ham) ---", flush=True)
         for name in ("ham", "prod"):
             net = comm = 0.0
             trades = pos = 0

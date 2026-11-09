@@ -1968,4 +1968,101 @@ yok, production serisi SAT yerine AL (koşul sürdükçe), config bayrakları.
 kuralını gösterecek şekilde güncellendi; cache `?v=39`,
 `sw.js` `ta-v39`.
 
+> **2026-11-09 — BU KATMAN KAPATILDI.** Kullanıcı `list2.xlsx` ile
+> 85 satırlık yeni karar tablosu verdi ve "HULL nötr yasağı ile
+> VWMA/HULL kuralı kapansın, tablo tek karar kaynağı olsun" dedi.
+> `PAPER_TK2_STAB_ON`, `HULL_ENTRY`, `HULL_NEUTRAL_BLOCK`,
+> `VWMA_HULL_LONG` artık `False`. Ayrıntı: OTURUM 22.
+
+---
+
+## OTURUM 22 — list2.xlsx: 85 satırlık durum tablosu (2026-11-09)
+
+KULLANICI KURALI:
+> "KARAR mekanizmasındaki kural listesini değiştirelim. Ekteki listede
+> POZİSYON sütunu AL=LONG, SAT=SHORT pozisyonunu işaret eder. Osilatör
+> ve hareketli ortalamalar sütunlarının altında pozisyonlar yer
+> almaktadır. Kuralları bu şekilde güncelleyelim; bu kuralları
+> BTCUSDT/5m ile topladım."
+
+KAYNAK: `C:\Users\PC-ITENG\Downloads\list2.xlsx`, `Sayfa1`, 85 veri
+satırı. Sütunlar: `POZİYON | OSİLATÖR | HAREKETLİ ORTALAMALAR | TİK2
+KARARI`. Hedef sütun **POZİYON**; `TİK2 KARARI` eski motorun çıktısı
+olarak değerlendirildi.
+
+EŞLEŞME SEMANTİĞİ (kullanıcı onayı):
+  * Her satırda osilatör/MA durumları açık yazılı: AL (+1), SAT (−1),
+    NÖTR (0).
+  * Bir satır, yazılan **tüm** göstergelerin durumu aynen sağlandığında
+    geçerlidir; yazılmayan göstergeler serbesttir (wildcard).
+  * Birden çok satır tutarsa **en çok gösterge belirten (en özel)**
+    satır kazanır. Eşitlikte **sonraki satır** geçerlidir.
+  * Hiçbir satır tutmuyorsa karar NÖTR'dür.
+  * Eski "tüm göstergeler satır yönünde" biçimi de desteklenir (durum
+    yazılmayan gösterge satır yönünde kabul edilir); yeni tablo bunu
+    kullanmıyor.
+
+UYGULAMA:
+  * `core/tk2_rules.py`
+      - `RAW_RULES`: 85 satır, `POZİYON|osilatörler(DURUM)|MA'lar(DURUM)`.
+        41 AL / 44 SAT, 69 tekil desen, özgüllük 4–11 gösterge.
+      - `_tokens()`: `AD(DURUM)` ayrıştırıcısı; parantez `norm()` öncesi
+        ayrılır. Durumlar `AL/SAT/NOTR`; durumsuz token satır yönünde.
+        Aynı gösterge bir satırda iki kez yazılırsa (ör. satır 29'da
+        `WILLIAMS YUZDE(AL), WILLIAMS(NOTR)`) **son durum** kazanır.
+      - `Rule.osc_states/ma_states`: (tam etiket, istenen kod) çiftleri.
+      - `Rule.specificity`: koşuldaki gösterge sayısı.
+      - `rule_masks()`: her kural için durum eşleşme maskesi.
+      - `series()`: bar başına en yüksek özgüllük; eşitlikte son satır.
+      - Alias eklemeleri: `BOGAAYI`, `MUTHISOSILATOR`,
+        `NIHAIOSILATOR`, `YONSEL ENDEKS`, `YONSELENDEKS`,
+        `WILLIAMS YUZDE`, `WILLIAMSYUZDE`.
+  * `config.py`: `PAPER_TK2_STAB_ON=False`,
+    `PAPER_TK2_STAB_HULL_ENTRY=False`,
+    `PAPER_TK2_STAB_HULL_NEUTRAL_BLOCK=False`,
+    `PAPER_TK2_STAB_VWMA_HULL_LONG=False`. Böylece `series_stable()`
+    doğrudan `series()` döndürür; tablo tek karar kaynağıdır.
+  * `PAPER_TK2_AFTER_SEC=0`, `PAPER_TK2_MIN_HOLD=0` (bekleme yok).
+    Stop ve kâr bankası her zaman anında çalışır.
+  * HULL/VWMA katmanının kodu silinmedi; ileride araştırma için
+    parametreli duruyor, yalnız varsayılanları kapalı.
+
+TABLOYU GERİ ÜRETME:
+  * Hedef `TİK2 KARARI` seçilirse yalnız 45/85 tutuyor: aynı yazılı
+    durumda farklı kararlar var (KARAR, yazılmayan göstergelere de bağlı).
+    Bu yüzden hedef POZİYON seçildi.
+  * POZİYON için yazılan durumlarla temsil: **83/85**. Uyuşmayan 2 satır
+    bilinçli çelişki gruplarıdır:
+      - Excel satır 7 (AL) / 12 (SAT) aynı desen → "son satır" SAT verir,
+        satır 7 uyuşmaz.
+      - Excel satır 79 (SAT) / 81 (AL) / 83 (AL) aynı desen → "son satır"
+        AL verir, satır 79 uyuşmaz.
+  * Not: canlı veride yazılmayan göstergelerin de değeri vardır (0 dahil).
+    Tüm yazılmayanlar 0 kabul edilirse bu ek çakışmalar nedeniyle uyum
+    78/85'e düşer; bu bir gerçek-veri çakışmasıdır, motor hatası değil.
+    Kullanıcı "en özel + eşitlikte son satır" kuralını seçtiği için karar
+    her barda deterministiktir.
+
+BACKTEST (yeni tablo, 5m, 50.000 bar, May–Oct 2026; fixed stake
+1000$, 10x, cüzdan %80, komisyon %0,05):
+  Sembol   İşlem   Net        PF    DD        AL/SAT/NÖTR bar
+  BTCUSDT  4735    +2272,65$  1,19  −381,17$  17281/12468/20251
+  ETHUSDT  4726    +2992,07$  1,19  −346,60$  16903/12057/21040
+  SOLUSDT  4898    +6383,15$  1,34  −288,47$  17387/11448/21165
+  (Giriş/çıkış maker; `_quiet` açık, işlem günlüğü yazılmadı.)
+
+PRODUCTION DOĞRULAMA (`tools/research_tk2_prod_check.py`, 4 sembol × 8 ×
+500 bar 1m): production serisi ham kural serisine **birebir eşit**
+(fark 0 bar). Toplam 1m: −102,27$, 10/32 pozitif, 1128 işlem,
+komisyon 1882,43$, DD −114,67$. 1m negatif, 5m pozitif: tablo 5m için
+toplandığından beklenen; 1m'de kullanılmamalı.
+
+DOĞRULAMA: `test_tk2.py` 83/83 (bölüm 1: 85 satır/41 AL/44 SAT/açık
+durumlar/özgüllük 4–11/aynı göstergede son durum; bölüm 2: durum
+eşleşmesi, wildcard, en özel satır, eşitlikte son satır, öncelik sırası;
+bölüm 13–14: HULL/VWMA katmanı kapalı, production == ham, mekanizma
+testleri korunuyor).
+`test_paper` 90/90, `test_tk_fix` 37/37, `py_compile` temiz.
+`logs/islemler.csv` oluşmadı. Arayüz metni ve cache sürümü güncellendi.
+
 

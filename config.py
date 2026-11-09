@@ -431,24 +431,24 @@ PAPER_TK2_MIN_HOLD = 0
 # HULL giris kapisi ile 1m'de 4 sembolun 4'unde de hamdan iyi; ayrinti
 # ALGORITMA_ARASTIRMASI.md OTURUM 17. (Beklemeler 2026-11-07'de
 # kaldirildi; bkz. PAPER_TK2_AFTER_SEC / PAPER_TK2_MIN_HOLD.)
-# STAB_ON=False -> eski ham kural serisi (karsilastirma icin).
-PAPER_TK2_STAB_ON = True
+# 2026-11-09 KULLANICI KARARI: `list2.xlsx` 85 satirlik tablo TIK2'nin
+# TEK karar kaynagi. Asagidaki HULL/VWMA katmani kapatildi; tablo zaten
+# HULL ve HACIM AGIRLIKLI durumlarini acikca yaziyor.
+# STAB_ON=False -> dogrudan `tk2_rules.series()` (ham kural serisi).
+PAPER_TK2_STAB_ON = False
 # Yeni giris yalnizca HULL ayni yondeyse. HULL notrken giris YOK
 # (asagidaki PAPER_TK2_STAB_HULL_NEUTRAL_BLOCK). Acik pozisyonun
-# cikisini HULL geciktirmez.
-PAPER_TK2_STAB_HULL_ENTRY = True
-# HULL NOTR (0) iken YENI GIRIS YOK (kullanici kurali 2026-11-08):
-# "hull notr durumdayken yeni pozisyon acma, beklemede kal". Yalnizca
-# pozisyon yokken uygulanir; acik pozisyonun cikisi etkilenmez.
-PAPER_TK2_STAB_HULL_NEUTRAL_BLOCK = True
+# cikisini HULL geciktirmez. 2026-11-09: KAPALI (tablo tek kaynak).
+PAPER_TK2_STAB_HULL_ENTRY = False
+# HULL NOTR (0) iken YENI GIRIS YOK (kullanici kurali 2026-11-08).
+# 2026-11-09: KAPALI — tablo HULL(NOTR) satirlarini kendisi tanimliyor.
+PAPER_TK2_STAB_HULL_NEUTRAL_BLOCK = False
 # HULL + HACIM AGIRLIKLI MA BIRLIKTE (kullanici kurali 2026-11-08):
-# Osilatorlerin cogunlugu AL (notrler sayilmaz), HULL SAT ve hacim
-# agirlikli MA AL ise SHORT acma; LONG ac. VWMA AL iken HULL notr ise
-# pozisyon tehlikeli sayilir ve LONG'a cevrilmez (HULL notr yasagi da
-# ayrica devrededir). Asagidaki simetrik SAT kurali varsayilan kapali.
-PAPER_TK2_STAB_VWMA_HULL_LONG = True
+# 2026-11-09: KAPALI — VWMA/HULL birlesik kurali tabloda yok; tablo
+# tek karar kaynagi. Parametreler arastirma icin kodda duruyor.
+PAPER_TK2_STAB_VWMA_HULL_LONG = False
 PAPER_TK2_STAB_VWMA_HULL_LONG_NEUTRAL = False
-PAPER_TK2_STAB_VWMA_HULL_HOLD = True
+PAPER_TK2_STAB_VWMA_HULL_HOLD = False
 PAPER_TK2_STAB_VWMA_HULL_ALWAYS = False
 PAPER_TK2_STAB_VWMA_HULL_SHORT = False
 # True: HULL'a ters TUM sinyaller notr olur (acik pozisyonu da kapatir).
