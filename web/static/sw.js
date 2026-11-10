@@ -33,13 +33,15 @@
 //      (giris barinda). VWMA AL iken HULL notr -> giris yok.
 // v13: list2.xlsx 85 satirlik durum tablosu; en ozel satir kazanir,
 //      esitlikte son satir. HULL/VWMA katmani KAPALI (tablo tek kaynak).
-const VERSION = "ta-v41";
+// v14: list3.xlsx 158 satir; AL-KAPAT/SAT-KAPAT cikis kurallari
+//      (yalniz kendi yonundeki pozisyonu kapatir).
+const VERSION = "ta-v42";
 const SHELL = "shell-" + VERSION;
 
 const PRECACHE = [
   "/",
-  "/static/style.css?v=41",
-  "/static/app.js?v=41",
+  "/static/style.css?v=42",
+  "/static/app.js?v=42",
   "/static/vendor/echarts.min.js",
   "/static/icon-192.png",
   "/static/icon-512.png",

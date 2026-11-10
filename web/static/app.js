@@ -1312,9 +1312,12 @@ if ("serviceWorker" in navigator) {
           + "(mult 3,5 · pull 1,0 ATR · risk %3 · kilit %2)"
         : "") +
       (tik2
-        ? " · TİK2 kural tablosu (list2.xlsx, 85 satır): her satırda "
+        ? " · TİK2 kural tablosu (list3.xlsx, 158 satır): her satırda "
           + "osilatör ve hareketli ortalamaların durumları yazılı; "
-          + "AL→LONG, SAT→SHORT, NÖTR durumu eşleşmede aynen aranır; "
+          + "AL→LONG, SAT→SHORT, AL-KAPAT→açık LONG'u kapat, "
+          + "SAT-KAPAT→açık SHORT'u kapat; NÖTR açık pozisyonu "
+          + "kapatır (KAPAT satırı ters yönde işlem açmaz, pozisyon "
+          + "yokken atlanır); "
           + "satır, yazılan TÜM durumlar sağlanınca geçerlidir "
           + "(yazılmayan göstergeler serbest); birden çok satır tutarsa "
           + "en çok gösterge belirten (en özel) satır kazanır, eşitlikte "

@@ -431,10 +431,11 @@ PAPER_TK2_MIN_HOLD = 0
 # HULL giris kapisi ile 1m'de 4 sembolun 4'unde de hamdan iyi; ayrinti
 # ALGORITMA_ARASTIRMASI.md OTURUM 17. (Beklemeler 2026-11-07'de
 # kaldirildi; bkz. PAPER_TK2_AFTER_SEC / PAPER_TK2_MIN_HOLD.)
-# 2026-11-09 KULLANICI KARARI: `list2.xlsx` 85 satirlik tablo TIK2'nin
-# TEK karar kaynagi. Asagidaki HULL/VWMA katmani kapatildi; tablo zaten
-# HULL ve HACIM AGIRLIKLI durumlarini acikca yaziyor.
-# STAB_ON=False -> dogrudan `tk2_rules.series()` (ham kural serisi).
+# 2026-11-10 KULLANICI KARARI: `list3.xlsx` 158 satirlik tablo TIK2'nin
+# TEK karar kaynagi. AL/SAT giris-koruma, AL-KAPAT/SAT-KAPAT cikis.
+# Asagidaki HULL/VWMA katmani kapali; tablo HULL ve HACIM AGIRLIKLI
+# durumlarini zaten acikca yaziyor.
+# STAB_ON=False -> dogrudan `tk2_rules.series(track_position=True)`.
 PAPER_TK2_STAB_ON = False
 # Yeni giris yalnizca HULL ayni yondeyse. HULL notrken giris YOK
 # (asagidaki PAPER_TK2_STAB_HULL_NEUTRAL_BLOCK). Acik pozisyonun

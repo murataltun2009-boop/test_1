@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
-"""TİK2 — KULLANICI KURAL TABLOSU testi (2026-11-09).
+"""TİK2 — KULLANICI KURAL TABLOSU testi (2026-11-10).
 
-Kullanıcı kuralı (`list2.xlsx`, BTCUSDT 5m, 85 satır):
+Kullanıcı kuralı (`list3.xlsx`, BTCUSDT 5m, 158 satır):
   * Karar kaynağı `core/tk2_rules.py` kural tablosudur: her satırda
     osilatör ve hareketli ortalamaların DURUMLARI yazılıdır.
-  * AL = LONG, SAT = SHORT, NÖTR = pozisyonu kapat.
+  * AL = LONG aç/koru, SAT = SHORT aç/koru,
+    AL-KAPAT = açık LONG'u kapat, SAT-KAPAT = açık SHORT'u kapat.
+  * KAPAT satırı yalnızca AYNI yöndeki pozisyon varken uygulanır;
+    ters yönde pozisyon açmaz/kapatmaz. Pozisyon yokken atlanır.
   * Satır, yazılan TÜM durumlar aynen sağlandığında geçerlidir;
     yazılmayan göstergeler serbesttir.
   * Birden çok satır tutarsa en çok gösterge belirten (en özel) satır
@@ -98,12 +101,15 @@ def yildiz_var(p, m, yildiz, also_mum=None):
 
 
 # ==================================================================
-# 1) KURAL TABLOSU: 85 satır (list2.xlsx), 41 AL / 44 SAT
+# 1) KURAL TABLOSU: 158 satır (list3.xlsx),
+#    50 AL / 54 SAT / 25 AL-KAPAT / 29 SAT-KAPAT
 # ==================================================================
 print("1) Kural tablosu")
 s = tk2_rules.summary()
-kontrol("1.1 85 satır", s["rows"] == 85)
-kontrol("1.2 41 AL / 44 SAT", s["al"] == 41 and s["sat"] == 44)
+kontrol("1.1 158 satır", s["rows"] == 158)
+kontrol("1.2 50 AL / 54 SAT", s["al"] == 50 and s["sat"] == 54)
+kontrol("1.2b 25 AL-KAPAT / 29 SAT-KAPAT",
+        s["al_kapat"] == 25 and s["sat_kapat"] == 29)
 kontrol("1.3 tüm osilatör etiketleri analysis ile uyumlu",
         all(o in OSCILLATOR_LABELS for o in s["oscillators"]))
 kontrol("1.4 tüm MA etiketleri analysis ile uyumlu",
@@ -114,9 +120,9 @@ kontrol("1.6 USTEL+BASIT+HULL = 13 MA",
         len(tk2_rules.MA_GROUPS["EMA"]) +
         len(tk2_rules.MA_GROUPS["SMA"]) +
         len(tk2_rules.MA_GROUPS["HULL"]) == 13)
-kontrol("1.7 her satırda açık DURUM yazılı", s["state_rules"] == 85)
-kontrol("1.8 özgüllük 4..11 gösterge",
-        s["specificity"]["min"] == 4 and s["specificity"]["max"] == 11)
+kontrol("1.7 her satırda açık DURUM yazılı", s["state_rules"] == 158)
+kontrol("1.8 özgüllük 4..14 gösterge",
+        s["specificity"]["min"] == 4 and s["specificity"]["max"] == 14)
 kontrol("1.9 tabloda HULL ve HACIM AGIRLIKLI var",
         tk2_rules.HULL_LABEL in s["mas"]
         and tk2_rules.VWMA_LABEL in s["mas"])
@@ -128,6 +134,31 @@ kontrol("1.10 NÖTR durumu ayrıştırıldı",
 kontrol("1.11 aynı gösterge iki kez yazılırsa son durum kazanır",
         (tk2_rules.OSC_BY_ALIAS["WILLIAMS"], 0)
         in tk2_rules.RULES[27].osc_pairs())
+# İlk 85 satır (list2.xlsx) korunur; yeni bölüm 87. Excel satırında
+# AL-KAPAT ile başlar.
+kontrol("1.12 ilk 85 satır korunmuş (sonuncusu AL)",
+        tk2_rules.RULES[84].label == "AL")
+kontrol("1.13 yeni bölüm KAPAT satırlarıyla başlar",
+        tk2_rules.RULES[85].label == "AL-KAPAT"
+        and tk2_rules.RULES[87].label == "SAT-KAPAT"
+        and tk2_rules.RULES[157].label == "AL-KAPAT")
+# Yeni gösterge adları / yazım varyantları çözümlenir.
+_osc_alias = tk2_rules.OSC_BY_ALIAS
+_ma_alias = tk2_rules.MA_GROUP_BY_ALIAS
+kontrol("1.14 GÖRECELİ GÜÇ / ORTALAMA YÖNSEL alias",
+        _osc_alias["GORECELI GUC"] in OSCILLATOR_LABELS
+        and _osc_alias["ORTALAMA YONSEL"] in OSCILLATOR_LABELS)
+kontrol("1.15 ICHIMOKU + tek periyotlu SMA alias",
+        _ma_alias["ICHIMOKU"] == "ICHIMOKU"
+        and _ma_alias["BASIT HAREKETLI ORTALAMA100"] == "SMA100"
+        and _ma_alias["BASIT HAREKTLI ORTALAMA10"] == "SMA10"
+        and _ma_alias["BASIT HAREKTLI ORTALAMA200"] == "SMA200")
+kontrol("1.16 KAPAT satırları yalnız kendi yönünü kapatır",
+        tk2_rules.decide_target("AL-KAPAT", 1) == 0
+        and tk2_rules.decide_target("AL-KAPAT", -1) == -1
+        and tk2_rules.decide_target("SAT-KAPAT", -1) == 0
+        and tk2_rules.decide_target("SAT-KAPAT", 1) == 1
+        and tk2_rules.decide_target("AL-KAPAT", 0) == 0)
 
 
 # ==================================================================
@@ -192,6 +223,40 @@ kontrol("2.7 yazılmayan göstergeler serbest (wildcard)",
                    **{OSCILLATOR_LABELS[0]: -1}) == ["AL"])
 
 
+def kural_dizisi(rules):
+    """Birden çok kuralı bar bar birleştirir (yazılmayanlar 0)."""
+    n = len(rules)
+    osc = {lab: np.zeros(n, dtype=np.int8) for lab in OSCILLATOR_LABELS}
+    ma = {lab: np.zeros(n, dtype=np.int8) for lab in ma_labels()}
+    for i, rule in enumerate(rules):
+        for lab, st in rule.osc_pairs():
+            osc[lab][i] = st
+        for lab, st in rule.ma_pairs():
+            ma[lab][i] = st
+    return osc, ma
+
+
+# AL-KAPAT satırı ham (pozisyonsuz) seride etiketini korur.
+_osc_k, _ma_k = kural_kodlari(tk2_rules.RULES[85])
+kontrol("2.8 ham seride AL-KAPAT etiketi korunur",
+        tk2_rules.series(_osc_k, _ma_k) == ["AL-KAPAT"])
+# Pozisyon yokken KAPAT satırı uygulanmaz (yeni girişi kilitlemez).
+kontrol("2.9 pozisyon yokken AL-KAPAT uygulanmaz",
+        tk2_rules.series(_osc_k, _ma_k,
+                         track_position=True)[0] != "AL-KAPAT")
+# Önce LONG aç, sonra AL-KAPAT koşulu: pozisyon duyarlı seri kapatır.
+_osc_k2, _ma_k2 = kural_dizisi([tk2_rules.RULES[0], tk2_rules.RULES[85]])
+kontrol("2.10 LONG açıkken AL-KAPAT uygulanır",
+        tk2_rules.series(_osc_k2, _ma_k2,
+                         track_position=True) == ["AL", "AL-KAPAT"])
+# Ters yönde (SHORT) AL-KAPAT uygulanmaz; seri SHORT durumunu korur.
+_osc_ks, _ma_ks = kural_dizisi([tk2_rules.RULES[11],
+                                tk2_rules.RULES[85]])
+_seri_ks = tk2_rules.series(_osc_ks, _ma_ks, track_position=True)
+kontrol("2.11 SHORT açıkken AL-KAPAT uygulanmaz",
+        _seri_ks[0] == "SAT" and _seri_ks[1] != "AL-KAPAT")
+
+
 # ==================================================================
 # 3) MOTOR: AL=LONG, SAT=SHORT, NÖTR=kapat
 # ==================================================================
@@ -216,6 +281,46 @@ yildiz_var(p3, m3, "NÖTR")
 kontrol("3.6 NÖTR -> SHORT kapandı", p3.position is None)
 kontrol("3.7 NÖTR ters pozisyon (LONG) açmadı",
         len(p3.trades) == n3 + 2 and p3.trades[-1].side == "SHORT")
+
+
+# ==================================================================
+# 3b) ÇIKIŞ KARARLARI: AL-KAPAT / SAT-KAPAT (list3.xlsx)
+# ==================================================================
+print("3b) Kapanış kararları")
+p3b = tk()
+m3b = barlar(60)
+yildiz_var(p3b, m3b, "AL")
+kontrol("3b.1 LONG açıldı", p3b.position is not None
+        and p3b.position.side == "LONG")
+yildiz_var(p3b, m3b, "AL-KAPAT")
+kontrol("3b.2 AL-KAPAT açık LONG'u kapattı", p3b.position is None)
+kontrol("3b.3 kapanış LONG kaydı",
+        len(p3b.trades) == 1 and p3b.trades[-1].side == "LONG")
+_n3b = len(p3b.trades)
+yildiz_var(p3b, m3b, "AL-KAPAT")
+kontrol("3b.4 düz pozisyonda AL-KAPAT yeni işlem açmaz",
+        p3b.position is None and len(p3b.trades) == _n3b)
+yildiz_var(p3b, m3b, "SAT")
+kontrol("3b.5 SHORT açıldı", p3b.position is not None
+        and p3b.position.side == "SHORT")
+yildiz_var(p3b, m3b, "AL-KAPAT")
+kontrol("3b.6 AL-KAPAT açık SHORT'u kapatmaz/ters çevirmez",
+        p3b.position is not None and p3b.position.side == "SHORT"
+        and len(p3b.trades) == _n3b)
+yildiz_var(p3b, m3b, "SAT-KAPAT")
+kontrol("3b.7 SAT-KAPAT açık SHORT'u kapattı", p3b.position is None)
+kontrol("3b.8 kapanış SHORT kaydı",
+        len(p3b.trades) == _n3b + 1 and p3b.trades[-1].side == "SHORT")
+_n3b2 = len(p3b.trades)
+yildiz_var(p3b, m3b, "AL")
+yildiz_var(p3b, m3b, "SAT-KAPAT")
+kontrol("3b.9 SAT-KAPAT açık LONG'u kapatmaz",
+        p3b.position is not None and p3b.position.side == "LONG"
+        and len(p3b.trades) == _n3b2)
+yildiz_var(p3b, m3b, "AL-KAPAT")
+kontrol("3b.10 AL-KAPAT açık LONG'u kapattı", p3b.position is None)
+kontrol("3b.11 KAPAT kararları ters pozisyon açmadı",
+        all(t.side in ("LONG", "SHORT") for t in p3b.trades))
 
 
 # ==================================================================
@@ -303,7 +408,7 @@ kontrol("7.2 seri stabilize kural motoruyla birebir aynı", gelen == beklenen)
 kontrol("7.3 seride AL ve SAT üretildi",
         "AL" in gelen and "SAT" in gelen)
 kontrol("7.4 geçersiz etiket yok",
-        all(x in ("AL", "SAT", "NÖTR") for x in gelen))
+        all(x in tk2_rules.LABELS for x in gelen))
 
 
 # ==================================================================
@@ -316,6 +421,10 @@ kontrol("8.1 AL -> BUY", _LABEL_TO_SIGNAL["AL"] is Signal.BUY)
 kontrol("8.2 SAT -> SELL", _LABEL_TO_SIGNAL["SAT"] is Signal.SELL)
 kontrol("8.3 NÖTR -> NEUTRAL",
         _LABEL_TO_SIGNAL["NÖTR"] is Signal.NEUTRAL)
+kontrol("8.4 AL-KAPAT -> SELL (LONG kapanışı)",
+        _LABEL_TO_SIGNAL["AL-KAPAT"] is Signal.SELL)
+kontrol("8.5 SAT-KAPAT -> BUY (SHORT kapanışı)",
+        _LABEL_TO_SIGNAL["SAT-KAPAT"] is Signal.BUY)
 
 
 # ==================================================================
@@ -347,15 +456,19 @@ svc9._versions["1h"] = 1
 seri9 = svc9.mode_signal_series("1h")
 beklenen9 = tk2_rules.series_stable(res9.osc_codes, res9.ma_codes)
 kontrol("9.1 mode_signal_series kural serisiyle aynı",
-        [x.value for x in seri9] == beklenen9)
+        [x.value for x in seri9]
+        == [_LABEL_TO_SIGNAL[k].value for k in beklenen9])
+kontrol("9.1b ham TİK2 etiketleri servis cache'inde korunur",
+        svc9.tk2_labels("1h") == beklenen9)
 bilgi9 = svc9.bar_info("1h", int(ot9[75]))
 kontrol("9.2 bar_info tıklanan barın TİK2 kararını verir",
-        bilgi9 is not None and bilgi9["mode_signal"] == beklenen9[75])
+        bilgi9 is not None and bilgi9["mode_signal"]
+        == _LABEL_TO_SIGNAL[beklenen9[75]].value)
 canli9 = svc9._signal_for_mode(res9, mums9)
 kontrol("9.3 canlı sinyal son KAPALI barın kararı",
         canli9 == beklenen9[len(mums9) - 2])
-kontrol("9.4 canlı sinyal geçerli etiket",
-        canli9 in ("AL", "SAT", "NÖTR"))
+kontrol("9.4 canlı sinyal geçerli TİK2 etiketi",
+        canli9 in tk2_rules.LABELS)
 canli9b = svc9._signal_for_mode(res9, mums9, "1h")
 kontrol("9.5 cache'li seri yolu aynı kararı verir", canli9b == canli9)
 
@@ -392,7 +505,8 @@ kontrol("10.4 tam HULL vetosu açık pozisyonu kapatır",
         == ["AL", "NÖTR", "SAT"])
 
 # series_stable, kapılar kapatılınca ham kural serisine döner.
-_ham10 = tk2_rules.series(res7.osc_codes, res7.ma_codes)
+_ham10 = tk2_rules.series(res7.osc_codes, res7.ma_codes,
+                          track_position=True)
 _stab10 = tk2_rules.series_stable(res7.osc_codes, res7.ma_codes,
                                   hull_entry_veto=False,
                                   hull_neutral_block=False,
@@ -515,7 +629,8 @@ kontrol("13.3 config: VWMA/HULL birleşik kuralı kapalı",
         and not bool(config.PAPER_TK2_STAB_VWMA_HULL_SHORT))
 
 # Production serisi = ham kural serisi (başka katman karar değiştirmez).
-_ham13 = tk2_rules.series(res7.osc_codes, res7.ma_codes)
+_ham13 = tk2_rules.series(res7.osc_codes, res7.ma_codes,
+                          track_position=True)
 _ser13p = tk2_rules.series_stable(res7.osc_codes, res7.ma_codes)
 kontrol("13.4 production serisi ham kural serisine eşit",
         _ser13p == _ham13)
@@ -587,7 +702,7 @@ _ma14p[tk2_rules.HULL_LABEL] = np.full(_n14, -1, dtype=np.int8)
 _ma14p[tk2_rules.VWMA_LABEL] = np.full(_n14, 1, dtype=np.int8)
 kontrol("14.6 production serisi ham tablo serisine eşit",
         tk2_rules.series_stable(_osc14p, _ma14p)
-        == tk2_rules.series(_osc14p, _ma14p))
+        == tk2_rules.series(_osc14p, _ma14p, track_position=True))
 
 
 print("-" * 60)

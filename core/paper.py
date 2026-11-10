@@ -497,10 +497,11 @@ class PaperTrader:
         self.tk_pend_close = None     # flip kapanis dokunma seviyesi
         self.tk_pend_entry = None     # (yon, seviye) giris limit ARM
         self.tk_pend_bar = 0          # ARM edildigi bar acilis zamani
-        # ---- TİK2 (2026-11-09, list2.xlsx): AL=LONG / SAT=SHORT ----
-        # Karar, core/tk2_rules.py 85 satırlık durum tablosundan üretilir:
+        # ---- TİK2 (2026-11-10, list3.xlsx): AL/SAT + KAPAT ----
+        # Karar, core/tk2_rules.py 158 satırlık durum tablosundan üretilir:
         # yazılan durumlar aynen eşleşir, en özel satır kazanır. AL LONG,
-        # SAT SHORT, NÖTR pozisyonu kapatır.
+        # SAT SHORT, AL-KAPAT açık LONG'u, SAT-KAPAT açık SHORT'u kapatır;
+        # NÖTR her pozisyonu kapatır.
         self._tk2_yesil = False       # yerlesen yesil gordu mu (gri tipi)
         self._tk2_min_hold = int(getattr(
             config, "PAPER_TK2_MIN_HOLD", 0) or 0)
@@ -747,10 +748,11 @@ class PaperTrader:
                 self.tk_vol_mult = 1.0
                 self.tk_leg_flip = False
             if mode == "tk2":
-                # TİK2 (kullanici kurali 2026-11-09, list2.xlsx): karar
-                # kaynagi core/tk2_rules.py 85 satirlik durum tablosudur;
+                # TİK2 (kullanici kurali 2026-11-10, list3.xlsx): karar
+                # kaynagi core/tk2_rules.py 158 satirlik durum tablosudur;
                 # yazilan durumlar aynen eslesir, en ozel satir kazanir.
-                # AL=LONG, SAT=SHORT, NÖTR=kapat. HULL/VWMA katmani kapali.
+                # AL=LONG, SAT=SHORT, AL-KAPAT/SAT-KAPAT ilgili yonu
+                # kapatir, NÖTR pozisyonu kapatir. HULL/VWMA katmani kapali.
                 # SAR (stop→ters) ve ribbon-flip mekaniksel olarak
                 # ENGELLENIR (kural disi yon uretmemeli).
                 self.tk_sar = False
@@ -2494,30 +2496,37 @@ class PaperTrader:
     def _tk2_karar(self) -> None:
         """TİK2 karar mekanizmasi (2026-11-06, kullanici kurali).
 
-        Karar kaynagi artik bilesik skor DEGIL, `core/tk2_rules.py`
-        icindeki kullanici kural listesidir. Yerlesen (KAPALI barin)
-        yildizi okunur; bu yildiz zaten kural serisinden gelir:
+        Karar kaynagi bilesik skor DEGIL, `core/tk2_rules.py` icindeki
+        kullanici kural listesidir. Yerlesen (KAPALI barin) yildizi
+        okunur; bu yildiz zaten kural serisinden gelir:
 
-          * AL  -> hedef +1 (LONG ac/koru)
-          * SAT -> hedef -1 (SHORT ac/koru)
-          * NÖTR -> hedef 0 (acik pozisyonu kapat)
+          * AL       -> hedef +1 (LONG ac/koru)
+          * SAT      -> hedef -1 (SHORT ac/koru)
+          * AL-KAPAT -> ACIK LONG'u kapat (hedef 0); SHORT'a dokunma
+          * SAT-KAPAT-> ACIK SHORT'u kapat (hedef 0); LONG'a dokunma
+          * NÖTR     -> hedef 0 (acik pozisyonu kapat)
 
-        Kural serisi `_build_signal_series` / `service.mode_signal_series`
+        KAPAT etiketleri ters yonde pozisyon ACMAZ; kapatma kosulu
+        surerken yeni giris de acilmaz (hedef 0 kalir).
+
+        Kural serisi `_build_signal_series` / `service.tk2_labels`
         tarafindan uretilir; grafik yildizlari da ayni seriyi gosterir.
         Osilator/MA hesaplari ve grafik olusturma DEGISMEDI.
         """
         d = str(self._tk_hist_y1 or self.tk_sig_son or "").strip()
+        yeni = tk2_rules.decide_target(d, self.tk_hedef)
+        if yeni is None:
+            return            # henuz yerlesen karar yok: durum korunur
         if d in ("AL", "GÜÇLÜ AL"):
-            yeni = 1
             kaynak = "TİK2-AL"
         elif d in ("SAT", "GÜÇLÜ SAT"):
-            yeni = -1
             kaynak = "TİK2-SAT"
-        elif d == "NÖTR":
-            yeni = 0
-            kaynak = "TİK2-NOTR"
+        elif d == "AL-KAPAT":
+            kaynak = "TİK2-AL-KAPAT"
+        elif d == "SAT-KAPAT":
+            kaynak = "TİK2-SAT-KAPAT"
         else:
-            return            # henuz yerlesen karar yok: durum korunur
+            kaynak = "TİK2-NOTR"
         if yeni != self.tk_hedef:
             self.tk_hedef = yeni
             self.tk_hedef_kaynak = kaynak
@@ -2761,7 +2770,9 @@ class PaperTrader:
         yukselen = bool(kap_mum is not None and
                         getattr(kap_mum, "close", kap_mum.open) >= kap_mum.open)
         if self.mode == "tk2":
-            # TİK2 KARARI (2026-11-06): AL=LONG, SAT=SHORT, NÖTR=kapat.
+            # TİK2 KARARI (2026-11-10): AL=LONG, SAT=SHORT,
+            # AL-KAPAT=açık LONG'u kapat, SAT-KAPAT=açık SHORT'u kapat,
+            # NÖTR=pozisyonu kapat.
             self._tk2_karar()
         elif rib == 0 and yeni is not None and yeni != self.tk_hedef:
             if sig == "NÖTR":

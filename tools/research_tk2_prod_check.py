@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-"""TIK2 production dogrulama (2026-11-09).
+"""TIK2 production dogrulama (2026-11-10).
 
-Amac: `list2.xlsx` 85 satirlik kural tablosunun PRODUCTION kodunda
+Amac: `list3.xlsx` 158 satirlik kural tablosunun PRODUCTION kodunda
 tek karar kaynagi oldugunu gostermek.
 
-  * ham seri   : tk2_rules.series(...)          (kural tablosu)
+  * ham seri   : tk2_rules.series(..., track_position=True)
+                 (kural tablosu + pozisyona duyarli KAPAT kurallari)
   * production : tk2_rules.series_stable(...)   (config: STAB_ON=False)
   * Beklenti   : production serisi HAM seriye birebir esit; HULL/VWMA
                  katmani devrede degil.
@@ -79,7 +80,8 @@ def main():
           f"MIN_HOLD={config.PAPER_TK2_MIN_HOLD} "
           f"AFTER_SEC={config.PAPER_TK2_AFTER_SEC}", flush=True)
     tbl = tk2_rules.summary()
-    print(f"tablo: {tbl['rows']} satir, {tbl['al']} AL / {tbl['sat']} SAT",
+    print(f"tablo: {tbl['rows']} satir, {tbl['al']} AL / {tbl['sat']} SAT "
+          f"/ {tbl['al_kapat']} AL-KAPAT / {tbl['sat_kapat']} SAT-KAPAT",
           flush=True)
 
     agg = {"ham": new_agg(), "prod": new_agg()}
@@ -93,7 +95,8 @@ def main():
             l=[c.low for c in candles], c=[c.close for c in candles],
             v=[c.volume for c in candles],
             close_times=[c.close_time for c in candles])
-        ham = tk2_rules.series(res.osc_codes, res.ma_codes)
+        ham = tk2_rules.series(res.osc_codes, res.ma_codes,
+                               track_position=True)
         prod = tk2_rules.series_stable(res.osc_codes, res.ma_codes)
         diff = sum(1 for a, b in zip(prod, ham) if a != b)
         if diff:

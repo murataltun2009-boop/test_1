@@ -1,12 +1,13 @@
-"""TİK2 kural listesi — kullanıcı karar tablosu (2026-11-09).
+"""TİK2 kural listesi — kullanıcı karar tablosu (2026-11-10).
 
-KULLANICI KURALI (2026-11-09, `list2.xlsx`, BTCUSDT 5m)
+KULLANICI KURALI (2026-11-10, `list3.xlsx`, BTCUSDT 5m)
 --------------------------------------------------------
 TİK2'nin grafik/hesaplamaları DEĞİŞMEZ. Yalnızca pozisyon açma/kapama
-kararı, kullanıcının verdiği 85 satırlık tablodan üretilir:
+kararı, kullanıcının verdiği 158 satırlık tablodan üretilir:
 
-    * Her satırda bir POZİYON (AL veya SAT) ve gösterge durumları
-      vardır. AL = LONG, SAT = SHORT.
+    * Her satırda bir POZİYON ve gösterge durumları vardır.
+      AL = LONG aç/koru, SAT = SHORT aç/koru,
+      AL-KAPAT = açık LONG'u kapat, SAT-KAPAT = açık SHORT'u kapat.
     * Osilatör ve hareketli ortalama sütunlarında her gösterge için
       durum yazılıdır: AL (+1), SAT (-1), NÖTR (0).
     * Bir satır, yazılan **tüm göstergelerin durumu aynen**
@@ -14,6 +15,9 @@ kararı, kullanıcının verdiği 85 satırlık tablodan üretilir:
     * Birden çok satır tutarsa **en çok gösterge belirten (en özel)**
       satır kazanır. Eşitlikte **sonraki satır** geçerlidir.
     * Hiçbir satır tutmuyorsa karar NÖTR'dür.
+    * AL-KAPAT yalnızca açık LONG'u, SAT-KAPAT yalnızca açık SHORT'u
+      kapatır; ters yönde pozisyon AÇMAZ. Kapatma kararı pozisyon
+      yokken veya ters yönde pozisyon varken durumu değiştirmez.
 
 Eski "tüm göstergeler satır yönünde" biçimi geriye dönük uyumluluk
 için desteklenir: durum yazılmayan gösterge satır yönünde kabul edilir.
@@ -63,6 +67,12 @@ OSC_BY_ALIAS: dict[str, str] = {
     "NIHAIOSILATOR": "Nihai Osilatör(UO) (7, 14, 28)",
     "YONSEL ENDEKS": "Ortalama Yönsel Endeks(ADX) (14)",
     "YONSELENDEKS": "Ortalama Yönsel Endeks(ADX) (14)",
+    "ORTALAMA YONSEL": "Ortalama Yönsel Endeks(ADX) (14)",
+    "ORTALAMA YONSEL ENDEKS": "Ortalama Yönsel Endeks(ADX) (14)",
+    "ADX": "Ortalama Yönsel Endeks(ADX) (14)",
+    "GORECELI GUC": "Göreceli Güç Endeksi(RSI) (14)",
+    "GORECELI GUC ENDEKSI": "Göreceli Güç Endeksi(RSI) (14)",
+    "RSI": "Göreceli Güç Endeksi(RSI) (14)",
 }
 
 # Hareketli ortalama grupları. Kısa ad -> grup anahtarı.
@@ -75,6 +85,8 @@ MA_GROUP_BY_ALIAS: dict[str, str] = {
     "HACIM AGIRLIKI": "VWMA",      # kullanıcı yazımı
     "HACIM AGIRLIK": "VWMA",       # kullanıcı yazımı
     "HAREKETLI HEPSI": "ALL",
+    "ICHIMOKU": "ICHIMOKU",
+    "ICHIMOKU ANA HATTI": "ICHIMOKU",
 }
 
 _TR = str.maketrans({
@@ -105,8 +117,21 @@ MA_GROUPS: dict[str, tuple[str, ...]] = {
     "SMA": _SMA_LABELS,
     "HULL": (_HULL,),
     "VWMA": (_VWMA,),
+    "ICHIMOKU": (_ICHIMOKU,),
     "ALL": _ALL_MA_LABELS,
 }
+
+# Tek periyotlu basit hareketli ortalamalar (kullanıcı yazımı:
+# `BASİT HAREKETLİ ORTALAMA100`, yazım hatası: `BASIT HAREKTLI
+# ORTALAMA10`). Ayrı grup olarak tanımlanır ki satır yalnızca o
+# periyodu bağlasın.
+for _p in MA_PERIODS:
+    _key = f"SMA{_p}"
+    _label = f"Basit Hareketli Ortalama({_p})"
+    MA_GROUPS[_key] = (_label,)
+    MA_GROUP_BY_ALIAS[_key] = _key
+    MA_GROUP_BY_ALIAS[f"BASIT HAREKETLI ORTALAMA{_p}"] = _key
+    MA_GROUP_BY_ALIAS[f"BASIT HAREKTLI ORTALAMA{_p}"] = _key
 
 
 @dataclass(frozen=True)
@@ -117,18 +142,30 @@ class Rule:
     Kodlar +1 AL, 0 NÖTR, -1 SAT. Eski biçimde (durum yazılmamış)
     çiftler satır yönüyle doldurulur; bu durumda eşleşme eski
     "hepsi satır yönünde" kuralına döner.
+
+    `action`: satırın ürettiği karar — `AL`, `SAT`, `AL-KAPAT`,
+    `SAT-KAPAT`. KAPAT satırları yalnızca ilgili yöndeki açık
+    pozisyonu kapatır; ters yönde pozisyon açmaz.
     """
 
-    direction: int                    # +1 AL/LONG, -1 SAT/SHORT
+    direction: int                    # +1 AL/AL-KAPAT, -1 SAT/SAT-KAPAT
     oscillators: tuple[str, ...]      # tam osilatör etiketleri
     mas: tuple[str, ...]              # tam MA etiketleri
     source: str                       # ham satır (denetim için)
     osc_states: tuple[tuple[str, int], ...] = ()
     ma_states: tuple[tuple[str, int], ...] = ()
+    action: str = ""                  # AL / SAT / AL-KAPAT / SAT-KAPAT
 
     @property
     def label(self) -> str:
+        if self.action:
+            return self.action
         return "AL" if self.direction > 0 else "SAT"
+
+    @property
+    def is_close(self) -> bool:
+        """Satır bir kapatma (çıkış) kuralı mı?"""
+        return self.label.endswith("-KAPAT")
 
     @property
     def specificity(self) -> int:
@@ -150,7 +187,7 @@ class Rule:
 
 
 # --------------------------------------------------------------------------
-# Kullanıcının verdiği kural listesi (85 satır, `list2.xlsx`, BTCUSDT 5m).
+# Kullanıcının verdiği kural listesi (158 satır, `list3.xlsx`, BTCUSDT 5m).
 # Biçim: POZİYON | osilatörler (DURUM) | hareketli ortalamalar (DURUM)
 # DURUM: AL (+1) / SAT (-1) / NOTR (0). Durum yazılmayan gösterge satır
 # yönünde kabul edilir (eski biçim uyumluluğu).
@@ -241,10 +278,92 @@ AL|EMTIA(AL),STOKASTIK(NOTR),MUTHIS OSILATOR(NOTR),MOMENTUM(SAT),MACD(SAT),STOKA
 AL|EMTIA(NOTR),STOKASTIK(AL),MUTHIS OSILATOR(NOTR),MOMENTUM(AL),MACD(SAT),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR),BOGA AYI(AL),NIHAI OSILATOR(NOTR)|HACIM AGIRLIKLI(NOTR),HULL(NOTR)
 AL|EMTIA(NOTR),STOKASTIK(NOTR),MUTHIS OSILATOR(NOTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(AL),WILLIAMS(NOTR),BOGA AYI(NOTR),NIHAI OSILATOR(NOTR)|HACIM AGIRLIKLI(NOTR),HULL(AL)
 AL|EMTIA(NOTR),STOKASTIK(NOTR),MUTHIS OSILATOR(NOTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NOTR),WILLIAMS(NOTR),BOGA AYI(NOTR),NIHAI OSILATOR(NOTR)|HACIM AGIRLIKLI(AL),HULL(AL)
+AL-KAPAT|EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(SAT),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(AL)
+SAT|EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(AL),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(SAT)
+SAT-KAPAT|EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(SAT),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(SAT)
+AL|EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(AL)
+AL-KAPAT|EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(SAT)
+SAT|EMTİA(NÖTR),STOKASTIK(SAT),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(SAT),WILLIAMS(SAT),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(SAT)
+SAT-KAPAT|EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(SAT)
+AL|EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(NÖTR)
+AL-KAPAT|EMTİA(NÖTR),STOKASTIK(AL),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(AL)
+AL|EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(SAT),STOKASTIK RSI HIZLI(SAT),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(AL)
+AL-KAPAT|EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(AL)
+SAT-KAPAT|EMTİA(SAT),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(SAT),WILLIAMS(NÖTR),BOĞAAYI(SAT),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(SAT)
+SAT|EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(NÖTR)
+SAT|EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(AL),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(NÖTR)
+SAT|EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(AL),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(AL)
+SAT|EMTİA(NÖTR),STOKASTIK(AL),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(AL),WILLIAMS(AL),BOĞAAYI(AL),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(AL)
+SAT-KAPAT|GÖRECELİ GÜÇ(AL),EMTİA(NÖTR),STOKASTIK(SAT),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(SAT),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(SAT)
+SAT-KAPAT|GÖRECELİ GÜÇ(AL),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(NÖTR)
+AL|EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(AL),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(AL)
+AL-KAPAT|EMTİA(SAT),STOKASTIK(SAT),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(AL)
+SAT-KAPAT|EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(SAT)
+AL-KAPAT|EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(AL),BASİT HAREKETLİ ORTALAMA100(SAT)
+SAT-KAPAT|EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(SAT),ICHIMOKU(AL)
+AL|EMTİA(NÖTR),STOKASTIK(AL),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(SAT),STOKASTIK RSI HIZLI(AL),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(AL),ICHIMOKU(AL)
+AL-KAPAT|EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(SAT),STOKASTIK RSI HIZLI(AL),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(AL),ICHIMOKU(AL)
+SAT|EMTİA(NÖTR),STOKASTIK(SAT),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(SAT),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(SAT),ICHIMOKU(NÖTR)
+SAT-KAPAT|EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(SAT),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(AL),ICHIMOKU(SAT)
+AL|EMTİA(NÖTR),STOKASTIK(AL),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(AL),WILLIAMS(AL),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(AL),ICHIMOKU(SAT)
+AL-KAPAT|ORTALAMA YÖNSEL(SAT),EMTİA(NÖTR),STOKASTIK(AL),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(AL),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(AL),ICHIMOKU(SAT)
+SAT|ORTALAMA YÖNSEL(AL),EMTİA(SAT),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(AL),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(AL),ICHIMOKU(AL)
+SAT-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(SAT),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(SAT),ICHIMOKU(SAT)
+AL|ORTALAMA YÖNSEL(NÖTR),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(AL),ICHIMOKU(SAT)
+AL-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(SAT),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(SAT),ICHIMOKU(AL)
+SAT-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(SAT),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(SAT),ICHIMOKU(AL)
+AL-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(SAT),STOKASTIK RSI HIZLI(AL),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(AL),BASIT HAREKTLI ORTALAMA10(SAT)
+SAT-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(AL),BOĞAAYI(AL),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(AL)
+AL-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(SAT),WILLIAMS(SAT),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(SAT)
+SAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(NÖTR),STOKASTIK(SAT),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(SAT),STOKASTIK RSI HIZLI(SAT),WILLIAMS(SAT),BOĞAAYI(SAT),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(SAT),BASIT HAREKTLI ORTALAMA10(SAT)
+SAT-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(AL)|HACİM AĞIRLIKLI(SAT),HULL(SAT),BASIT HAREKTLI ORTALAMA200(AL)
+AL-KAPAT|ORTALAMA YÖNSEL(SAT),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(SAT),ICHIMOKU(SAT)
+SAT-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(SAT),ICHIMOKU(SAT),BASIT HAREKTLI ORTALAMA200(AL)
+SAT-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(SAT),ICHIMOKU(SAT),BASIT HAREKTLI ORTALAMA200(AL)
+AL|ORTALAMA YÖNSEL(NÖTR),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(AL),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(AL),ICHIMOKU(SAT),BASIT HAREKTLI ORTALAMA200(AL)
+AL-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(SAT),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(AL),BASIT HAREKTLI ORTALAMA50(SAT)
+SAT-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(SAT),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(SAT),ICHIMOKU(NÖTR)
+AL-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(SAT),STOKASTIK(AL),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(AL),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(AL),ICHIMOKU(AL)
+SAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(SAT),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(SAT),ICHIMOKU(AL)
+SAT-KAPAT|ORTALAMA YÖNSEL(SAT),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(SAT),ICHIMOKU(AL)
+SAT-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(AL),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(AL),ICHIMOKU(SAT),BASIT HAREKTLI ORTALAMA200(AL)
+SAT-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(AL),ICHIMOKU(SAT),BASIT HAREKTLI ORTALAMA200(AL)
+AL-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(SAT),ICHIMOKU(NÖTR),BASIT HAREKTLI ORTALAMA200(AL)
+SAT-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(AL),STOKASTIK(AL),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(AL),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(AL),ICHIMOKU(SAT),BASIT HAREKTLI ORTALAMA200(NÖTR)
+AL-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(SAT),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(SAT),ICHIMOKU(AL),BASIT HAREKTLI ORTALAMA200(AL)
+SAT-KAPAT|ORTALAMA YÖNSEL(AL),EMTİA(AL),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(AL),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(AL),ICHIMOKU(SAT),BASIT HAREKTLI ORTALAMA200(SAT)
+AL-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(NÖTR),HULL(AL),ICHIMOKU(NÖTR),BASIT HAREKTLI ORTALAMA200(SAT)
+SAT-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(SAT),ICHIMOKU(NÖTR)
+AL-KAPAT|ORTALAMA YÖNSEL(SAT),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(SAT),ICHIMOKU(AL)
+SAT-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(SAT),ICHIMOKU(NÖTR)
+AL-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(SAT),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(NÖTR),HULL(SAT),ICHIMOKU(NÖTR)
+SAT-KAPAT|ORTALAMA YÖNSEL(AL),EMTİA(NÖTR),STOKASTIK(AL),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(AL),ICHIMOKU(SAT)
+SAT-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(AL),STOKASTIK(AL),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(AL),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(AL),ICHIMOKU(SAT)
+SAT-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(AL),STOKASTIK(AL),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(AL),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(SAT),ICHIMOKU(SAT)
+AL-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(SAT),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(SAT),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(SAT),ICHIMOKU(AL)
+AL-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(SAT),STOKASTIK(SAT),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(SAT),WILLIAMS(SAT),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(SAT),ICHIMOKU(AL)
+SAT-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(SAT),STOKASTIK RSI HIZLI(AL),WILLIAMS(SAT),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(SAT),ICHIMOKU(NÖTR)
+AL-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(SAT),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(NÖTR),HULL(SAT),ICHIMOKU(NÖTR)
+SAT-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(AL),STOKASTIK(AL),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(AL),ICHIMOKU(SAT)
+SAT-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(AL),ICHIMOKU(SAT)
+AL-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(AL),STOKASTIK RSI HIZLI(AL),WILLIAMS(SAT),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(AL),ICHIMOKU(AL)
+SAT-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(AL),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(SAT),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(AL),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(SAT),HULL(AL),ICHIMOKU(NÖTR)
+AL-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(AL),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(SAT),BOĞAAYI(SAT),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(NÖTR),HULL(SAT),ICHIMOKU(NÖTR)
+AL|ORTALAMA YÖNSEL(NÖTR),EMTİA(NÖTR),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(SAT),MACD(AL),STOKASTIK RSI HIZLI(AL),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(AL),ICHIMOKU(NÖTR)
+AL-KAPAT|ORTALAMA YÖNSEL(NÖTR),EMTİA(SAT),STOKASTIK(NÖTR),MUTHIS OSILATOR(NÖTR),MOMENTUM(AL),MACD(AL),STOKASTIK RSI HIZLI(NÖTR),WILLIAMS(NÖTR),BOĞAAYI(NÖTR),NİHAİ OSILATOR(NÖTR)|HACİM AĞIRLIKLI(AL),HULL(SAT),ICHIMOKU(NÖTR)
 """.strip()
 
 
 _STATE_CODES = {"AL": 1, "SAT": -1, "NOTR": 0}
+
+# POZİYON sütunu -> karar etiketi. `norm()` tireyi boşluğa çevirdiği
+# için "AL-KAPAT" -> "AL KAPAT" olarak gelir.
+_ACTION_BY_POSITION: dict[str, str] = {
+    "AL": "AL",
+    "SAT": "SAT",
+    "AL KAPAT": "AL-KAPAT",
+    "SAT KAPAT": "SAT-KAPAT",
+}
 
 
 def _split(text: str) -> list[str]:
@@ -314,9 +433,12 @@ def _parse(raw_rows: str) -> tuple[Rule, ...]:
         if len(parts) != 3:
             raise ValueError(f"TİK2 kuralı bozuk satır: {line!r}")
         durum = norm(parts[0])
-        if durum not in ("AL", "SAT"):
-            raise ValueError(f"TİK2 kuralı: geçersiz DURUM {durum!r}")
-        direction = 1 if durum == "AL" else -1
+        try:
+            action = _ACTION_BY_POSITION[durum]
+        except KeyError:
+            raise ValueError(
+                f"TİK2 kuralı: geçersiz POZİYON {durum!r}") from None
+        direction = 1 if action in ("AL", "AL-KAPAT") else -1
 
         osc_labels: list[str] = []
         osc_map: dict[str, int] = {}
@@ -351,7 +473,8 @@ def _parse(raw_rows: str) -> tuple[Rule, ...]:
                           mas=tuple(ma_labels_out),
                           source=line,
                           osc_states=tuple(osc_states),
-                          ma_states=tuple(ma_states)))
+                          ma_states=tuple(ma_states),
+                          action=action))
     return tuple(rules)
 
 
@@ -419,28 +542,62 @@ def _rule_priority() -> np.ndarray:
     return priority
 
 
-def series(osc_codes: dict, ma_codes: dict) -> list[str]:
-    """Bar başına TİK2 kararı: "AL" / "SAT" / "NÖTR".
+def series(osc_codes: dict, ma_codes: dict, *,
+           track_position: bool = False) -> list[str]:
+    """Bar başına TİK2 kararı: "AL" / "SAT" / "AL-KAPAT" /
+    "SAT-KAPAT" / "NÖTR".
 
     Tutan satırlar arasından en özel satır seçilir; eşit özgüllükte
     sonraki (daha alttaki) satır kazanır. Hiçbiri tutmazsa NÖTR.
+
+    `track_position=True` (production): KAPAT satırları yalnızca
+    AYNI yönde bir pozisyon varken uygulanır. Pozisyon yokken veya
+    ters yöndeyken o satır atlanır ve sıradaki en özel satır geçerli
+    olur. Böylece "AL-KAPAT" açık SHORT'u kapatmaz, düz pozisyonda
+    yeni girişi de süresiz kilitlemez. Durum (hedef) nedensel olarak
+    bar bar taşınır.
     """
     masks, d = rule_masks(osc_codes, ma_codes)
     if masks.shape[1] == 0:
         return []
     priority = _rule_priority()
-    scores = np.where(masks, priority[:, None], -1)
-    winner = scores.argmax(axis=0)
-    hit = scores.max(axis=0) >= 0
+    labels = [r.label for r in RULES]
+    if not track_position:
+        scores = np.where(masks, priority[:, None], -1)
+        winner = scores.argmax(axis=0)
+        hit = scores.max(axis=0) >= 0
+        return [labels[int(w)] if h else "NÖTR"
+                for w, h in zip(winner, hit)]
+
     out: list[str] = []
-    for w, h in zip(winner, hit):
-        out.append(_label_of(int(d[w])) if h else "NÖTR")
+    state = 0
+    close_idx = np.asarray(
+        [r.label == "AL-KAPAT" for r in RULES], dtype=bool)
+    dip_idx = np.asarray(
+        [r.label == "SAT-KAPAT" for r in RULES], dtype=bool)
+    for i in range(masks.shape[1]):
+        col = masks[:, i]
+        if state <= 0 and close_idx.any():
+            col = col & ~close_idx
+        if state >= 0 and dip_idx.any():
+            col = col & ~dip_idx
+        if col.any():
+            w = int(np.argmax(np.where(col, priority, -1)))
+            lab = labels[w]
+        else:
+            lab = "NÖTR"
+        out.append(lab)
+        state = int(decide_target(lab, state))
     return out
 
 
 def decision_at(osc_codes: dict, ma_codes: dict, idx: int) -> str:
-    """Tek bar için karar (seriyi baştan üretmeden)."""
-    s = series(osc_codes, ma_codes)
+    """Tek bar için karar.
+
+    KAPAT kararları pozisyona bağlı olduğundan seri BAŞTAN, production
+    ile aynı `track_position=True` kipinde üretilir.
+    """
+    s = series(osc_codes, ma_codes, track_position=True)
     if 0 <= idx < len(s):
         return s[idx]
     return "NÖTR"
@@ -493,6 +650,36 @@ def _label_of(direction: int) -> str:
     if direction < 0:
         return "SAT"
     return "NÖTR"
+
+
+# Üretilebilecek tüm karar etiketleri.
+LABELS: tuple[str, ...] = ("AL", "SAT", "NÖTR", "AL-KAPAT", "SAT-KAPAT")
+
+
+def decide_target(label: str, current: int = 0) -> Optional[int]:
+    """Karar etiketini hedef pozisyona çevirir (+1 LONG, -1 SHORT, 0 DÜZ).
+
+    `current` açık/yürürlükteki hedeftir (+1/-1/0). KAPAT etiketleri
+    yalnızca AYNI yöndeki pozisyonu kapatır:
+
+      * AL-KAPAT : current > 0 ise 0, aksi halde `current` (dokunma)
+      * SAT-KAPAT: current < 0 ise 0, aksi halde `current` (dokunma)
+
+    Böylece AL-KAPAT açık SHORT'u kapatmaz ve yeni pozisyon açmaz.
+    Tanınmayan etiket için None döner (durum korunur).
+    """
+    lab = str(label or "").strip()
+    if lab in ("AL", "GÜÇLÜ AL"):
+        return 1
+    if lab in ("SAT", "GÜÇLÜ SAT"):
+        return -1
+    if lab == "AL-KAPAT":
+        return 0 if int(current) > 0 else int(current)
+    if lab == "SAT-KAPAT":
+        return 0 if int(current) < 0 else int(current)
+    if lab == "NÖTR":
+        return 0
+    return None
 
 
 def _smooth_dirs(values, window: int) -> list[int]:
@@ -728,8 +915,13 @@ def series_stable(osc_codes: dict, ma_codes: dict, **overrides) -> list[str]:
 
     `overrides` yalnızca test/araştırma içindir (config'i ezmez).
     """
-    raw = series(osc_codes, ma_codes)
+    raw = series(osc_codes, ma_codes, track_position=True)
     if not raw:
+        return raw
+    # KAPAT etiketleri stabilizasyonun +1/0/-1 durum makinesine
+    # sığmaz (AL-KAPAT, SAT-KAPAT yalnızca kendi yönünü kapatır).
+    # Böyle bir etiket varsa seri doğrudan döner; tablo tek kaynaktır.
+    if any(x not in ("AL", "SAT", "NÖTR") for x in raw):
         return raw
     if not bool(getattr(config, "PAPER_TK2_STAB_ON", True)):
         return raw
@@ -781,9 +973,11 @@ def summary() -> dict:
     ma_pairs = [p for r in RULES for p in r.ma_pairs()]
     return {
         "rows": len(RULES),
-        "al": sum(1 for r in RULES if r.direction > 0),
-        "sat": sum(1 for r in RULES if r.direction < 0),
-        "unique": len({(r.direction, tuple(r.osc_pairs()), tuple(r.ma_pairs()))
+        "al": sum(1 for r in RULES if r.label == "AL"),
+        "sat": sum(1 for r in RULES if r.label == "SAT"),
+        "al_kapat": sum(1 for r in RULES if r.label == "AL-KAPAT"),
+        "sat_kapat": sum(1 for r in RULES if r.label == "SAT-KAPAT"),
+        "unique": len({(r.label, tuple(r.osc_pairs()), tuple(r.ma_pairs()))
                        for r in RULES}),
         "oscillators": sorted({lab for lab, _ in osc_pairs}),
         "mas": sorted({lab for lab, _ in ma_pairs}),

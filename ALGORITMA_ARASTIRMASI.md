@@ -2066,3 +2066,96 @@ testleri korunuyor).
 `logs/islemler.csv` oluşmadı. Arayüz metni ve cache sürümü güncellendi.
 
 
+## OTURUM 23 — list3.xlsx: 158 satır + AL-KAPAT / SAT-KAPAT (2026-11-10)
+
+KULLANICI KURALI:
+> "İlk başta kâr yaptı ama AL-LONG ve SAT-SHORT çıkış noktalarını tespit
+> edemiyor, kazanç zararla sonuçlanıyordu. Veriseti kurallarını
+> güncelledim, genişlettim. Artık POZİSYON sütununda AL, SAT dışında
+> AL-KAPAT (long pozisyonu kapat), SAT-KAPAT (short pozisyonu kapat)
+> değerleri ve kuralları var. 5 dakikalık periyotta elde ettiğim bu
+> kuralları da ekle; bu değerlere ulaştığında uygun çıkış işlemini yap."
+
+KAYNAK: `C:\Users\PC-ITENG\Downloads\list3.xlsx`, `Sayfa1`, 158 veri
+satırı. İlk 85 satır `list2.xlsx` tablosunun aynısı; yeni bölüm Excel
+87–159. satırlar. `POZİYON` dağılımı: **50 AL / 54 SAT / 25 AL-KAPAT /
+29 SAT-KAPAT**. `TİK2 KARARI` sütunu yine yalnız denetim içindir; hedef
+`POZİYON`.
+
+EŞLEŞME SEMANTİĞİ (korunuyor + çıkış):
+  * Yazılan tüm durumlar aynen; yazılmayan göstergeler serbest.
+  * En çok gösterge belirten (en özel) satır kazanır; eşitlikte sonraki.
+  * Hiçbiri tutmazsa NÖTR (açık pozisyonu kapatır).
+  * **AL-KAPAT** yalnızca AYNI yöndeki (LONG) açık pozisyonu kapatır;
+    SHORT'u kapatmaz, yeni pozisyon açmaz.
+  * **SAT-KAPAT** yalnızca açık SHORT'u kapatır; LONG'a dokunmaz.
+  * Pozisyon yokken KAPAT satırı **uygulanmaz**; sıradaki en özel satır
+    (giriş kuralı) geçerli olur. Böylece çıkış koşulu, düz pozisyonda
+    yeni girişi süresiz kilitlemez.
+
+NEDEN "POZİSYONA DUYARLI" SEÇİM: KAPAT satırı, tabloda durum değil
+**aksiyon**dur. Statik "en özel satır her zaman kazanır" okuması
+ölçüldü: BTC 5m 50k barda −1000,47$ (PF 0,86). KAPAT'ı yalnız aynı
+yönde uygulayıp düz pozisyonda sıradaki satıra geçen sürüm aynı veride
++815,96$ (PF 1,08). Production bu nedenle `track_position=True`.
+
+UYGULAMA:
+  * `core/tk2_rules.py`
+      - `RAW_RULES`: 158 satır; 50 AL / 54 SAT / 25 AL-KAPAT /
+        29 SAT-KAPAT; 140 tekil desen; özgüllük 4–14.
+      - `_ACTION_BY_POSITION`: `AL`, `SAT`, `AL-KAPAT`, `SAT-KAPAT`
+        (norm tireyi boşluğa çevirdiği için "AL KAPAT" da kabul).
+      - `Rule.action`, `Rule.label`, `Rule.is_close`.
+      - `decide_target(label, current)`: AL→+1, SAT→−1,
+        AL-KAPAT→(current>0 ise 0, değilse current), SAT-KAPAT simetrik,
+        NÖTR→0.
+      - `series(..., track_position=False)`: eski statik seri korunur
+        (araştırma/teşhis). `track_position=True`: KAPAT yalnız uygun
+        yönde; durum nedensel taşınır.
+      - `series_stable()` production'da `track_position=True`; KAPAT
+        etiketi varsa stabilizasyon uygulanmaz (tablo tek kaynak).
+      - Alias eklemeleri: `GORECELI GUC`, `GORECELI GUC ENDEKSI`, `RSI`,
+        `ORTALAMA YONSEL`, `ORTALAMA YONSEL ENDEKS`, `ADX`, `ICHIMOKU`,
+        `ICHIMOKU ANA HATTI`; tek periyotlu `BASIT HAREKETLI
+        ORTALAMA10/20/30/50/100/200` + kullanıcı yazım hatası
+        `BASIT HAREKTLI ORTALAMA...`.
+  * `core/paper.py`
+      - `_tk2_karar()` artık `tk2_rules.decide_target()` kullanır;
+        kaynak etiketleri `TİK2-AL-KAPAT` / `TİK2-SAT-KAPAT`.
+      - Stop, kâr bankası, TP/BE ve zaman stopu değişmedi; hepsi her
+        zaman anında çalışır (`PAPER_TK2_MIN_HOLD=0`,
+        `PAPER_TK2_AFTER_SEC=0`).
+  * `core/service.py`
+      - `tk2_labels(tf)`: ham TİK2 etiket serisi (cache'li). Paper
+        motoru bunu alır; `mode_signal_series` grafik için
+        `AL-KAPAT→SELL`, `SAT-KAPAT→BUY` eşler (MURO ile aynı görsel
+        sözleşme).
+  * `web/static/*`: TİK2 metni list3/158 satır + KAPAT açıklaması;
+    cache `?v=42`, `ta-v42`.
+
+BACKTEST (5m, 50.000 bar, May–Oct 2026; fixed stake 1000$, 10x,
+cüzdan %80, komisyon %0,05; maker giriş/çıkış):
+  Sembol   İşlem   Net         PF    DD        AL/SAT/AK/SK/NÖTR bar
+  BTCUSDT  4227    +815,96$    1,08  −457,03$  16254/12281/1654/1463/18348
+  ETHUSDT  4135    +1416,97$   1,10  −334,49$  15772/11948/1803/1606/18871
+  SOLUSDT  4174    +5689,65$   1,37  −249,73$  16082/11290/2006/1725/18897
+  Aynı veride 85 satırlık tablo: BTC +2272,65$ (PF 1,19, DD −381,17$),
+  ETH +2992,07$ (1,19, −346,60$), SOL +6383,15$ (1,34, −288,47$).
+  Yorum: çıkış kuralları BTC/ETH netini düşürüyor (trendde erken çıkış),
+  SOL'da PF 1,34→1,37 ve DD −288→−250 ile iyileşiyor. Kullanıcı çıkış
+  kurallarını açıkça istediği için üretimde açık; sonuç ölçümü budur.
+
+PRODUCTION DOĞRULAMA (`tools/research_tk2_prod_check.py`, 4 sembol × 8 ×
+500 bar 1m): production serisi `series(track_position=True)` ile
+**birebir eşit** (fark 0 bar). Toplam 1m: −146,58$, 9/32 pozitif,
+1033 işlem, komisyon 1719,56$, DD −102,29$. 1m negatif; tablo 5m için
+toplandığından 1m'de kullanılmamalı.
+
+DOĞRULAMA: `test_tk2.py` **107/107** (158 satır dağılımı, yeni
+alias'lar, KAPAT etiketleri, pozisyona duyarlı seçim, LONG'da AL-KAPAT /
+SHORT'ta SAT-KAPAT, ters yönde kapatmama, düz pozisyonda işlem açmama,
+en özel satır/eşitlik, production == ham). `test_paper` 90/90,
+`test_tk_fix` 37/37, `py_compile` temiz. `logs/islemler.csv` oluşmadı.
+
+
+

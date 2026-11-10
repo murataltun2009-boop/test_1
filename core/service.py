@@ -60,6 +60,11 @@ _LABEL_TO_SIGNAL = {
     "": Signal.NEUTRAL,
     "LONG_KAPAT": Signal.SELL,
     "SHORT_KAPAT": Signal.BUY,
+    # TİK2 kapatma kararları: grafikte kapanış yönünde yıldız gösterir
+    # (LONG kapat = SAT, SHORT kapat = AL). Motor etiketi AYNEN korur;
+    # paper katmanı AL-KAPAT/SAT-KAPAT'ı ayrı yorumlar.
+    "AL-KAPAT": Signal.SELL,
+    "SAT-KAPAT": Signal.BUY,
 }
 
 
@@ -129,6 +134,10 @@ class MarketService:
         self._pushed_versions: dict[str, int] = {}
         # Mod bazlı grafik yıldızı serisi cache'i: (cache_key, Signal listesi)
         self._mode_series_cache: dict[str, tuple] = {}
+        # TİK2 ham karar etiketleri (AL/SAT/AL-KAPAT/SAT-KAPAT/NÖTR).
+        # Grafik Signal serisinden AYRIdır: paper katmanı kapatma
+        # etiketlerini ayırt edebilsin diye ham etiket saklanır.
+        self._tk2_label_cache: dict[str, tuple] = {}
         # AUTO FIB retracement serisi cache'i: (versiyon, leg, hi, lo, theta)
         self._fib_cache: dict[str, tuple] = {}
 
@@ -159,6 +168,7 @@ class MarketService:
         surumu 1 artirilir, sonra snapshot zorla gonderilir.
         """
         self._mode_series_cache.clear()
+        self._tk2_label_cache.clear()
         self._fib_cache.clear()
         with self._lock:
             for tf in list(self._versions):
@@ -765,20 +775,21 @@ class MarketService:
         if mode == "muro":
             return self._muro_action(res, candles)
         if mode == "tk2":
-            # TİK2 (kullanici kurali 2026-11-06): karar, kural
+            # TİK2 (kullanici kurali 2026-11-10): karar, kural
             # listesinden (osilator + MA ciftleri) uretilir. Yalnizca
             # KAPANMIS son bar okunur — motor okumasi bar bazlidir.
+            # NOT: grafik serisi Signal'e cevrilir; paper katmani
+            # AL-KAPAT/SAT-KAPAT ayrimini kaybetmemek icin HAM etiketi
+            # alir (bu yuzden `tk2_labels` kullanilir).
             cs = _kapali_mumlar(candles or [])
             if not cs:
                 return None
             idx = len(cs) - 1
-            # Ayni analiz versiyonu icin seri zaten cache'li: her tikte
-            # 85 satiri yeniden hesaplamak yerine cache'ten oku.
             if tf:
                 try:
-                    seri = self.mode_signal_series(tf)
+                    seri = self.tk2_labels(tf)
                     if idx < len(seri):
-                        return seri[idx].value
+                        return seri[idx]
                 except Exception:      # noqa: BLE001
                     pass
             seri = tk2_rules.series_stable(res.osc_codes, res.ma_codes)
@@ -826,6 +837,27 @@ class MarketService:
         return "NÖTR"
 
     # ------------------------------------------------------------------
+    def tk2_labels(self, tf: str) -> list[str]:
+        """TİK2 ham karar serisi (AL/SAT/AL-KAPAT/SAT-KAPAT/NÖTR).
+
+        `mode_signal_series` grafik için Signal'e çevirir; paper motoru
+        ise kapatma etiketlerini ayırt edebilmek için bu ham seriyi
+        kullanır. Aynı analiz versiyonu için cache'lenir.
+        """
+        with self._lock:
+            res = self._analyses.get(tf)
+            version = self._versions.get(tf, 0)
+        if res is None:
+            return []
+        key = self._mode_cache_key("tk2", version)
+        cached = self._tk2_label_cache.get(tf)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        seri = tk2_rules.series_stable(res.osc_codes, res.ma_codes)
+        self._tk2_label_cache[tf] = (key, seri)
+        return seri
+
+    # ------------------------------------------------------------------
     def mode_signal_series(self, tf: str) -> list[Signal]:
         """
         Grafik yildizlarina temel olacak MOD BAZLI sinyal serisi.
@@ -871,11 +903,11 @@ class MarketService:
                 config.PAPER_OSC_BASE_THRESHOLD,
                 config.PAPER_OSC_STRONG_THRESHOLD)
         elif mode == "tk2":
-            # TİK2 kural serisi: AL/SAT/NÖTR -> grafik yildizlari.
-            # Karar kaynagi core/tk2_rules.py; gosterge hesaplari OKUNUR.
-            # STABİLİZASYON: canlı/backtest ile aynı seri (HULL giriş
-            # kapısı + config.PAPER_TK2_STAB_*).
-            karar = tk2_rules.series_stable(res.osc_codes, res.ma_codes)
+            # TİK2 kural serisi: AL/SAT/AL-KAPAT/SAT-KAPAT/NÖTR ->
+            # grafik yildizlari. Karar kaynagi core/tk2_rules.py;
+            # gosterge hesaplari OKUNUR. STABİLİZASYON: canlı/backtest
+            # ile aynı ham seri (config.PAPER_TK2_STAB_*).
+            karar = self.tk2_labels(tf)
             series = [_LABEL_TO_SIGNAL.get(k, Signal.NEUTRAL)
                       for k in karar]
         else:
@@ -1147,6 +1179,7 @@ class MarketService:
             self._last_record_time.clear()
             self._dirty.clear()
             self._mode_series_cache.clear()
+            self._tk2_label_cache.clear()
             self._fib_cache.clear()
         if self.paper is not None:
             self.paper.reset(symbol)
