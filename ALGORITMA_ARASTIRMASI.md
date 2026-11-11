@@ -2232,4 +2232,42 @@ ters yön kilidi, 10$ banka LONG/SHORT kapanışı ve 0=kapalı).
 `logs/islemler.csv` oluşmadı. Arayüz cache sürümü `?v=43` / `ta-v43`.
 
 
+## OTURUM 25 — Zarar koruması süreleri 1 bar (2026-11-12)
+
+KULLANICI KARARI:
+> "Arka arkaya 2 zarardan sonra tüm yönlerde 10 bar fren ve zarar edilen
+> giriş seviyesine yakın aynı yönde 15 bar giriş yok — bunları 1'er bar
+> olarak güncelleyelim."
+
+DEĞİŞİKLİK:
+  * `PAPER_TK_STREAK_BARS`: 10 → **1** (arka arkaya 2 zarardan sonra
+    tüm yönlerde 1 bar giriş yok).
+  * `PAPER_TK_LEVEL_BARS`: 15 → **1** (zarar edilen giriş seviyesine
+    yakın aynı yönde 1 bar giriş yok).
+  * `PAPER_TK_STREAK_N=2`, `PAPER_TK_PAUSE_BARS=3` ve
+    `PAPER_TK_LEVEL_BAN=0,002` DEĞİŞMEDİ.
+  * Anlam: kilit yalnızca zararın gerçekleştiği bar boyunca sürer; bir
+    sonraki barda giriş serbesttir. Kârlı kapanış kilitleri zaten temizler.
+  * `core/paper.py` varsayılanları (10→1, 15→1), `web/server.py` onay
+    metinleri ve `web/static/app.js` açıklaması güncellendi; arayüz cache
+    sürümü `?v=44` / `ta-v44`.
+
+ÖLÇÜM (5m, 50.000 bar; fixed stake 1000$, 10x, %80, komisyon %0,05;
+`tk2` iki yön):
+
+  Sembol  Banka 10$ (önce → sonra)        Banka kapalı (önce → sonra)
+  BTC     −240,22$ → −259,30$ (PF 0,98)   +788,59$ → +683,13$ (PF 1,06)
+  ETH     +288,06$ → +268,82$ (PF 1,02)   +1461,07$ → +1329,37$ (PF 1,09)
+  SOL     +2295,41$ → +2362,60$ (PF 1,16) +5754,37$ → +5802,67$ (PF 1,36)
+
+Yorum: kısa fren, işlem sayısını bir miktar artırıyor; net etkisi
+sembole göre küçük ve karışık (BTC/ETH hafif azalma, SOL hafif artış ve
+DD iyileşmesi). Kullanıcı akışın kilitlenmemesini istediği için bu
+değerler üretimde.
+
+DOĞRULAMA: `test_tk2.py` **138/138** (yeni bölüm 17: seri freni 1 bar,
+seviye yasağı 1 bar, eşik 2 zarar). `test_paper` 90/90,
+`test_tk_fix` 37/37, `py_compile` temiz. `logs/islemler.csv` oluşmadı.
+
+
 

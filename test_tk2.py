@@ -849,6 +849,21 @@ kontrol("16.9 tk2_bank_usd=0 banka kapalı (pozisyon kapanmaz)",
         p16c.position is not None and "banka" not in (_ev16c or ""))
 
 
+# ==================================================================
+# 17) ZARAR KORUMASI SÜRELERİ (2026-11-12 kullanıcı kararı: 1 bar)
+# ==================================================================
+print("17) Zarar koruması süreleri")
+p17 = PaperTrader("DOGEUSDT")
+p17.configure(balance=1000.0, leverage=10, fee_rate=0.0005,
+              wallet_fraction=0.8, mode="tk2", risk_pct=0.03)
+kontrol("17.1 arka arkaya 2 zarar freni 1 bar",
+        p17.tk_streak_bars == 1 == config.PAPER_TK_STREAK_BARS)
+kontrol("17.2 zarar edilen seviye yasağı 1 bar",
+        p17.tk_level_bars == 1 == config.PAPER_TK_LEVEL_BARS)
+kontrol("17.3 fren eşiği 2 zarar (değişmedi)",
+        p17.tk_streak_n == 2 == config.PAPER_TK_STREAK_N)
+
+
 print("-" * 60)
 print(f"TAMAM — {_GECEN} geçti, {_KALAN} kaldı")
 if _KALAN:

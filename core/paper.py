@@ -551,10 +551,10 @@ class PaperTrader:
         # ayni yonde oraya tekrar girilmez (seviye hafizasi).
         self.tk_streak_n = int(getattr(config, "PAPER_TK_STREAK_N", 2))
         self.tk_streak_bars = int(
-            getattr(config, "PAPER_TK_STREAK_BARS", 10))
+            getattr(config, "PAPER_TK_STREAK_BARS", 1))
         self.tk_level_ban = float(
             getattr(config, "PAPER_TK_LEVEL_BAN", 0.002))
-        self.tk_level_bars = int(getattr(config, "PAPER_TK_LEVEL_BARS", 15))
+        self.tk_level_bars = int(getattr(config, "PAPER_TK_LEVEL_BARS", 1))
         # Trend egimi esigi: EMA20 son K barda fiyatin bu orani kadar
         # kaymiyorsa trend "yatay" sayilir, giris yok (0=kapali).
         self.tk_trend_slope = float(

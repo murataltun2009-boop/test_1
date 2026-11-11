@@ -481,9 +481,12 @@ PAPER_TK2_STAB_HULL_FAST = False
 PAPER_TK2_STAB_HULL_GOVERNOR = False
 PAPER_TK_REQUIRE_TREND = True     # True: rib==0 iken (trend yok) yildiz tek basina giris acamaz
 PAPER_TK_STREAK_N = 2             # arka arkaya N zarar -> TUM yonlerde K bar fren (0=kapali)
-PAPER_TK_STREAK_BARS = 10         # seri freni suresi (bar); dolunca sayac sifirlanir
+# 2026-11-12 KULLANICI KARARI: seri freni ve seviye yasagi 1 BAR'a indirildi
+# (once 10 ve 15 bardı; kullanici islem akisinin gereksiz kilitlenmesini
+# istemedi). Yalnizca zararli kapanistan sonraki bar boyunca gecerlidir.
+PAPER_TK_STREAK_BARS = 1          # seri freni suresi (bar); dolunca sayac sifirlanir
 PAPER_TK_LEVEL_BAN = 0.002        # son zararli giris seviyesine bu kadar yakinda AYNI yon giris yok (0=kapali)
-PAPER_TK_LEVEL_BARS = 15          # seviye yasagi suresi (bar)
+PAPER_TK_LEVEL_BARS = 1           # seviye yasagi suresi (bar)
 PAPER_TK_SL_ATR = 0.0             # stop = max(SL, ATR14*bu kat) — olcumde zararliydi; yine olCuldu, varsayilan kapali
 PAPER_TK_BE_RISK = 0.0            # acik kar stop mesafesinin bu katina ulasinca stop girise cekilir (0=kapali, olcumde zararli)
 PAPER_TK_TIME_BARS = 0            # islem K bar boyunca sonuca ulasmadiysa market ile kapanir (0=kapali, olcumde zararli)
