@@ -33,6 +33,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 
 import config
 import core.analysis as analysis_mod
+from core import tk2_rules
 from core.analysis import Signal
 from core.service import MarketService
 from core.store import SignalStore
@@ -354,6 +355,7 @@ def create_app(service: MarketService, store: SignalStore,
             risk_pct=_num(data.get("risk_pct")),
             lock_pct=_num(data.get("lock_pct")),
             pull_atr=_num(data.get("pull_atr")),
+            tk2_bank_usd=_num(data.get("tk2_bank_usd")),
         )
         # Mod degisince grafik yildizlarini yeni algoritmaya gore
         # hemen yeniden uretip gonder.
@@ -459,41 +461,33 @@ def create_app(service: MarketService, store: SignalStore,
             risk_pct=_num(data.get("risk_pct")),
             lock_pct=_num(data.get("lock_pct")),
             pull_atr=_num(data.get("pull_atr")),
+            tk2_bank_usd=_num(data.get("tk2_bank_usd")),
         )
-        # TİK2 onayi (2026-11-02, kullanici kurali — yalniz-SHORT):
-        if data.get("mode") == "tk2" and paper.mode == "tk2":
+        # TİK2 onayi (2026-11-11, kullanici kurali — 3 varyant):
+        # tk2 = iki yon, tk2_long = yalniz LONG, tk2_short = yalniz SHORT.
+        if tk2_rules.is_tk2_mode(data.get("mode")) and \
+                tk2_rules.is_tk2_mode(paper.mode):
             dur = "" if paper.running else \
                 " · SIMULASYON DURAKLATILMIS — islem acilmasi icin " \
                 "Trade Başla'ya bas"
+            _varyant = {
+                "tk2": "iki yön (AL + SAT)",
+                "tk2_long": "yalnız LONG (AL + AL-KAPAT)",
+                "tk2_short": "yalnız SHORT (SAT + SAT-KAPAT)",
+            }.get(paper.mode, paper.mode)
             service._emit_log(
                 "info", "simulator",
-                f"TİK2 (yalnız-SHORT) aktif — sembol {paper.symbol} · "
-                f"SADECE SHORT yapar, LONG HİÇ açılmaz · kırmızı yıldız: "
-                f"SHORT açar; kırmızı kaldıkça pozisyonda kalır · gri "
-                f"yıldız: pozisyonu KAPATIR (gri-dogumlu short gri "
-                f"dizisi boyunca kalır) · yeşil yıldız: işlem açmaz, "
-                f"bekler; YEŞILDEN SONRA gelen gri SHORT açar · aç/kapa "
-                f"LIMIT (maker) · her işlem sonrası 1 dk bekleme "
-                f"(kâr bankası dahil) · pozisyon boyu cüzdan "
-                f"fraksiyonunun %{getattr(paper,'tk_fraction',0.5)*100:.0f}'i · "
-                f"kar bankası: biriken kâr bakiyenin "
-                f"%{getattr(paper,'tk_bank_pct',0.035)*100:.1f}'ine "
-                f"(en az stop riski ×{getattr(paper,'tk_bank_rr',1.8):.1f}) "
-                f"ulaşınca cuzdana yazılır · zarar sonrası "
-                f"{getattr(paper,'tk_pause_bars',3)} bar aynı yönde yeni "
-                f"giriş yok · arka arkaya "
-                f"{getattr(paper,'tk_streak_n',2)} zarar "
-                f"{getattr(paper,'tk_streak_bars',10)} bar tüm-yön fren; "
-                f"zarar edilen giriş seviyesine "
-                f"%{getattr(paper,'tk_level_ban',0.002)*100:.2f} yakın "
-                f"aynı yonde {getattr(paper,'tk_level_bars',15)} bar tekrar "
-                f"girilmez · trend yoksa yıldız tek başına giriş açmaz · "
-                f"giriş, sinyal fiyatinin "
-                f"%{abs(getattr(paper,'tk_entry_offset',-0.001))*100:.2f} "
-                f"gerisine konan pasif limitin (pullback) dolmasıyla "
-                f"olur · stop→ters ve ribbon-flip DEVRE DIŞI (LONG "
-                f"açabilirler){dur}")
-        elif data.get("mode") == "tk2" and paper.mode != "tk2":
+                f"TİK2 aktif — sembol {paper.symbol} · varyant: "
+                f"{_varyant} · kural tablosu 199 satır · POZİYON sütunu "
+                f"tek karar kaynağı (TİK2 sütunu yalnız parametre) · "
+                f"AL=LONG açar, SAT=SHORT açar, AL-KAPAT açık LONG'u, "
+                f"SAT-KAPAT açık SHORT'u kapatır · aç/kapa LIMIT (maker) · "
+                f"bekleme yok · kâr bankası: açık pozisyon kârı "
+                f"{getattr(paper,'tk2_bank_usd',10.0):.2f}$ olunca kapanır "
+                f"ve kazanç cüzdana yazılır · stop→ters ve ribbon-flip "
+                f"DEVRE DIŞI{dur}")
+        elif tk2_rules.is_tk2_mode(data.get("mode")) and \
+                not tk2_rules.is_tk2_mode(paper.mode):
             service._emit_log(
                 "warning", "simulator",
                 f"TİK2 modu UYGULANAMADI (motor mode={paper.mode}) — "
@@ -655,41 +649,33 @@ def create_app(service: MarketService, store: SignalStore,
             risk_pct=_num(data.get("risk_pct")),
             lock_pct=_num(data.get("lock_pct")),
             pull_atr=_num(data.get("pull_atr")),
+            tk2_bank_usd=_num(data.get("tk2_bank_usd")),
         )
-        # TİK2 onayi (2026-11-02, kullanici kurali — yalniz-SHORT):
-        if data.get("mode") == "tk2" and paper.mode == "tk2":
+        # TİK2 onayi (2026-11-11, kullanici kurali — 3 varyant):
+        # tk2 = iki yon, tk2_long = yalniz LONG, tk2_short = yalniz SHORT.
+        if tk2_rules.is_tk2_mode(data.get("mode")) and \
+                tk2_rules.is_tk2_mode(paper.mode):
             dur = "" if paper.running else \
                 " · SIMULASYON DURAKLATILMIS — islem acilmasi icin " \
                 "Trade Başla'ya bas"
+            _varyant = {
+                "tk2": "iki yön (AL + SAT)",
+                "tk2_long": "yalnız LONG (AL + AL-KAPAT)",
+                "tk2_short": "yalnız SHORT (SAT + SAT-KAPAT)",
+            }.get(paper.mode, paper.mode)
             service._emit_log(
                 "info", "simulator",
-                f"TİK2 (yalnız-SHORT) aktif — sembol {paper.symbol} · "
-                f"SADECE SHORT yapar, LONG HİÇ açılmaz · kırmızı yıldız: "
-                f"SHORT açar; kırmızı kaldıkça pozisyonda kalır · gri "
-                f"yıldız: pozisyonu KAPATIR (gri-dogumlu short gri "
-                f"dizisi boyunca kalır) · yeşil yıldız: işlem açmaz, "
-                f"bekler; YEŞILDEN SONRA gelen gri SHORT açar · aç/kapa "
-                f"LIMIT (maker) · her işlem sonrası 1 dk bekleme "
-                f"(kâr bankası dahil) · pozisyon boyu cüzdan "
-                f"fraksiyonunun %{getattr(paper,'tk_fraction',0.5)*100:.0f}'i · "
-                f"kar bankası: biriken kâr bakiyenin "
-                f"%{getattr(paper,'tk_bank_pct',0.035)*100:.1f}'ine "
-                f"(en az stop riski ×{getattr(paper,'tk_bank_rr',1.8):.1f}) "
-                f"ulaşınca cuzdana yazılır · zarar sonrası "
-                f"{getattr(paper,'tk_pause_bars',3)} bar aynı yönde yeni "
-                f"giriş yok · arka arkaya "
-                f"{getattr(paper,'tk_streak_n',2)} zarar "
-                f"{getattr(paper,'tk_streak_bars',10)} bar tüm-yön fren; "
-                f"zarar edilen giriş seviyesine "
-                f"%{getattr(paper,'tk_level_ban',0.002)*100:.2f} yakın "
-                f"aynı yonde {getattr(paper,'tk_level_bars',15)} bar tekrar "
-                f"girilmez · trend yoksa yıldız tek başına giriş açmaz · "
-                f"giriş, sinyal fiyatinin "
-                f"%{abs(getattr(paper,'tk_entry_offset',-0.001))*100:.2f} "
-                f"gerisine konan pasif limitin (pullback) dolmasıyla "
-                f"olur · stop→ters ve ribbon-flip DEVRE DIŞI (LONG "
-                f"açabilirler){dur}")
-        elif data.get("mode") == "tk2" and paper.mode != "tk2":
+                f"TİK2 aktif — sembol {paper.symbol} · varyant: "
+                f"{_varyant} · kural tablosu 199 satır · POZİYON sütunu "
+                f"tek karar kaynağı (TİK2 sütunu yalnız parametre) · "
+                f"AL=LONG açar, SAT=SHORT açar, AL-KAPAT açık LONG'u, "
+                f"SAT-KAPAT açık SHORT'u kapatır · aç/kapa LIMIT (maker) · "
+                f"bekleme yok · kâr bankası: açık pozisyon kârı "
+                f"{getattr(paper,'tk2_bank_usd',10.0):.2f}$ olunca kapanır "
+                f"ve kazanç cüzdana yazılır · stop→ters ve ribbon-flip "
+                f"DEVRE DIŞI{dur}")
+        elif tk2_rules.is_tk2_mode(data.get("mode")) and \
+                not tk2_rules.is_tk2_mode(paper.mode):
             service._emit_log(
                 "warning", "simulator",
                 f"TİK2 modu UYGULANAMADI (motor mode={paper.mode}) — "

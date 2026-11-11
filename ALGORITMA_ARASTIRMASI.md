@@ -2158,4 +2158,78 @@ en özel satır/eşitlik, production == ham). `test_paper` 90/90,
 `test_tk_fix` 37/37, `py_compile` temiz. `logs/islemler.csv` oluşmadı.
 
 
+## OTURUM 24 — list3 (1).xlsx: 199 satır + 3 varyant + 10$ kâr bankası (2026-11-11)
+
+KULLANICI KURALI:
+> "Liste kurallarını güncelledim. Öncelikle POZİSYON sütunu bizim hedef
+> sütunumuz, karar alma mekanizmasıdır. TİK2 sütunu sadece parametredir.
+> AL, SAT, AL-KAPAT, SAT-KAPAT pozisyonlarını alacaksın. Veri setini
+> genişlettim. Ayrıca bu kuralın sadece SHORT ve SHORT'tan çıkış, sadece
+> LONG ve LONG'tan çıkış olarak 2 ayrı versiyonunu ekle. TİK2 için toplam
+> 3 algoritmam olacak, istediğimi seçmeliyim. Hem long hem shortta
+> kapatma kuralları 10 dolar olduğunda kapat, kazancı cüzdana geçir. Bu
+> değeri arayüzden parametre olarak belirleyebileyim; varsayılan 10 dolar."
+
+KAYNAK: `C:\Users\PC-ITENG\Downloads\list3 (1).xlsx`, `Sayfa1`, **199
+veri satırı**. `POZİYON` dağılımı: **57 AL / 64 SAT / 36 AL-KAPAT /
+42 SAT-KAPAT**. 180 tekil desen; özgüllük 4–17 gösterge. Hedef karar
+sütunu `POZİYON`; `TİK2 KARARI` yalnız parametre/denetimdir. Excel
+satırları ile parser çıktısı karşılaştırıldı: **0 fark**. İlk 85 satır
+(`list2.xlsx`) korunmuştur.
+
+VARYANTLAR (`core/tk2_rules.py`):
+  * `tk2`       — iki yön: AL + SAT ve KAPAT satırları (önceki davranış).
+  * `tk2_long`  — yalnız LONG: AL açar/korur, AL-KAPAT kapatır; SAT ve
+    SAT-KAPAT yok sayılır, SHORT hiç açılmaz.
+  * `tk2_short` — yalnız SHORT: SAT açar/korur, SAT-KAPAT kapatır; AL ve
+    AL-KAPAT yok sayılır, LONG hiç açılmaz.
+  * `TK2_MODES`, `is_tk2_mode()`, `side_for_mode()` (+1/−1/None);
+    `series(..., side=...)` ve `series_stable(..., side=...)` yön
+    filtresi uygular. Paper motorunda ikinci savunma hattı olarak ters
+    yön etiketi `_tk2_karar()` içinde yok sayılır.
+
+DOLAR KÂR BANKASI: `PAPER_TK2_BANK_USD = 10.0` (arayüz: `pBank`,
+varsayılan 10$; 0 = kapalı). Açık pozisyonun DOLAR kârı eşiğe ulaşınca
+kapanır ve kazanç cüzdana yazılır (maker çıkış). İki yönde de geçerli;
+TİK2'de yüzde/R:R tabanlı `tk_bank_pct` yerine bu eşik kullanılır.
+Eşik anında çalışır (`PAPER_TK2_MIN_HOLD=0`, `PAPER_TK2_AFTER_SEC=0`).
+
+BACKTEST (5m, 50.000 bar, May–Oct 2026; fixed stake 1000$, 10x,
+cüzdan %80, komisyon %0,05; maker giriş/çıkış). `tools/research_tk2_variants.py`:
+
+  Varyant     Sembol  Banka 10$                          Banka KAPALI
+  tk2         BTC     −240,22$  PF 0,98  4362 işlem      +788,59$  1,07  4239
+  tk2         ETH     +288,06$  PF 1,02  4373 işlem      +1461,07$ 1,10  4166
+  tk2         SOL     +2295,41$ PF 1,16  4423 işlem      +5754,37$ 1,37  4190
+  tk2_long    BTC     −1001,54$ PF 0,85  2249 işlem      −63,29$   0,99  3525
+  tk2_long    ETH     −501,09$  PF 0,96  3663 işlem      +1013,90$ 1,08  3519
+  tk2_long    SOL     +608,81$  PF 1,04  3786 işlem      +2762,00$ 1,18  3610
+  tk2_short   BTC     −1003,13$ PF 0,73  1107 işlem      −1014,27$ 0,80  1534
+  tk2_short   ETH     −1002,17$ PF 0,71  851 işlem       −1001,16$ 0,80  1097
+  tk2_short   SOL     −1015,08$ PF 0,69  716 işlem       −1000,19$ 0,85  1330
+
+YORUM: 199 satırlık tablo, 158 satırlık tablonun bankasız sonuçlarını
+koruyor (BTC +815,96→+788,59$, ETH +1416,97→+1461,07$, SOL
++5689,65→+5754,37$). 10$ banka, 4000$ notional'da ~%0,25 fiyat
+hareketinde kapanış ürettiği için işlem sayısını ve komisyonu artırıp
+neti düşürüyor (BTC −240,22$, ETH +288,06$, SOL +2295,41$). Kullanıcı
+10$'ı açıkça istediği için varsayılan 10$ bırakıldı; arayüzden
+yükseltilebilir veya 0 ile kapatılabilir. Yalnız-LONG, iki yöne göre
+daha iyi; yalnız-SHORT üç sembolde de negatif (kısa trendlerde
+komisyon/stop baskısı). Grafik eşlemesi korunuyor: `AL-KAPAT→SELL`,
+`SAT-KAPAT→BUY`.
+
+PRODUCTION DOĞRULAMA (`tools/research_tk2_prod_check.py`, 4 sembol × 8 ×
+500 bar 1m): production serisi `series(track_position=True)` ile
+**birebir eşit** (fark 0 bar). Toplam 1m: −158,72$, 11/32 pozitif,
+1057 işlem, komisyon 1750,74$, DD −78,69$. 1m negatif; tablo 5m için
+toplandığından 1m'de kullanılmamalı.
+
+DOĞRULAMA: `test_tk2.py` **135/135** (199 satır dağılımı, 180 tekil
+desen, özgüllük 4–17, ilk 85 satır korunmuş, varyant yön filtreleri,
+ters yön kilidi, 10$ banka LONG/SHORT kapanışı ve 0=kapalı).
+`test_paper` 90/90, `test_tk_fix` 37/37, `py_compile` temiz.
+`logs/islemler.csv` oluşmadı. Arayüz cache sürümü `?v=43` / `ta-v43`.
+
+
 

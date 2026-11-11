@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
-"""TİK2 — KULLANICI KURAL TABLOSU testi (2026-11-10).
+"""TİK2 — KULLANICI KURAL TABLOSU testi (2026-11-11).
 
-Kullanıcı kuralı (`list3.xlsx`, BTCUSDT 5m, 158 satır):
+Kullanıcı kuralı (`list3 (1).xlsx`, BTCUSDT 5m, 199 satır):
+  * Hedef (karar) sütunu POZİYON'dur; "TİK2 KARARI" sütunu yalnızca
+    parametre/denetim bilgisidir, karar kaynağı DEĞİLDİR.
   * Karar kaynağı `core/tk2_rules.py` kural tablosudur: her satırda
     osilatör ve hareketli ortalamaların DURUMLARI yazılıdır.
   * AL = LONG aç/koru, SAT = SHORT aç/koru,
@@ -18,6 +20,10 @@ Kullanıcı kuralı (`list3.xlsx`, BTCUSDT 5m, 158 satır):
   * Pozisyon aç/kapa sonrası bekleme YOK (2026-11-07 kullanıcı kararı).
   * Giriş/çıkış LIMIT (maker) — komisyon düşük.
   * Gösterge hesapları ve grafik üretimi DEĞİŞMEZ.
+  * ÜÇ VARYANT (2026-11-11): tk2 (iki yön), tk2_long (yalnız LONG ve
+    LONG'tan çıkış), tk2_short (yalnız SHORT ve SHORT'tan çıkış).
+  * DOLAR KÂR BANKASI: açık pozisyon kârı `tk2_bank_usd` (varsayılan
+    10$) eşiğine ulaşınca kapanır, kazanç cüzdana yazılır.
 
 Not: Bu dosya pytest değil, düz Python betiğidir:
     python test_tk2.py
@@ -101,15 +107,15 @@ def yildiz_var(p, m, yildiz, also_mum=None):
 
 
 # ==================================================================
-# 1) KURAL TABLOSU: 158 satır (list3.xlsx),
-#    50 AL / 54 SAT / 25 AL-KAPAT / 29 SAT-KAPAT
+# 1) KURAL TABLOSU: 199 satır (list3 (1).xlsx),
+#    57 AL / 64 SAT / 36 AL-KAPAT / 42 SAT-KAPAT
 # ==================================================================
 print("1) Kural tablosu")
 s = tk2_rules.summary()
-kontrol("1.1 158 satır", s["rows"] == 158)
-kontrol("1.2 50 AL / 54 SAT", s["al"] == 50 and s["sat"] == 54)
-kontrol("1.2b 25 AL-KAPAT / 29 SAT-KAPAT",
-        s["al_kapat"] == 25 and s["sat_kapat"] == 29)
+kontrol("1.1 199 satır", s["rows"] == 199)
+kontrol("1.2 57 AL / 64 SAT", s["al"] == 57 and s["sat"] == 64)
+kontrol("1.2b 36 AL-KAPAT / 42 SAT-KAPAT",
+        s["al_kapat"] == 36 and s["sat_kapat"] == 42)
 kontrol("1.3 tüm osilatör etiketleri analysis ile uyumlu",
         all(o in OSCILLATOR_LABELS for o in s["oscillators"]))
 kontrol("1.4 tüm MA etiketleri analysis ile uyumlu",
@@ -120,9 +126,9 @@ kontrol("1.6 USTEL+BASIT+HULL = 13 MA",
         len(tk2_rules.MA_GROUPS["EMA"]) +
         len(tk2_rules.MA_GROUPS["SMA"]) +
         len(tk2_rules.MA_GROUPS["HULL"]) == 13)
-kontrol("1.7 her satırda açık DURUM yazılı", s["state_rules"] == 158)
-kontrol("1.8 özgüllük 4..14 gösterge",
-        s["specificity"]["min"] == 4 and s["specificity"]["max"] == 14)
+kontrol("1.7 her satırda açık DURUM yazılı", s["state_rules"] == 199)
+kontrol("1.8 özgüllük 4..17 gösterge",
+        s["specificity"]["min"] == 4 and s["specificity"]["max"] == 17)
 kontrol("1.9 tabloda HULL ve HACIM AGIRLIKLI var",
         tk2_rules.HULL_LABEL in s["mas"]
         and tk2_rules.VWMA_LABEL in s["mas"])
@@ -191,8 +197,15 @@ ma_bos = {lab: np.zeros(4, dtype=np.int8) for lab in ma_labels()}
 kontrol("2.1 boş kodlar -> NÖTR",
         tk2_rules.series(osc_bos, ma_bos) == ["NÖTR"] * 4)
 # Satır 1: AL | MOMENTUM(AL), MACD(AL) | VWMA(AL), HULL(NÖTR)
-kontrol("2.2 satır 1 kendi durumlarıyla AL",
-        seri_kural(tk2_rules.RULES[0]) == ["AL"])
+# 199 satırlık tabloda aynı durumları daha özel bir SAT-KAPAT satırı (13
+# gösterge) da kapsar; ham seride o kazanır. Pozisyona duyarlı üretimde
+# (production) düz pozisyonda KAPAT satırı atlanır -> AL kalır.
+_kod2, _kod2m = kural_kodlari(tk2_rules.RULES[0])
+kontrol("2.2 satır 1: düz pozisyonda AL üretir",
+        tk2_rules.series(_kod2, _kod2m,
+                         track_position=True) == ["AL"])
+kontrol("2.2b satır 1: ham seride en özel satır (SAT-KAPAT) kazanır",
+        tk2_rules.series(_kod2, _kod2m) == ["SAT-KAPAT"])
 # Yazılan durum AYNEN aranır: MOMENTUM SAT yapılırsa satır 1 tutmaz.
 kontrol("2.3 yazılan durum bozulunca satır tutmaz",
         seri_kural(tk2_rules.RULES[0],
@@ -218,9 +231,11 @@ for _i, _ri in enumerate(tk2_rules.RULES):
             _ok_prio = False
 kontrol("2.6 öncelik: özgüllük, eşitlikte satır sırası", _ok_prio)
 # Yazılmayan göstergeler serbest: RSI tabloda yok, değişmesi sonucu bozmaz.
+_osc2c, _ma2c = kural_kodlari(tk2_rules.RULES[0])
+_osc2c[OSCILLATOR_LABELS[0]] = np.full(1, -1, dtype=np.int8)
 kontrol("2.7 yazılmayan göstergeler serbest (wildcard)",
-        seri_kural(tk2_rules.RULES[0],
-                   **{OSCILLATOR_LABELS[0]: -1}) == ["AL"])
+        tk2_rules.series(_osc2c, _ma2c,
+                         track_position=True) == ["AL"])
 
 
 def kural_dizisi(rules):
@@ -703,6 +718,135 @@ _ma14p[tk2_rules.VWMA_LABEL] = np.full(_n14, 1, dtype=np.int8)
 kontrol("14.6 production serisi ham tablo serisine eşit",
         tk2_rules.series_stable(_osc14p, _ma14p)
         == tk2_rules.series(_osc14p, _ma14p, track_position=True))
+
+
+# ==================================================================
+# 15) ÜÇ VARYANT: tk2 (iki yön) / tk2_long / tk2_short
+# ==================================================================
+print("15) TİK2 varyantları")
+kontrol("15.1 varyant listesi: tk2, tk2_long, tk2_short",
+        tk2_rules.TK2_MODES == ("tk2", "tk2_long", "tk2_short"))
+kontrol("15.2 is_tk2_mode üç varyantı tanır, tk'yı tanımaz",
+        all(tk2_rules.is_tk2_mode(m) for m in tk2_rules.TK2_MODES)
+        and not tk2_rules.is_tk2_mode("tk")
+        and not tk2_rules.is_tk2_mode(None))
+kontrol("15.3 side_for_mode: +1 / -1 / None",
+        tk2_rules.side_for_mode("tk2_long") == 1
+        and tk2_rules.side_for_mode("tk2_short") == -1
+        and tk2_rules.side_for_mode("tk2") is None)
+
+_seri15_l = tk2_rules.series_stable(res7.osc_codes, res7.ma_codes, side=1)
+_seri15_s = tk2_rules.series_stable(res7.osc_codes, res7.ma_codes, side=-1)
+_seri15_i = tk2_rules.series_stable(res7.osc_codes, res7.ma_codes)
+kontrol("15.4 yalnız-LONG serisinde SHORT etiketi yok",
+        all(x in ("AL", "AL-KAPAT", "NÖTR") for x in _seri15_l))
+kontrol("15.5 yalnız-SHORT serisinde LONG etiketi yok",
+        all(x in ("SAT", "SAT-KAPAT", "NÖTR") for x in _seri15_s))
+kontrol("15.6 iki yön serisi SAT ve AL birlikte üretir",
+        "AL" in _seri15_i and "SAT" in _seri15_i)
+
+p15l = PaperTrader("DOGEUSDT")
+p15l.configure(balance=1000.0, leverage=10, fee_rate=0.0005,
+               wallet_fraction=0.8, mode="tk2_long", risk_pct=0.03)
+kontrol("15.7 configure tk2_long kabul edildi", p15l.mode == "tk2_long")
+_g15l = p15l._build_signal_series(m7, "1m")
+kontrol("15.8 tk2_long motoru yalnız LONG tarafı üretir",
+        all(x in ("AL", "AL-KAPAT", "NÖTR") for x in _g15l))
+
+p15s = PaperTrader("DOGEUSDT")
+p15s.configure(balance=1000.0, leverage=10, fee_rate=0.0005,
+               wallet_fraction=0.8, mode="tk2_short", risk_pct=0.03)
+kontrol("15.9 configure tk2_short kabul edildi", p15s.mode == "tk2_short")
+_g15s = p15s._build_signal_series(m7, "1m")
+kontrol("15.10 tk2_short motoru yalnız SHORT tarafı üretir",
+        all(x in ("SAT", "SAT-KAPAT", "NÖTR") for x in _g15s))
+
+# Motor yön kilidi: ters yön etiketi gelse bile pozisyon açılmaz.
+p15e = tk(mode="tk2_long")
+m15e = barlar(60)
+yildiz_var(p15e, m15e, "SAT")
+kontrol("15.11 tk2_long SAT ile SHORT açmaz",
+        p15e.position is None)
+yildiz_var(p15e, m15e, "AL")
+kontrol("15.12 tk2_long AL ile LONG açar",
+        p15e.position is not None and p15e.position.side == "LONG")
+yildiz_var(p15e, m15e, "SAT")
+kontrol("15.13 tk2_long SAT ile açık LONG'u kapatmaz",
+        p15e.position is not None and p15e.position.side == "LONG")
+yildiz_var(p15e, m15e, "AL-KAPAT")
+kontrol("15.14 tk2_long AL-KAPAT ile LONG'u kapatır",
+        p15e.position is None)
+
+p15f = tk(mode="tk2_short")
+m15f = barlar(60)
+yildiz_var(p15f, m15f, "AL")
+kontrol("15.15 tk2_short AL ile LONG açmaz", p15f.position is None)
+yildiz_var(p15f, m15f, "SAT")
+kontrol("15.16 tk2_short SAT ile SHORT açar",
+        p15f.position is not None and p15f.position.side == "SHORT")
+yildiz_var(p15f, m15f, "AL")
+kontrol("15.17 tk2_short AL ile açık SHORT'u kapatmaz",
+        p15f.position is not None and p15f.position.side == "SHORT")
+yildiz_var(p15f, m15f, "SAT-KAPAT")
+kontrol("15.18 tk2_short SAT-KAPAT ile SHORT'u kapatır",
+        p15f.position is None)
+
+
+# ==================================================================
+# 16) DOLAR KÂR BANKASI (varsayılan 10$, iki yön)
+# ==================================================================
+print("16) Dolar kâr bankası")
+kontrol("16.1 config varsayılanı 10$",
+        abs(float(config.PAPER_TK2_BANK_USD) - 10.0) < 1e-9)
+p16a = tk()
+kontrol("16.2 tk2 motoru varsayılan 10$ bankayı alır",
+        abs(p16a.tk2_bank_usd - 10.0) < 1e-9)
+kontrol("16.3 durum (state) tk2_bank_usd alanını taşır",
+        abs(float(p16a.state(0.1)["tk2_bank_usd"]) - 10.0) < 1e-9)
+
+# LONG: kâr 10$'a ulaşınca kapanır ve kazanç cüzdana yazılır.
+p16 = tk()
+m16 = barlar(60)
+yildiz_var(p16, m16, "AL")
+_k16 = float(p16.balance)
+_q16 = p16.position.qty
+_lvl16 = p16.position.entry + 10.0 / _q16
+_px16 = _lvl16 * 1.0005
+_t16 = int(m16[-1].open_time) + 60_000
+m16.append(C(_t16, _px16, _px16 * 1.0002))
+_ev16 = p16.on_price(_px16, m16, "1m", "AL")
+kontrol("16.4 LONG kârı 10$ olunca banka kapattı",
+        p16.position is None and "banka" in (_ev16 or ""))
+kontrol("16.5 kazanç cüzdana yazıldı (+10$ eksi komisyon)",
+        p16.balance >= _k16 + 9.0 and len(p16.trades) == 1)
+
+# SHORT: aynı davranış.
+yildiz_var(p16, m16, "SAT")
+_k16b = float(p16.balance)
+_q16b = p16.position.qty
+_lvl16b = p16.position.entry - 10.0 / _q16b
+_px16b = _lvl16b * 0.9995
+_t16b = int(m16[-1].open_time) + 60_000
+m16.append(C(_t16b, _px16b, _px16b * 0.9998))
+_ev16b = p16.on_price(_px16b, m16, "1m", "SAT")
+kontrol("16.6 SHORT kârı 10$ olunca banka kapattı",
+        p16.position is None and "banka" in (_ev16b or ""))
+kontrol("16.7 SHORT kazancı cüzdana yazıldı",
+        p16.balance >= _k16b + 9.0 and len(p16.trades) == 2)
+kontrol("16.8 kapanan işlemler doğru yönlerde",
+        p16.trades[0].side == "LONG" and p16.trades[1].side == "SHORT")
+
+# 0 = banka kapalı: eşik aşılsa bile pozisyon kapanmaz.
+p16c = tk(tk2_bank_usd=0.0)
+m16c = barlar(60)
+yildiz_var(p16c, m16c, "AL")
+_q16c = p16c.position.qty
+_px16c = p16c.position.entry + 10.0 / _q16c * 1.5
+_t16c = int(m16c[-1].open_time) + 60_000
+m16c.append(C(_t16c, _px16c, _px16c * 1.0002))
+_ev16c = p16c.on_price(_px16c, m16c, "1m", "AL")
+kontrol("16.9 tk2_bank_usd=0 banka kapalı (pozisyon kapanmaz)",
+        p16c.position is not None and "banka" not in (_ev16c or ""))
 
 
 print("-" * 60)

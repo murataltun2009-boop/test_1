@@ -106,6 +106,7 @@ if ("serviceWorker" in navigator) {
    "pBalance", "pLev", "pFrac", "pFee", "pLook", "pHold", "pConfirm",
    "pBacktest", "pRule", "pMode", "pStart", "pLive", "pStop", "pReset",
    "pRisk", "riskWrap", "pLock", "lockWrap", "pPull", "pullWrap",
+   "pBank", "bankWrap",
    "ruleWrap", "modeNote", "modeNote2", "modeNote3", "modeNote3ppt",
    "modeNote4",
    "modeThr",
@@ -1060,6 +1061,10 @@ if ("serviceWorker" in navigator) {
         var lockV = (d.mode === "muro") ? d.muro_lock_pct : d.trend_lock_pct;
         if (lockV) el.pLock.value = lockV * 100;
       }
+      if (document.activeElement !== el.pBank &&
+          d.tk2_bank_usd !== undefined && d.tk2_bank_usd !== null) {
+        el.pBank.value = d.tk2_bank_usd;
+      }
       if (document.activeElement !== el.pRule) el.pRule.value = d.short_rule;
       if (document.activeElement !== el.pMode) {
         el.pMode.value = d.mode;
@@ -1222,6 +1227,11 @@ if ("serviceWorker" in navigator) {
       lock_pct: lockVal / 100,
       // Girişte optimum nokta filtresi (ATR cinsinden; 0 = kapalı).
       pull_atr: (parseFloat(el.pPull.value) || 0),
+      // TİK2 dolar kâr bankası (varsayılan 10$; 0 = kapalı).
+      tk2_bank_usd: (function () {
+        var b = parseFloat(el.pBank.value);
+        return isNaN(b) ? 10 : b;
+      })(),
       // Dilimi sunucuya ACIKCA bildir: sunucudaki aktif dilim WS mesajiyla
       // guncelleniyor ve iki istek araya girince yanlis dilim test edilebiliyor.
       timeframe: state.tf
@@ -1264,8 +1274,10 @@ if ("serviceWorker" in navigator) {
     var tek = TEK_KAYNAK.indexOf(mode) >= 0;
     // Trend/MURO modu da SHORT kuralini kullanmaz: yon tamamen
     // gostergeden gelir. Bu yuzden secici kapatilir.
+    var tik2fam = (mode === "tk2" || mode === "tk2_long" ||
+                   mode === "tk2_short");
     var trend = (mode === "trend" || mode === "muro" || mode === "ppt" ||
-                 mode === "tk" || mode === "tk2");
+                 mode === "tk" || tik2fam);
     var muro = (mode === "muro");
     var kilit = tek || trend;
     el.ruleWrap.style.display = kilit ? "none" : "";
@@ -1277,6 +1289,7 @@ if ("serviceWorker" in navigator) {
     // Risk (trend + MURO) ve kâr kilitleme (MURO) ayarlari.
     if (el.riskWrap) el.riskWrap.style.display = trend ? "" : "none";
     if (el.lockWrap) el.lockWrap.style.display = trend ? "" : "none";
+    if (el.bankWrap) el.bankWrap.style.display = tik2fam ? "" : "none";
     if (el.pullWrap) el.pullWrap.style.display = (mode === "trend" || mode === "ppt") ? "" : "none";
     el.pRule.disabled = kilit;
     // Kullanilan esikleri yaz: osilator modunda bilesik esikler
@@ -1300,7 +1313,8 @@ if ("serviceWorker" in navigator) {
     // TIK: olculmus optimum parametreler SUNUCUDA otomatik uygulanir
     // (kaynak: tools/research_tk*.py). Kullanici iste: "hesapla, elle oynama".
     var tik = (el.pMode.value === "tk");
-    var tik2 = (el.pMode.value === "tk2");
+    var tik2 = (el.pMode.value === "tk2" || el.pMode.value === "tk2_long" ||
+                el.pMode.value === "tk2_short");
     // Secilen algoritma ANINDA uygulanir: /api/paper/config sunucuda
     // configure + force_mode_refresh calistirir -> grafik AL/SAT yildizlari
     // secilen modun karar serisine gecer (pozisyon BASLATILMAZ, running
@@ -1312,27 +1326,26 @@ if ("serviceWorker" in navigator) {
           + "(mult 3,5 · pull 1,0 ATR · risk %3 · kilit %2)"
         : "") +
       (tik2
-        ? " · TİK2 kural tablosu (list3.xlsx, 158 satır): her satırda "
-          + "osilatör ve hareketli ortalamaların durumları yazılı; "
-          + "AL→LONG, SAT→SHORT, AL-KAPAT→açık LONG'u kapat, "
-          + "SAT-KAPAT→açık SHORT'u kapat; NÖTR açık pozisyonu "
-          + "kapatır (KAPAT satırı ters yönde işlem açmaz, pozisyon "
-          + "yokken atlanır); "
+        ? " · TİK2 kural tablosu (199 satır): POZİYON sütunu tek karar "
+          + "kaynağıdır, TİK2 sütunu yalnız parametredir; "
+          + (el.pMode.value === "tk2_long"
+              ? "varyant: YALNIZ LONG (AL açar, AL-KAPAT kapatır; SHORT hiç açılmaz); "
+              : el.pMode.value === "tk2_short"
+              ? "varyant: YALNIZ SHORT (SAT açar, SAT-KAPAT kapatır; LONG hiç açılmaz); "
+              : "varyant: iki yön (AL→LONG, SAT→SHORT); ")
+          + "AL-KAPAT açık LONG'u, SAT-KAPAT açık SHORT'u kapatır; "
+          + "NÖTR açık pozisyonu kapatır (KAPAT satırı ters yönde işlem "
+          + "açmaz, pozisyon yokken atlanır); "
           + "satır, yazılan TÜM durumlar sağlanınca geçerlidir "
           + "(yazılmayan göstergeler serbest); birden çok satır tutarsa "
           + "en çok gösterge belirten (en özel) satır kazanır, eşitlikte "
           + "SONRAKİ satır; hiçbiri tutmazsa NÖTR (açık pozisyonu "
-          + "KAPATIR); HULL nötr yasağı ve VWMA/HULL birleşik kuralı "
-          + "KAPALI — tablo tek karar kaynağı; kapatmada bekleme YOK "
-          + "(stop/banka anında çalışır); "
-          + "aç/kapa LIMIT (maker); her "
-          + "işlem sonrası bekleme yok; "
-          + "pozisyon boyu cüzdan fraksiyonunun %50'si; kâr bankası: "
-          + "açık pozisyon kârı bakiyenin %3,5'ine (en az stop riski "
-          + "×1,8) ulaşınca cüzdana yazılır (maker); zarar sonrası 3 "
-          + "bar aynı yönde yeni giriş yok; arka arkaya 2 zarar 10 bar "
-          + "tüm-yön fren yapar, zarar edilen giriş seviyesine yakın "
-          + "aynı yönde 15 bar tekrar girilmez (piyasa hafızası); "
+          + "KAPATIR); HULL/VWMA katmanı KAPALI — tablo tek karar kaynağı; "
+          + "bekleme YOK (stop ve kâr bankası anında çalışır); "
+          + "aç/kapa LIMIT (maker); pozisyon boyu cüzdan fraksiyonunun "
+          + "%50'si; kâr bankası: açık pozisyon kârı "
+          + (parseFloat(el.pBank.value) || 10) + "$ olunca kapanır ve "
+          + "kazanç cüzdana yazılır (maker) · 0 = kapalı; "
           + "stop→ters ve ribbon-flip devre dışı (kural dışı yön üretmemeli)"
         : "") +
       (tik
@@ -1367,7 +1380,7 @@ if ("serviceWorker" in navigator) {
   });
   syncModeUI();
   ["pBalance", "pLev", "pFrac", "pFee", "pLook", "pHold", "pRisk",
-   "pLock", "pPull"].forEach(function (id) {
+   "pLock", "pPull", "pBank"].forEach(function (id) {
       el[id].addEventListener("input", function () { state.userTouched = true; });
     });
 

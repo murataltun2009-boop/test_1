@@ -497,11 +497,12 @@ class PaperTrader:
         self.tk_pend_close = None     # flip kapanis dokunma seviyesi
         self.tk_pend_entry = None     # (yon, seviye) giris limit ARM
         self.tk_pend_bar = 0          # ARM edildigi bar acilis zamani
-        # ---- TİK2 (2026-11-10, list3.xlsx): AL/SAT + KAPAT ----
-        # Karar, core/tk2_rules.py 158 satırlık durum tablosundan üretilir:
+        # ---- TİK2 (2026-11-11, list3 (1).xlsx): AL/SAT + KAPAT ----
+        # Karar, core/tk2_rules.py 199 satırlık durum tablosundan üretilir:
         # yazılan durumlar aynen eşleşir, en özel satır kazanır. AL LONG,
         # SAT SHORT, AL-KAPAT açık LONG'u, SAT-KAPAT açık SHORT'u kapatır;
-        # NÖTR her pozisyonu kapatır.
+        # NÖTR her pozisyonu kapatır. Üç varyant: tk2 (iki yön),
+        # tk2_long (yalnız AL/AL-KAPAT), tk2_short (yalnız SAT/SAT-KAPAT).
         self._tk2_yesil = False       # yerlesen yesil gordu mu (gri tipi)
         self._tk2_min_hold = int(getattr(
             config, "PAPER_TK2_MIN_HOLD", 0) or 0)
@@ -566,6 +567,11 @@ class PaperTrader:
         self._tk_rib_bar = 0          # ribbon onbellegi: kapanan bar
         self._tk_rib_val = 0          # +1 / -1 / 0
         self.tk_bank_pct = float(getattr(config, "PAPER_TK_BANK_PCT", 0.035))
+        # TİK2 SABİT KÂR BANKASI (2026-11-11 kullanıcı kuralı): açık
+        # pozisyonun DOLAR kârı bu eşiğe ulaşınca kapanır ve kazanç
+        # cüzdana yazılır. İki yönde de geçerli; varsayılan 10$. 0 = kapalı.
+        self.tk2_bank_usd = float(
+            getattr(config, "PAPER_TK2_BANK_USD", 10.0))
         # ---- VOLATILITE DUYARLILIGI (2026-11-01, canli IK deseni) ---
         # IK 1m: 23 islem (4K/19Z), net -140$. Butun kayiplar tam
         # %0,30 stop: sabit stop 1m gurultu genisligi icinde kalir,
@@ -650,11 +656,12 @@ class PaperTrader:
                   min_hold: Optional[int] = None,
                   risk_pct: Optional[float] = None,
                   lock_pct: Optional[float] = None,
-                  pull_atr: Optional[float] = None) -> None:
+                  pull_atr: Optional[float] = None,
+                  tk2_bank_usd: Optional[float] = None) -> None:
         with self._lock:
             self._configure(balance, leverage, fee_rate, wallet_fraction,
                             lookback, confirm, short_rule, mode, min_hold,
-                            risk_pct, lock_pct, pull_atr)
+                            risk_pct, lock_pct, pull_atr, tk2_bank_usd)
 
     def _configure(self, balance: Optional[float] = None,
                    leverage: Optional[float] = None,
@@ -667,7 +674,8 @@ class PaperTrader:
                    min_hold: Optional[int] = None,
                    risk_pct: Optional[float] = None,
                    lock_pct: Optional[float] = None,
-                   pull_atr: Optional[float] = None) -> None:
+                   pull_atr: Optional[float] = None,
+                   tk2_bank_usd: Optional[float] = None) -> None:
         if balance is not None and balance > 0:
             self.balance = float(balance)
             # Yeni baslangic bakiyesi: kâr/zarar buna gore olcerilir.
@@ -689,12 +697,12 @@ class PaperTrader:
             self.short_rule = short_rule
         if mode in ("range", "signal", "signal_long", "signal_exit",
                     "ma_only", "osc_only", "trend", "muro", "1m", "ppt",
-                    "tk", "tk2"):
+                    "tk", "tk2", "tk2_long", "tk2_short"):
             if mode != self.mode:
                 # Mod degisti: onceki sinyal gecersiz.
                 self.last_signal = None
             self.mode = mode
-        if mode in ("tk", "tk2"):
+        if mode == "tk" or tk2_rules.is_tk2_mode(mode):
             # YILDIZ KURALI (2026-10-28, kullanici istegi): pozisyon
             # yildiz DEGISIMINE kadar tutulur — bu yuzden TP ve BE
             # klip KAPALI (kylip yildizdan once kapatirdi ve grafikte
@@ -747,12 +755,13 @@ class PaperTrader:
                 self.tk_sl = 0.003
                 self.tk_vol_mult = 1.0
                 self.tk_leg_flip = False
-            if mode == "tk2":
-                # TİK2 (kullanici kurali 2026-11-10, list3.xlsx): karar
-                # kaynagi core/tk2_rules.py 158 satirlik durum tablosudur;
+            if tk2_rules.is_tk2_mode(mode):
+                # TİK2 (kullanici kurali 2026-11-11, list3 (1).xlsx): karar
+                # kaynagi core/tk2_rules.py 199 satirlik POZİYON tablosudur;
                 # yazilan durumlar aynen eslesir, en ozel satir kazanir.
                 # AL=LONG, SAT=SHORT, AL-KAPAT/SAT-KAPAT ilgili yonu
-                # kapatir, NÖTR pozisyonu kapatir. HULL/VWMA katmani kapali.
+                # kapatir, NÖTR pozisyonu kapatir. Varyant (tk2 / tk2_long /
+                # tk2_short) seri uretiminde filtrelenir. HULL/VWMA kapali.
                 # SAR (stop→ters) ve ribbon-flip mekaniksel olarak
                 # ENGELLENIR (kural disi yon uretmemeli).
                 self.tk_sar = False
@@ -770,6 +779,12 @@ class PaperTrader:
                     config, "PAPER_TK2_ENTRY_OFFSET", 0.0))
                 self._tk2_min_hold = int(getattr(
                     config, "PAPER_TK2_MIN_HOLD", 0) or 0)
+                # Sabit DOLAR kâr bankası (varsayılan 10$). Arayüzden
+                # değiştirilebilir; 0 = kapalı.
+                self.tk2_bank_usd = float(getattr(
+                    config, "PAPER_TK2_BANK_USD", self.tk2_bank_usd))
+        if tk2_bank_usd is not None and float(tk2_bank_usd) >= 0:
+            self.tk2_bank_usd = float(tk2_bank_usd)
         if min_hold is not None and 0 <= int(min_hold) <= 500:
             self.min_hold_bars = int(min_hold)
         if risk_pct is not None and 0 < float(risk_pct) <= 0.50:
@@ -1093,7 +1108,8 @@ class PaperTrader:
                 signal in ("AL", "SAT"):
             signal = "NÖTR"
 
-        if self.corr_on and self.mode not in ("tk", "tk2") and \
+        if self.corr_on and self.mode != "tk" and \
+                not tk2_rules.is_tk2_mode(self.mode) and \
                 self.position is None:
             if self._bars_held < self._corr_until:
                 return None
@@ -1115,7 +1131,7 @@ class PaperTrader:
                 self._guc_scope() and signal in ("AL", "SAT"):
             signal = "NÖTR"
 
-        if self.mode in ("tk", "tk2"):
+        if self.mode == "tk" or tk2_rules.is_tk2_mode(self.mode):
             return self._tk(price, candles, timeframe,
                             bar_low, bar_high, signal)
 
@@ -2031,8 +2047,10 @@ class PaperTrader:
         # STABİLİZASYON (2026-11-07): HULL giriş kapısı + isteğe bağlı
         # onay/tutma filtreleri. Canlı ve geriye dönük test AYNI fonksiyonu
         # kullanır (config.PAPER_TK2_STAB_*).
-        if self.mode == "tk2":
-            return tk2_rules.series_stable(res.osc_codes, res.ma_codes)
+        if tk2_rules.is_tk2_mode(self.mode):
+            return tk2_rules.series_stable(
+                res.osc_codes, res.ma_codes,
+                side=tk2_rules.side_for_mode(self.mode))
 
         if self.mode == "ma_only":
             seriler = res.ma_scores
@@ -2139,7 +2157,8 @@ class PaperTrader:
                                                      "signal_exit",
                                                      "ma_only", "osc_only",
                                                      "trend", "muro", "1m",
-                                                     "ppt", "tk", "tk2"):
+                                                     "ppt", "tk", "tk2",
+                                                     "tk2_long", "tk2_short"):
                     # Sinyal listesi YOKSA ve karar modu sinyal tabanliysa
                     # burada analiz yapip signal listesini kendimiz uretiriz.
                     #
@@ -2213,7 +2232,7 @@ class PaperTrader:
         margin = stake_eq * self.wallet_fraction
         notional = margin * self.leverage
         eff_lev = self.leverage
-        if self.mode in ("tk", "tk2"):
+        if self.mode == "tk" or tk2_rules.is_tk2_mode(self.mode):
             # TK POZISYON KISITI (canli teshis 2026-10-31): 10x + %80
             # teminatla stop kaybi bakiyenin ~%2,4'u oluyordu; banka
             # hedefi ~%2,5 -> komisyonla negatif beklenti. TK pozisyonu
@@ -2514,6 +2533,16 @@ class PaperTrader:
         Osilator/MA hesaplari ve grafik olusturma DEGISMEDI.
         """
         d = str(self._tk_hist_y1 or self.tk_sig_son or "").strip()
+        # VARYANT YÖN KİLİDİ (2026-11-11): seri zaten `side` ile
+        # filtrelenir; burada ikinci savunma hattı — ters yön etiketi
+        # gelirse yok sayılır (tk2_long asla SHORT, tk2_short asla
+        # LONG açmaz). Mevcut hedef korunur.
+        _side = tk2_rules.side_for_mode(self.mode)
+        if _side is not None:
+            if _side > 0 and d in ("SAT", "SAT-KAPAT"):
+                return
+            if _side < 0 and d in ("AL", "AL-KAPAT"):
+                return
         yeni = tk2_rules.decide_target(d, self.tk_hedef)
         if yeni is None:
             return            # henuz yerlesen karar yok: durum korunur
@@ -2564,9 +2593,9 @@ class PaperTrader:
         ZINCIR olamaz."""
         if not getattr(self, "tk_sar", False):
             return
-        if self.mode == "tk2":
-            # TİK2 (kullanici kurali): stop ters cevirme LONG acabilir —
-            # strateji LONG HIC acamaz; sar ile birlikte askin kilit.
+        if tk2_rules.is_tk2_mode(self.mode):
+            # TİK2 (kullanici kurali): stop ters cevirme kural disi yon
+            # uretmemeli; TİK2'de SAR zaten kapali.
             return
         if self.tk_hedef == 0:
             return
@@ -2731,10 +2760,9 @@ class PaperTrader:
         # Ribbon aktifken HEDEF trende sabitlenir: yildiz yalnizca
         # zamanlama verir, yonu degistiremez (kullanici kurali).
         rib = self._tk_ribbon(candles)
-        if self.mode == "tk2":
-            # TİK2: ribbon HEDEFI sabitlemez (hedef +1 LONG asla
-            # kurulmaz); ribbon yalnizca asagidaki trend kapilarinda
-            # kullanilir.
+        if tk2_rules.is_tk2_mode(self.mode):
+            # TİK2: ribbon HEDEFİ sabitlemez; yön yalnızca kural
+            # tablosundan gelir. Ribbon aşağıdaki kapılarda kullanılır.
             pass
         elif rib != 0 and self.tk_hedef != rib:
             self.tk_hedef = rib
@@ -2769,10 +2797,11 @@ class PaperTrader:
         kap_mum = kap_c[-1] if kap_c else None
         yukselen = bool(kap_mum is not None and
                         getattr(kap_mum, "close", kap_mum.open) >= kap_mum.open)
-        if self.mode == "tk2":
-            # TİK2 KARARI (2026-11-10): AL=LONG, SAT=SHORT,
+        if tk2_rules.is_tk2_mode(self.mode):
+            # TİK2 KARARI (2026-11-11): AL=LONG, SAT=SHORT,
             # AL-KAPAT=açık LONG'u kapat, SAT-KAPAT=açık SHORT'u kapat,
-            # NÖTR=pozisyonu kapat.
+            # NÖTR=pozisyonu kapat. Mod varyantı (tk2/tk2_long/tk2_short)
+            # servis serisinde filtrelenmiştir.
             self._tk2_karar()
         elif rib == 0 and yeni is not None and yeni != self.tk_hedef:
             if sig == "NÖTR":
@@ -2842,18 +2871,32 @@ class PaperTrader:
             # banka kapanisi da 1 dk bekleme muhrunu BASAR — kazanc
             # yazildiktan sonra kisa gozlem suresi.
             kb = float(getattr(self, "tk_bank_pct", 0.035) or 0.0)
-            if kb > 0 and p.qty > 0:
-                # STOP MESAFESI TABANLI R:R (canli duzeltme 2026-10-31):
-                # yalnizca bakiye yuzdesi kullanilirsa (orn. 670$*%2,5
-                # = 16,75$) hedef, stop mesafesiyle (~%0,3 notional)
-                # ayni kaliyordu -> kazanc/kayip ~1:1 + komisyon.
-                # Esik = max(bakiye*BANK_PCT, stop_riski*BANK_RR).
-                esik = self.balance * kb          # para cinsinden esik
-                stp = float(getattr(p, "tk_stop", 0.0) or 0.0)
-                rr = float(getattr(self, "tk_bank_rr", 0.0) or 0.0)
-                if rr > 0 and stp > 0:
-                    risk_money = abs(p.entry - stp) * p.qty
-                    esik = max(esik, risk_money * rr)
+            # TİK2 SABİT DOLAR BANKASI (2026-11-11 kullanıcı kuralı):
+            # açık pozisyonun DOLAR kârı eşiğe ulaşınca kapat, kazancı
+            # cüzdana yaz. İki yönde de geçerli; arayüzden ayarlanır.
+            t2b = float(getattr(self, "tk2_bank_usd", 0.0) or 0.0) \
+                if tk2_rules.is_tk2_mode(self.mode) else 0.0
+            banka_aktif = (t2b > 0) if tk2_rules.is_tk2_mode(self.mode) \
+                else (kb > 0)
+            if banka_aktif and p.qty > 0:
+                if t2b > 0:
+                    # Sabit dolar eşiği: bakiye yüzdesi ve R:R tabanı
+                    # UYGULANMAZ (kullanıcı doğrudan dolar belirledi).
+                    esik = t2b
+                    banka_neden = "TK2: sabit kâr bankası (maker)"
+                else:
+                    # STOP MESAFESI TABANLI R:R (canli duzeltme 2026-10-31):
+                    # yalnizca bakiye yuzdesi kullanilirsa (orn. 670$*%2,5
+                    # = 16,75$) hedef, stop mesafesiyle (~%0,3 notional)
+                    # ayni kaliyordu -> kazanc/kayip ~1:1 + komisyon.
+                    # Esik = max(bakiye*BANK_PCT, stop_riski*BANK_RR).
+                    esik = self.balance * kb      # para cinsinden esik
+                    stp = float(getattr(p, "tk_stop", 0.0) or 0.0)
+                    rr = float(getattr(self, "tk_bank_rr", 0.0) or 0.0)
+                    if rr > 0 and stp > 0:
+                        risk_money = abs(p.entry - stp) * p.qty
+                        esik = max(esik, risk_money * rr)
+                    banka_neden = "TK: kâr bankası (maker)"
                 if p.side == LONG:
                     seviye = p.entry + esik / p.qty
                     vurdu = (bar_high is not None and
@@ -2863,7 +2906,7 @@ class PaperTrader:
                     vurdu = (bar_low is not None and
                              bar_low <= seviye) or price <= seviye
                 if vurdu:
-                    self._close(seviye, "TK: kâr bankası (maker)",
+                    self._close(seviye, banka_neden,
                                 timeframe, maker=True)
                     self._tk_kayip_muhur(bar_t)
                     self.tk_pend_entry = None
@@ -2872,7 +2915,7 @@ class PaperTrader:
                     # 1 dk beklemeye girer — diger pozisyonun hareketi
                     # gozlemlenir.
                     self._tk_son_islem_t = float(bar_t)
-                    return (f"TK: kâr bankası +{esik:.0f}$ cüzdana "
+                    return (f"TK: kâr bankası +{esik:.2f}$ cüzdana "
                             f"yazıldı (maker)")
 
             # --- TP: resting limit (maker) ---
@@ -3081,7 +3124,8 @@ class PaperTrader:
             # trende ters dustuyse yildiz ne derse desin ANINDA trend
             # yonune cevrilir — dususte short yakalanir, yukseliste
             # long korunur. 1 dk bekleme bu cevirmeyi de kapsar.
-            if self.tk_ribbon_flip and self.mode != "tk2" and \
+            if self.tk_ribbon_flip and \
+                    not tk2_rules.is_tk2_mode(self.mode) and \
                     rib != 0 and not bekle:
                 istenen = LONG if rib > 0 else SHORT
                 if p.side != istenen:
@@ -3102,10 +3146,11 @@ class PaperTrader:
             # TİK2 MINIMUM TUTMA (2026-11-07): sinyal ters dondu diye
             # pozisyonu ilk barda kapatma. Stop/banka cikislari bu
             # kapidan ETKILENMEZ (yukarida aninda calisir).
-            t2_hold = bool(self.mode == "tk2" and
+            t2_hold = bool(tk2_rules.is_tk2_mode(self.mode) and
                            int(getattr(self, "_tk2_min_hold", 0) or 0) > 0
                            and self._bars_held < int(self._tk2_min_hold))
-            t2_kapan = self.mode == "tk2" and self.tk_hedef == 0 and not t2_hold
+            t2_kapan = tk2_rules.is_tk2_mode(self.mode) and \
+                self.tk_hedef == 0 and not t2_hold
             if ((not esit and self.tk_hedef != 0 and not t2_hold)
                     or t2_kapan):
                 if bar_high is not None:
@@ -3213,7 +3258,8 @@ class PaperTrader:
         # Yildiz ters yonde kalsa bile trende karsi pozisyon acilmaz.
         # TİK2 ISTISNASI (2026-11-06): TİK2'de TEK karar kaynagi kullanici
         # kural listesidir; ek trend filtreleri kural sinyalini kesemez.
-        if self.mode != "tk2" and rib != 0 and (yon > 0) != (rib > 0):
+        if not tk2_rules.is_tk2_mode(self.mode) and rib != 0 and \
+                (yon > 0) != (rib > 0):
             self.tk_pend_entry = None
             return None
 
@@ -3222,7 +3268,7 @@ class PaperTrader:
         # acamaz. Canli desen: yatay bantta girisler donus tepelerine
         # denk geliyordu; trend yoksa beklemek kayiptan iyidir.
         # TİK2: ayni istisna (karar kural listesinden gelir).
-        if self.mode != "tk2" and \
+        if not tk2_rules.is_tk2_mode(self.mode) and \
                 getattr(self, "tk_require_trend", False) and rib == 0:
             self.tk_pend_entry = None
             return None
@@ -3250,7 +3296,7 @@ class PaperTrader:
         # bekliyor demektir (kullanici kurali: sabitlenmeyen yildizla
         # islem acilmaz). TİK2: karar zaten kural serisinden gelir ve
         # hedef dogrudan o seriden kurulur — ek kapi gerekmez.
-        if self.mode != "tk2":
+        if not tk2_rules.is_tk2_mode(self.mode):
             if sig == "NÖTR":
                 if self.tk_hedef_kaynak != "NÖTR":
                     self.tk_pend_entry = None
@@ -3422,7 +3468,8 @@ class PaperTrader:
         # ARM'i. TK'da bu engel canlida "yesil yildizda pozisyon acilmama"
         # yapti (4/4 kayip oturumunda her zarardan sonra 8 dk aylik);
         # TK kendi 60-sn bekleme kurallini kullaniyor (tk_after_ms).
-        if self.corr_on and self.mode not in ("tk", "tk2") and net < 0:
+        if self.corr_on and self.mode != "tk" and \
+                not tk2_rules.is_tk2_mode(self.mode) and net < 0:
             if self.corr_pause_bars > 0:
                 self._corr_until = self._bars_held + int(self.corr_pause_bars)
             if self.corr_arm_on:
@@ -3553,6 +3600,7 @@ class PaperTrader:
             "short_rule": self.short_rule,
             "mode": self.mode,
             "min_hold_bars": self.min_hold_bars,
+            "tk2_bank_usd": round(self.tk2_bank_usd, 2),
             "trend_risk_pct": self.trend_risk_pct,
             "muro_risk_pct": self.muro_risk_pct,
             "ppt_risk_pct": self.mode_ppt_risk_pct,

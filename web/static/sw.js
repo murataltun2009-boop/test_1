@@ -35,13 +35,15 @@
 //      esitlikte son satir. HULL/VWMA katmani KAPALI (tablo tek kaynak).
 // v14: list3.xlsx 158 satir; AL-KAPAT/SAT-KAPAT cikis kurallari
 //      (yalniz kendi yonundeki pozisyonu kapatir).
-const VERSION = "ta-v42";
+// v15: list3 (1).xlsx 199 satir; 3 TIK2 varyanti (iki yon / yalniz LONG /
+//      yalniz SHORT) + dolar bazli kar bankasi (varsayilan 10$).
+const VERSION = "ta-v43";
 const SHELL = "shell-" + VERSION;
 
 const PRECACHE = [
   "/",
-  "/static/style.css?v=42",
-  "/static/app.js?v=42",
+  "/static/style.css?v=43",
+  "/static/app.js?v=43",
   "/static/vendor/echarts.min.js",
   "/static/icon-192.png",
   "/static/icon-512.png",

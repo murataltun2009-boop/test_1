@@ -381,7 +381,7 @@ PAPER_CORR_STRONG_FIRST = True   # zayif-yazimi ARM gate ONCESI uygula
 #   BTC  5m : tp %3 sl %5 theta<=0.678 -> 3/3 pencere pozitif (+150$)
 #   SOL  1m : tp %3 sl %5 theta<=0.85  -> +123$ / 3 pencere
 # ETH ve digerleri ayni tp/sl, theta 0.85 (ETH olcumu zayifti).
-PAPER_TK_ON = False              # mode="tk"/"tk2" secilirken configure acar (tk2 = TİK2 yalniz-SHORT; ayni knoplar)
+PAPER_TK_ON = False              # mode="tk" veya TİK2 ailesi (tk2/tk2_long/tk2_short) secilince configure acar (ayni knoplar)
 PAPER_TK_TP = 0.003              # hedef %0.3 (olcum: BTC5m/SOL1m en iyi)
 PAPER_TK_SL = 0.005              # stop %0.5 (genis: 1m mean-reversion)
 PAPER_TK_WIN = 60                # fib salinim penceresi (BAR)
@@ -427,12 +427,19 @@ PAPER_TK2_AFTER_SEC = 0           # TIK2: ac/kapa sonrasi bekleme YOK
 # 2026-11-07 kullanici karari: bu bekleme de kaldirildi (kapatmayi
 # geciktirip zarara sebep oluyordu). 0 = kapali.
 PAPER_TK2_MIN_HOLD = 0
+# TIK2 SABIT KÂR BANKASI (2026-11-11 kullanici kurali): acik pozisyonun
+# DOLAR cinsinden kari bu esige ulasinca pozisyon kapanir ve kazanc
+# cuzdana yazilir (maker cikis). Iki yonde de gecerli (LONG ve SHORT).
+# Arayuzden degistirilebilir; varsayilan 10$. 0 = kapali.
+PAPER_TK2_BANK_USD = 10.0
 # TIK2 STABILIZASYON (2026-11-07): kural serisi ~2 barda bir donuyordu.
 # HULL giris kapisi ile 1m'de 4 sembolun 4'unde de hamdan iyi; ayrinti
 # ALGORITMA_ARASTIRMASI.md OTURUM 17. (Beklemeler 2026-11-07'de
 # kaldirildi; bkz. PAPER_TK2_AFTER_SEC / PAPER_TK2_MIN_HOLD.)
-# 2026-11-10 KULLANICI KARARI: `list3.xlsx` 158 satirlik tablo TIK2'nin
+# 2026-11-11 KULLANICI KARARI: `list3 (1).xlsx` 199 satirlik tablo TIK2'nin
 # TEK karar kaynagi. AL/SAT giris-koruma, AL-KAPAT/SAT-KAPAT cikis.
+# UC VARYANT arayuzden secilir: tk2 (iki yon), tk2_long (yalniz LONG
+# acar/LONG'tan cikar), tk2_short (yalniz SHORT acar/SHORT'tan cikar).
 # Asagidaki HULL/VWMA katmani kapali; tablo HULL ve HACIM AGIRLIKLI
 # durumlarini zaten acikca yaziyor.
 # STAB_ON=False -> dogrudan `tk2_rules.series(track_position=True)`.
