@@ -432,6 +432,12 @@ PAPER_TK2_MIN_HOLD = 0
 # cuzdana yazilir (maker cikis). Iki yonde de gecerli (LONG ve SHORT).
 # Arayuzden degistirilebilir; varsayilan 10$. 0 = kapali.
 PAPER_TK2_BANK_USD = 10.0
+# ALGO-GRAF (2026-11-13 kullanici kurali): 5 dk grafik cizgi siralama
+# algoritmasi. Cizgiler: MAVI=EMA50, YESIL=VWMA20, TURUNCU=EMA20,
+# PEMBE=HULL9, MOR=EMA200 (SMA200 kullanilmaz). Cakisma/ayni seviye
+# toleransi fiyatin bu oranidir; altinda kalan farklar siralama sayilmaz
+# (kararsizlik -> NOTR).
+PAPER_ALGOGRAF_TOUCH = 0.0005
 # TIK2 STABILIZASYON (2026-11-07): kural serisi ~2 barda bir donuyordu.
 # HULL giris kapisi ile 1m'de 4 sembolun 4'unde de hamdan iyi; ayrinti
 # ALGORITMA_ARASTIRMASI.md OTURUM 17. (Beklemeler 2026-11-07'de

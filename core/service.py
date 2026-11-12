@@ -27,6 +27,7 @@ from core.analysis import (Signal, TimeframeAnalysis, analyze, format_number,
 from core.binance_client import BinanceFuturesClient, Candle, Trade
 from core.paper import _kapali_mumlar
 from core import tk2_rules
+from core import algograf
 
 logger = logging.getLogger("ta.service")
 
@@ -138,6 +139,8 @@ class MarketService:
         # Grafik Signal serisinden AYRIdır: paper katmanı kapatma
         # etiketlerini ayırt edebilsin diye ham etiket saklanır.
         self._tk2_label_cache: dict[str, tuple] = {}
+        # ALGO-GRAF ham karar etiketleri (ayni gerekce: KAPAT ayrimi).
+        self._algograf_label_cache: dict[str, tuple] = {}
         # AUTO FIB retracement serisi cache'i: (versiyon, leg, hi, lo, theta)
         self._fib_cache: dict[str, tuple] = {}
 
@@ -169,6 +172,7 @@ class MarketService:
         """
         self._mode_series_cache.clear()
         self._tk2_label_cache.clear()
+        self._algograf_label_cache.clear()
         self._fib_cache.clear()
         with self._lock:
             for tf in list(self._versions):
@@ -797,6 +801,18 @@ class MarketService:
                 res.osc_codes, res.ma_codes,
                 side=tk2_rules.side_for_mode(mode))
             return seri[idx] if idx < len(seri) else None
+        if algograf.is_algograf_mode(mode):
+            # ALGO-GRAF (2026-11-13): karar yalnizca KAPANMIS son barin
+            # cizgi siralama kuralindan gelir. Seri nedensel uretilir.
+            cs = _kapali_mumlar(candles or [])
+            if not cs or not tf:
+                return None
+            idx = len(cs) - 1
+            try:
+                seri = self.algograf_labels(tf)
+            except Exception:      # noqa: BLE001
+                return None
+            return seri[idx] if 0 <= idx < len(seri) else None
         if mode == "tk":
             # YILDIZ SETTLE (2026-10-28 kullanici kurali): yildiz OLUSAN
             # bar icinde belirip kaybolabilir (tik ruzgarlari); pozisyon
@@ -867,6 +883,32 @@ class MarketService:
         return seri
 
     # ------------------------------------------------------------------
+    def algograf_labels(self, tf: str) -> list[str]:
+        """ALGO-GRAF ham karar serisi (AL/SAT/AL-KAPAT/SAT-KAPAT/NÖTR).
+
+        Grafik `mode_signal_series` ile Signal'e çevrilir; paper motoru
+        kapatma etiketlerini ayırt edebilmek için bu ham seriyi kullanır.
+        Aktif varyant (algograf / algograf_long / algograf_short)
+        uygulanır. Aynı analiz versiyonu için cache'lenir.
+        """
+        with self._lock:
+            res = self._analyses.get(tf)
+            version = self._versions.get(tf, 0)
+        if res is None:
+            return []
+        mode = self.paper.mode if self.paper is not None else "algograf"
+        if not algograf.is_algograf_mode(mode):
+            mode = "algograf"
+        key = self._mode_cache_key(mode, version)
+        cached = self._algograf_label_cache.get(tf)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        seri = algograf.series(
+            res.ma_series, side=algograf.side_for_mode(mode))
+        self._algograf_label_cache[tf] = (key, seri)
+        return seri
+
+    # ------------------------------------------------------------------
     def mode_signal_series(self, tf: str) -> list[Signal]:
         """
         Grafik yildizlarina temel olacak MOD BAZLI sinyal serisi.
@@ -917,6 +959,13 @@ class MarketService:
             # gosterge hesaplari OKUNUR. Varyant (tk2 / tk2_long /
             # tk2_short) `tk2_labels` icinde filtrelenir.
             karar = self.tk2_labels(tf)
+            series = [_LABEL_TO_SIGNAL.get(k, Signal.NEUTRAL)
+                      for k in karar]
+        elif algograf.is_algograf_mode(mode):
+            # ALGO-GRAF (2026-11-13): grafik cizgi siralama kurali.
+            # KAPAT etiketleri kapanis yonunde yildiz gosterir; paper
+            # katmani ham etiketi ayri okur.
+            karar = self.algograf_labels(tf)
             series = [_LABEL_TO_SIGNAL.get(k, Signal.NEUTRAL)
                       for k in karar]
         else:
@@ -1087,6 +1136,8 @@ class MarketService:
             elif mode == "ppt":
                 parts += [p.mode_ppt_period, p.mode_ppt_mult,
                           p.mode_ppt_pull_atr, p.mode_ppt_pull_bars]
+        if algograf.is_algograf_mode(mode):
+            parts += [algograf.touch_ratio()]
         return tuple(parts)
 
     def _decision_series_for_mode(self, mode: str, res: TimeframeAnalysis,
@@ -1189,6 +1240,7 @@ class MarketService:
             self._dirty.clear()
             self._mode_series_cache.clear()
             self._tk2_label_cache.clear()
+            self._algograf_label_cache.clear()
             self._fib_cache.clear()
         if self.paper is not None:
             self.paper.reset(symbol)

@@ -38,13 +38,15 @@
 // v15: list3 (1).xlsx 199 satir; 3 TIK2 varyanti (iki yon / yalniz LONG /
 //      yalniz SHORT) + dolar bazli kar bankasi (varsayilan 10$).
 // v16: zarar korumasi sureleri 1 bar (seri freni 10->1, seviye yasagi 15->1).
-const VERSION = "ta-v44";
+// v17: ALGO-GRAF — grafik cizgi siralama algoritmasi (iki yon / yalniz LONG /
+//      yalniz SHORT); cizgiler MAVI/YESIL/TURUNCU/PEMBE/MOR.
+const VERSION = "ta-v45";
 const SHELL = "shell-" + VERSION;
 
 const PRECACHE = [
   "/",
-  "/static/style.css?v=44",
-  "/static/app.js?v=44",
+  "/static/style.css?v=45",
+  "/static/app.js?v=45",
   "/static/vendor/echarts.min.js",
   "/static/icon-192.png",
   "/static/icon-512.png",

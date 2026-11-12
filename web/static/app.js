@@ -180,6 +180,7 @@ if ("serviceWorker" in navigator) {
   function modeAd(m) {
     if (!m) return "ALGORİTMA";
     var s = String(m).toUpperCase();
+    if (s.indexOf("ALGOGRAF") === 0) return "ALGO-" + s.slice(7);
     return s.indexOf("TK") === 0 ? "TİK" + s.slice(2) : s;
   }
   function watchSection(t) {
@@ -1276,10 +1277,12 @@ if ("serviceWorker" in navigator) {
     // gostergeden gelir. Bu yuzden secici kapatilir.
     var tik2fam = (mode === "tk2" || mode === "tk2_long" ||
                    mode === "tk2_short");
+    var algofam = (mode === "algograf" || mode === "algograf_long" ||
+                   mode === "algograf_short");
     var trend = (mode === "trend" || mode === "muro" || mode === "ppt" ||
                  mode === "tk" || tik2fam);
     var muro = (mode === "muro");
-    var kilit = tek || trend;
+    var kilit = tek || trend || algofam;
     el.ruleWrap.style.display = kilit ? "none" : "";
     el.modeNote.style.display = tek ? "none" : "";
     el.modeNote2.style.display = tek ? "" : "none";
@@ -1315,6 +1318,9 @@ if ("serviceWorker" in navigator) {
     var tik = (el.pMode.value === "tk");
     var tik2 = (el.pMode.value === "tk2" || el.pMode.value === "tk2_long" ||
                 el.pMode.value === "tk2_short");
+    var algo = (el.pMode.value === "algograf" ||
+                el.pMode.value === "algograf_long" ||
+                el.pMode.value === "algograf_short");
     // Secilen algoritma ANINDA uygulanir: /api/paper/config sunucuda
     // configure + force_mode_refresh calistirir -> grafik AL/SAT yildizlari
     // secilen modun karar serisine gecer (pozisyon BASLATILMAZ, running
@@ -1347,6 +1353,21 @@ if ("serviceWorker" in navigator) {
           + (parseFloat(el.pBank.value) || 10) + "$ olunca kapanır ve "
           + "kazanç cüzdana yazılır (maker) · 0 = kapalı; "
           + "stop→ters ve ribbon-flip devre dışı (kural dışı yön üretmemeli)"
+        : "") +
+      (algo
+        ? " · ALGO-GRAF grafik çizgi sıralaması: MAVİ=EMA50, YEŞİL=VWMA20, "
+          + "TURUNCU=EMA20, PEMBE=HULL9, MOR=EMA200 (SMA200 kullanılmaz); "
+          + (el.pMode.value === "algograf_long"
+              ? "varyant: YALNIZ LONG (PEMBE en üst + MAVİ en altta LONG, "
+                + "YEŞİL PEMBE'nin üstüne çıkınca kapat); "
+              : el.pMode.value === "algograf_short"
+              ? "varyant: YALNIZ SHORT (MAVİ en üst + PEMBE en altta SHORT, "
+                + "PEMBE ayrılınca/yeşil veya turuncuya değince kapat); "
+              : "varyant: iki yön (tüm kurallar); ")
+          + "AL=LONG açar, SAT=SHORT açar, AL-KAPAT açık LONG'u, "
+          + "SAT-KAPAT açık SHORT'u kapatır; kararsızlıkta NÖTR; "
+          + "SL/TP/kâr bankası/bekleme YOK — pozisyon kural çıkışına "
+          + "kadar tutulur; aç/kapa LIMIT (maker)"
         : "") +
       (tik
         ? " · TİK yıldız kuralı: yeşil yıldız→LONG, kırmızı yıldız→"

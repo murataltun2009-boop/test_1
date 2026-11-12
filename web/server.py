@@ -34,6 +34,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 import config
 import core.analysis as analysis_mod
 from core import tk2_rules
+from core import algograf
 from core.analysis import Signal
 from core.service import MarketService
 from core.store import SignalStore
@@ -492,6 +493,29 @@ def create_app(service: MarketService, store: SignalStore,
                 "warning", "simulator",
                 f"TİK2 modu UYGULANAMADI (motor mode={paper.mode}) — "
                 f"server kodu eski olabilir, restart gerekli")
+        # ALGO-GRAF (2026-11-13, kullanici kurali — 3 varyant):
+        # algograf = iki yon, algograf_long = yalniz LONG,
+        # algograf_short = yalniz SHORT.
+        if algograf.is_algograf_mode(data.get("mode")) and \
+                algograf.is_algograf_mode(paper.mode):
+            dur = "" if paper.running else \
+                " · SIMULASYON DURAKLATILMIS — islem acilmasi icin " \
+                "Trade Başla'ya bas"
+            _varyant = {
+                "algograf": "iki yön (tüm kurallar)",
+                "algograf_long": "yalnız LONG (PEMBE üst / MAVİ alt)",
+                "algograf_short": "yalnız SHORT (MAVİ üst / PEMBE alt)",
+            }.get(paper.mode, paper.mode)
+            service._emit_log(
+                "info", "simulator",
+                f"ALGO-GRAF aktif — sembol {paper.symbol} · varyant: "
+                f"{_varyant} · çizgiler: MAVİ=EMA50, YEŞİL=VWMA20, "
+                f"TURUNCU=EMA20, PEMBE=HULL9, MOR=EMA200 (SMA200 "
+                f"kullanılmaz) · AL=LONG açar, SAT=SHORT açar, AL-KAPAT "
+                f"açık LONG'u, SAT-KAPAT açık SHORT'u kapatır · "
+                f"kararsızlıkta NÖTR · SL/TP/kâr bankası/bekleme YOK — "
+                f"pozisyon kural çıkışına kadar tutulur · aç/kapa LIMIT "
+                f"(maker){dur}")
         # TIK modu onayi: kullaniciya motorun GERCEKTEN tik ile
         # calistigini (eski surecte sessiz yok-sayma tehlikesi) ve
         # simulasyonun duraklatip duraklatmadigini acikla.
@@ -680,6 +704,29 @@ def create_app(service: MarketService, store: SignalStore,
                 "warning", "simulator",
                 f"TİK2 modu UYGULANAMADI (motor mode={paper.mode}) — "
                 f"server kodu eski olabilir, restart gerekli")
+        # ALGO-GRAF (2026-11-13, kullanici kurali — 3 varyant):
+        # algograf = iki yon, algograf_long = yalniz LONG,
+        # algograf_short = yalniz SHORT.
+        if algograf.is_algograf_mode(data.get("mode")) and \
+                algograf.is_algograf_mode(paper.mode):
+            dur = "" if paper.running else \
+                " · SIMULASYON DURAKLATILMIS — islem acilmasi icin " \
+                "Trade Başla'ya bas"
+            _varyant = {
+                "algograf": "iki yön (tüm kurallar)",
+                "algograf_long": "yalnız LONG (PEMBE üst / MAVİ alt)",
+                "algograf_short": "yalnız SHORT (MAVİ üst / PEMBE alt)",
+            }.get(paper.mode, paper.mode)
+            service._emit_log(
+                "info", "simulator",
+                f"ALGO-GRAF aktif — sembol {paper.symbol} · varyant: "
+                f"{_varyant} · çizgiler: MAVİ=EMA50, YEŞİL=VWMA20, "
+                f"TURUNCU=EMA20, PEMBE=HULL9, MOR=EMA200 (SMA200 "
+                f"kullanılmaz) · AL=LONG açar, SAT=SHORT açar, AL-KAPAT "
+                f"açık LONG'u, SAT-KAPAT açık SHORT'u kapatır · "
+                f"kararsızlıkta NÖTR · SL/TP/kâr bankası/bekleme YOK — "
+                f"pozisyon kural çıkışına kadar tutulur · aç/kapa LIMIT "
+                f"(maker){dur}")
         # TIK modu onayi: kullaniciya motorun GERCEKTEN tik ile
         # calistigini (eski surecte sessiz yok-sayma tehlikesi) ve
         # simulasyonun duraklatip duraklatmadigini acikla.

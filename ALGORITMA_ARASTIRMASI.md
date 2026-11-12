@@ -2270,4 +2270,88 @@ seviye yasağı 1 bar, eşik 2 zarar). `test_paper` 90/90,
 `test_tk_fix` 37/37, `py_compile` temiz. `logs/islemler.csv` oluşmadı.
 
 
+## OTURUM 26 — ALGO-GRAF: grafik çizgi sıralaması (2026-11-13)
+
+KULLANICI KURALI (5 dk): karar yalnızca grafik panelindeki çizgilerin
+üstten alta sıralamasından gelir. Renk → çizgi eşlemesi (kullanıcının
+verdiği hex kodlarıyla birebir):
+
+  MAVİ = EMA50 (#4fc3f7, açık mavi/turkuaz)
+  YEŞİL = VWMA20 (açık yeşil/mint)
+  TURUNCU = EMA20 (#f7a35c)
+  PEMBE = HULL 9 (#ff8fb1)
+  MOR = EMA200 (#b07cff)
+  GRİ/SMA200 (#8d9db0) → kurallarda KULLANILMAZ.
+
+Kurallar (`core/algograf.py`):
+  1. MAVİ üst + PEMBE alt (TURUNCU/YEŞİL arada) → SHORT aç/koru;
+     PEMBE en alttan çıkınca veya YEŞİL/TURUNCU ile çakışınca → kapat.
+  2. PEMBE üst + MAVİ alt → LONG aç/koru; YEŞİL > PEMBE → kapat.
+  3. YEŞİL üst + PEMBE alt → NÖTR.
+  4. PEMBE→YEŞİL→TURUNCU→MAVİ → LONG kapat.
+  5. PEMBE üst + YEŞİL alt → NÖTR.
+  6. PEMBE üst + MAVİ alt iken MOR, YEŞİL veya TURUNCU ile çakışırsa →
+     LONG kapat.
+  7. PEMBE→TURUNCU→YEŞİL→MOR→MAVİ → SHORT aç; PEMBE, YEŞİL/TURUNCU
+     altına inince → kapat.
+  8. MAVİ, MOR ile çakışıp altında kalırken PEMBE en alta geçerse →
+     SHORT kapat.
+  9. Bu kuralların dışında kararsızlık → NÖTR.
+
+Uygulama notları:
+  * "Çakışma" toleransı fiyatın `PAPER_ALGOGRAF_TOUCH` kadarı
+    (varsayılan **%0,05**); sıralama için bu ölü bandı aşmak gerekir.
+  * R1/R7/R8 dizilimleri R2'yi (PEMBE üst + MAVİ alt) de kapsadığı
+    için LONG girişi bu dizilimlerde ENGELLENİR; R5/R8 ise açık LONG'u
+    kapatır (kullanıcı metnindeki "LONG KAPAT" / "SHORT AÇ" sırası).
+  * SHORT çıkışı giriş kuralına bağlıdır: R1 kısaları "PEMBE ayrıldı"
+    ile, R8 kısaları "PEMBE yeşil/turuncunun altına indi" + R9 ile
+    kapanır (aksi halde R8 girişi kendi çıkışını aynı barda tetiklerdi).
+  * Etiketler pozisyona duyarlı: AL / SAT / AL-KAPAT / SAT-KAPAT / NÖTR.
+    Pozisyondayken kural sürdükçe her bar AL/SAT yazılır (tutma).
+  * Yürütme `paper._algograf`: SL, TP, kâr bankası, bekleme, ribbon
+    filtresi YOK — pozisyon yalnızca kural çıkışıyla kapanır; aç/kapa
+    maker (LIMIT), karar kapanan barın kapanışında.
+  * Varyantlar: `algograf` (iki yön), `algograf_long` (yalnız R2),
+    `algograf_short` (yalnız R1). Seçilen algoritma tek karar kaynağıdır;
+    grafik yıldızları da aynı seriyi gösterir.
+
+ÖLÇÜM (5m, 50.000 bar, fixed 1000$, 10x, teminat %80, komisyon %0,05,
+maker giriş/çıkış; `tools/research_algograf.py`):
+
+  Mod              BTC            ETH            SOL          PF (BTC/ETH/SOL)
+  algograf        −1002,87$     −1009,91$     −1005,97$      0,59/0,69/0,71
+  algograf_long    −521,78$      −646,19$      −419,18$      0,65/0,67/0,80
+  algograf_short   −802,79$      −979,85$     −1000,06$      0,53/0,60/0,55
+
+  İşlem sayısı: iki yön ~482–518, yalnız LONG ~333–359, yalnız SHORT
+  ~263–329 (50k barda). Komisyon 421–829$.
+
+  1x (kaldıraçsız, teminat %80, tk fraksiyonu %50 → ~0,4x notional)
+  karşılaştırması — kuralın SAF kenarı:
+  BTC iki yön −130,42$ / PF 0,59; LONG −52,18$ / PF 0,65;
+  SHORT −80,28$ / PF 0,53. Komisyon 103$. Yani komisyon öncesi brüt
+  kabaca başabaş; 5m gürültüsünde sık giriş/çıkış maliyeti kenarı
+  yiyor. 10x'te tek bir ters trendde pozisyon hesabı sıfırlıyor
+  (−1000$ tavan), çünkü kural setinde KORUYUCU STOP YOK.
+
+  Tolerans duyarlılığı (BTC): %0 → −1002,82$ (509 işlem),
+  %0,02 → −1004,02$ (482), %0,05 → −1002,87$ (489),
+  %0,10 → −1002,97$ (284), %0,20 → −1000,36$ (208). Tolerans işlem
+  sayısını azaltıyor ama sonucu değiştirmiyor.
+
+Yorum: kullanıcının verdiği sıralama kuralları 5m'de tek başına
+komisyon sonrası negatif; yalnız LONG en az kaybeden varyant. Kural
+setinde stop olmadığı için 10x boyutlama hesabı tüketebiliyor. Öneri:
+(a) koruyucu stop veya (b) daha küçük pozisyon fraksiyonu; ayrıca
+kuralların "aynı bar kapanışında" değil "2 kapalı bar teyidi" ile
+uygulanması test edilebilir. Kullanıcı onayı olmadan kural değişmedi.
+
+DOĞRULAMA: `test_algograf.py` **48/48** (9 kural, nötr durumlar,
+çakışma toleransı, üç varyant, nedensellik/kesme testi, paper aç/kapa,
+backtest modu). `test_tk2.py` 138/138, `test_paper` 90/90,
+`test_tk_fix` 37/37, `py_compile` temiz. `logs/islemler.csv` oluşmadı.
+Arayüz cache sürümü `?v=45` / `ta-v45`.
+
+
 

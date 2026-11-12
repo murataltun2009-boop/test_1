@@ -32,6 +32,7 @@ from core import muro as muro_mod
 from core import ppst
 from core import fib as fib_mod
 from core import tk2_rules
+from core import algograf
 
 logger = logging.getLogger("ta.paper")
 
@@ -697,7 +698,8 @@ class PaperTrader:
             self.short_rule = short_rule
         if mode in ("range", "signal", "signal_long", "signal_exit",
                     "ma_only", "osc_only", "trend", "muro", "1m", "ppt",
-                    "tk", "tk2", "tk2_long", "tk2_short"):
+                    "tk", "tk2", "tk2_long", "tk2_short") \
+                or algograf.is_algograf_mode(mode):
             if mode != self.mode:
                 # Mod degisti: onceki sinyal gecersiz.
                 self.last_signal = None
@@ -1110,6 +1112,7 @@ class PaperTrader:
 
         if self.corr_on and self.mode != "tk" and \
                 not tk2_rules.is_tk2_mode(self.mode) and \
+                not algograf.is_algograf_mode(self.mode) and \
                 self.position is None:
             if self._bars_held < self._corr_until:
                 return None
@@ -1134,6 +1137,11 @@ class PaperTrader:
         if self.mode == "tk" or tk2_rules.is_tk2_mode(self.mode):
             return self._tk(price, candles, timeframe,
                             bar_low, bar_high, signal)
+
+        # ALGO-GRAF (2026-11-13): yalnızca grafik çizgi sıralaması kuralı.
+        # SL/TP/banka/ribbon yok — pozisyon çıkış kuralına kadar tutulur.
+        if algograf.is_algograf_mode(self.mode):
+            return self._algograf(price, timeframe, signal)
 
         # 1) likidasyon kontrolu
         p = self.position
@@ -2052,6 +2060,14 @@ class PaperTrader:
                 res.osc_codes, res.ma_codes,
                 side=tk2_rules.side_for_mode(self.mode))
 
+        # ALGO-GRAF (2026-11-13): grafik cizgi siralama kurali. Karar
+        # serisi ma_series'ten (ema20/ema50/ema200/hma/vwma) uretilir;
+        # sma200 kullanilmaz. Canli akis AYNI fonksiyonu kullanir.
+        if algograf.is_algograf_mode(self.mode):
+            return algograf.series(
+                res.ma_series,
+                side=algograf.side_for_mode(self.mode))
+
         if self.mode == "ma_only":
             seriler = res.ma_scores
         elif self.mode == "osc_only":
@@ -2158,7 +2174,10 @@ class PaperTrader:
                                                      "ma_only", "osc_only",
                                                      "trend", "muro", "1m",
                                                      "ppt", "tk", "tk2",
-                                                     "tk2_long", "tk2_short"):
+                                                     "tk2_long", "tk2_short",
+                                                     "algograf",
+                                                     "algograf_long",
+                                                     "algograf_short"):
                     # Sinyal listesi YOKSA ve karar modu sinyal tabanliysa
                     # burada analiz yapip signal listesini kendimiz uretiriz.
                     #
@@ -2232,7 +2251,8 @@ class PaperTrader:
         margin = stake_eq * self.wallet_fraction
         notional = margin * self.leverage
         eff_lev = self.leverage
-        if self.mode == "tk" or tk2_rules.is_tk2_mode(self.mode):
+        if self.mode == "tk" or tk2_rules.is_tk2_mode(self.mode) \
+                or algograf.is_algograf_mode(self.mode):
             # TK POZISYON KISITI (canli teshis 2026-10-31): 10x + %80
             # teminatla stop kaybi bakiyenin ~%2,4'u oluyordu; banka
             # hedefi ~%2,5 -> komisyonla negatif beklenti. TK pozisyonu
@@ -2510,6 +2530,59 @@ class PaperTrader:
             return -1
         if v == "NÖTR":
             return -self.tk_hedef if self.tk_hedef != 0 else 0
+        return None
+
+    def _algograf(self, price: float, timeframe: str,
+                  signal: Optional[str]) -> Optional[str]:
+        """ALGO-GRAF yürütücüsü (2026-11-13, kullanici kurali).
+
+        Karar `core/algograf.py` serisinden gelir (AL / SAT / AL-KAPAT /
+        SAT-KAPAT / NÖTR). Kural SADEDIR: SL, TP, kâr bankası, bekleme,
+        ribbon filtresi YOKTUR — kullanici kurali "pozisyonda kal" der.
+        Pozisyon yalnizca kuralin çıkış etiketiyle kapanır.
+
+        Aç/kapa maker (LIMIT) sayilir: karar kapanan barin kapanisinda
+        verilir, dolum ayni fiyattan yapilir (geriye donuk testte de
+        ayni semantik -> ileri-bakis yok).
+        """
+        lab = str(signal or "").strip()
+        if not lab:
+            return None
+        p = self.position
+
+        if lab in ("AL", "GÜÇLÜ AL"):
+            if p is not None and p.side == LONG:
+                return None
+            if p is not None:
+                # Seri normalde once AL-KAPAT uretir; yine de guvenlik:
+                # ters yonde acmadan once mevcut pozisyonu kapat.
+                self._close(price, "ALGO-GRAF: yon degisimi (maker)",
+                            timeframe, maker=True)
+            self._open(LONG, price, "ALGO-GRAF: cizgi dizilimi LONG",
+                       timeframe, maker=True)
+            return "ALGO-GRAF: LONG acildi (maker)"
+
+        if lab in ("SAT", "GÜÇLÜ SAT"):
+            if p is not None and p.side == SHORT:
+                return None
+            if p is not None:
+                self._close(price, "ALGO-GRAF: yon degisimi (maker)",
+                            timeframe, maker=True)
+            self._open(SHORT, price, "ALGO-GRAF: cizgi dizilimi SHORT",
+                       timeframe, maker=True)
+            return "ALGO-GRAF: SHORT acildi (maker)"
+
+        if lab in ("AL-KAPAT", "SAT-KAPAT", "NÖTR"):
+            if p is None:
+                return None
+            if lab == "AL-KAPAT" and p.side != LONG:
+                return None
+            if lab == "SAT-KAPAT" and p.side != SHORT:
+                return None
+            self._close(price, f"ALGO-GRAF: {lab} (maker)", timeframe,
+                        maker=True)
+            return f"ALGO-GRAF: {lab} — pozisyon kapandi (maker)"
+
         return None
 
     def _tk2_karar(self) -> None:
