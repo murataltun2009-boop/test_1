@@ -32,6 +32,11 @@ Kurallar (sıralama = fiyat değeri büyükten küçüğe, üstten alta):
   * Bu kuralların dışında kararsız kalınan her durumda pozisyon NÖTR'dür.
   * Yalnızca seçilen algoritma pozisyon belirler; gösterge hesapları ve
     grafik üretimi DEĞİŞMEZ.
+  * KORUYUCU STOP kural katmanında DEĞİLDİR: `paper._algograf` giriş
+    fiyatından `PAPER_ALGOGRAF_SL` kadar ters harekette pozisyonu
+    kapatır (acil çıkış). Etiket serisi ve grafik yıldızları stop
+    yüzünden değişmez; stop sonrası kural sıfırlanana kadar aynı yönde
+    yeni giriş yapılmaz.
 
 ÜÇ VARYANT:
     algograf       : iki yön (tüm kurallar)

@@ -1366,8 +1366,9 @@ if ("serviceWorker" in navigator) {
               : "varyant: iki yön (tüm kurallar); ")
           + "AL=LONG açar, SAT=SHORT açar, AL-KAPAT açık LONG'u, "
           + "SAT-KAPAT açık SHORT'u kapatır; kararsızlıkta NÖTR; "
-          + "SL/TP/kâr bankası/bekleme YOK — pozisyon kural çıkışına "
-          + "kadar tutulur; aç/kapa LIMIT (maker)"
+          + "TP/kâr bankası/bekleme YOK — pozisyon kural çıkışına "
+          + "kadar tutulur; koruyucu stop %1 (acil çıkış); "
+          + "aç/kapa LIMIT (maker)"
         : "") +
       (tik
         ? " · TİK yıldız kuralı: yeşil yıldız→LONG, kırmızı yıldız→"

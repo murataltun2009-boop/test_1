@@ -513,8 +513,9 @@ def create_app(service: MarketService, store: SignalStore,
                 f"TURUNCU=EMA20, PEMBE=HULL9, MOR=EMA200 (SMA200 "
                 f"kullanılmaz) · AL=LONG açar, SAT=SHORT açar, AL-KAPAT "
                 f"açık LONG'u, SAT-KAPAT açık SHORT'u kapatır · "
-                f"kararsızlıkta NÖTR · SL/TP/kâr bankası/bekleme YOK — "
-                f"pozisyon kural çıkışına kadar tutulur · aç/kapa LIMIT "
+                f"kararsızlıkta NÖTR · TP/kâr bankası/bekleme YOK — "
+                f"pozisyon kural çıkışına kadar tutulur; koruyucu stop "
+                f"%{paper.algo_sl*100:.2f} (acil çıkış) · aç/kapa LIMIT "
                 f"(maker){dur}")
         # TIK modu onayi: kullaniciya motorun GERCEKTEN tik ile
         # calistigini (eski surecte sessiz yok-sayma tehlikesi) ve
@@ -724,8 +725,9 @@ def create_app(service: MarketService, store: SignalStore,
                 f"TURUNCU=EMA20, PEMBE=HULL9, MOR=EMA200 (SMA200 "
                 f"kullanılmaz) · AL=LONG açar, SAT=SHORT açar, AL-KAPAT "
                 f"açık LONG'u, SAT-KAPAT açık SHORT'u kapatır · "
-                f"kararsızlıkta NÖTR · SL/TP/kâr bankası/bekleme YOK — "
-                f"pozisyon kural çıkışına kadar tutulur · aç/kapa LIMIT "
+                f"kararsızlıkta NÖTR · TP/kâr bankası/bekleme YOK — "
+                f"pozisyon kural çıkışına kadar tutulur; koruyucu stop "
+                f"%{paper.algo_sl*100:.2f} (acil çıkış) · aç/kapa LIMIT "
                 f"(maker){dur}")
         # TIK modu onayi: kullaniciya motorun GERCEKTEN tik ile
         # calistigini (eski surecte sessiz yok-sayma tehlikesi) ve

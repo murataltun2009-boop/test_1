@@ -2332,8 +2332,9 @@ maker giriş/çıkış; `tools/research_algograf.py`):
   BTC iki yön −130,42$ / PF 0,59; LONG −52,18$ / PF 0,65;
   SHORT −80,28$ / PF 0,53. Komisyon 103$. Yani komisyon öncesi brüt
   kabaca başabaş; 5m gürültüsünde sık giriş/çıkış maliyeti kenarı
-  yiyor. 10x'te tek bir ters trendde pozisyon hesabı sıfırlıyor
-  (−1000$ tavan), çünkü kural setinde KORUYUCU STOP YOK.
+  yiyor. 10x'te hesap 50k barın sonunda tükeniyor (−1000$ tavan):
+  bunun sebebi tek bir felaket hareketi değil, birikimli kayıplardır
+  (aşağıdaki stop ölçümü bunu doğrular).
 
   Tolerans duyarlılığı (BTC): %0 → −1002,82$ (509 işlem),
   %0,02 → −1004,02$ (482), %0,05 → −1002,87$ (489),
@@ -2342,16 +2343,44 @@ maker giriş/çıkış; `tools/research_algograf.py`):
 
 Yorum: kullanıcının verdiği sıralama kuralları 5m'de tek başına
 komisyon sonrası negatif; yalnız LONG en az kaybeden varyant. Kural
-setinde stop olmadığı için 10x boyutlama hesabı tüketebiliyor. Öneri:
-(a) koruyucu stop veya (b) daha küçük pozisyon fraksiyonu; ayrıca
-kuralların "aynı bar kapanışında" değil "2 kapalı bar teyidi" ile
-uygulanması test edilebilir. Kullanıcı onayı olmadan kural değişmedi.
+setinde stop olmadığı için kullanıcı onayıyla koruyucu stop eklendi
+(aşağıda); ancak ölçüm stopun 10x tükenmesini engellemediğini
+gösteriyor — hesabı asıl koruyan şey pozisyon fraksiyonudur.
+Kullanıcı onayı olmadan kural değişmedi.
 
-DOĞRULAMA: `test_algograf.py` **48/48** (9 kural, nötr durumlar,
+### Koruyucu stop (kullanıcı onayı 2026-11-13)
+
+`PAPER_ALGOGRAF_SL = 0.01` — giriş fiyatından %1 ters harekette
+pozisyon kapanır (market/taker). Kural katmanı DEĞİŞMEDİ: etiket
+serisi ve grafik yıldızları aynı; stop yalnızca yürütme katmanında
+acil çıkış. Stop sonrası kural sıfırlanana (AL/SAT dışına çıkana)
+kadar aynı yönde yeni giriş yapılmaz (stop→tekrar stop döngüsü yok).
+
+Ölçüm (5m 50k bar, 3 sembol, `tools/research_algograf.py` stop taraması):
+
+  10x'te stop 0 / %0,5 / %1 / %2 / %3 → sonuç değişmiyor (−1000$
+  civarı): hesap birikimli kayıptan tükeniyor, stop tek başına
+  kurtarmıyor. %0,5 stop işlem sayısını değiştirmiyor, komisyonu ve
+  kaybı artırıyor (BTC iki yön −1015,80$, SHORT −896,78$).
+
+  1x'te (kaldıraçsız, ~0,4x notional — hesap ayakta kalıyor):
+    BTC iki yön  stop yok −130,42$ · %0,5 −144,74$ · %1,0 −130,42$
+    BTC LONG     stop yok  −52,18$ · %0,5  −54,88$ · %1,0  −52,18$
+    BTC SHORT    stop yok  −80,28$ · %0,5  −89,68$ · %1,0  −80,28$
+    ETH/SOL aynı desen (1x): %1 stop sonucu değiştirmiyor,
+    %0,5 kötüleştiriyor.
+
+  Yani %1'lik stop 50.000 5m barında HİÇ tetiklenmiyor (kural çıkışı
+  daha erken geliyor); pratikte yalnızca "ani felaket" sigortasıdır,
+  kâr/zarar aracı değildir. Daha dar stop zararı büyütüyor. Gerçek
+  risk sınırı için pozisyon fraksiyonu (TİK oranı %50) küçültülmeli;
+  bu değişiklik kullanıcı onayı olmadan yapılmadı.
+
+DOĞRULAMA: `test_algograf.py` **59/59** (9 kural, nötr durumlar,
 çakışma toleransı, üç varyant, nedensellik/kesme testi, paper aç/kapa,
-backtest modu). `test_tk2.py` 138/138, `test_paper` 90/90,
-`test_tk_fix` 37/37, `py_compile` temiz. `logs/islemler.csv` oluşmadı.
-Arayüz cache sürümü `?v=45` / `ta-v45`.
+backtest modu, koruyucu stop + yeniden giriş kilidi). `test_tk2.py`
+138/138, `test_paper` 90/90, `test_tk_fix` 37/37, `py_compile` temiz.
+`logs/islemler.csv` oluşmadı. Arayüz cache sürümü `?v=46` / `ta-v46`.
 
 
 

@@ -600,6 +600,12 @@ class PaperTrader:
         #   * tk_pause_bars: zarar sonrasi K bar ayni yonde yeni giris
         #     yok (chop azap degirmeni).
         self.tk_fraction = float(getattr(config, "PAPER_TK_FRACTION", 0.50))
+        # ALGO-GRAF koruyucu stop (giris fiyatindan ters yon orani).
+        # 0 = kapali; kural cikislari her zaman gecerlidir.
+        self.algo_sl = float(getattr(config, "PAPER_ALGOGRAF_SL", 0.01))
+        # Stop sonrasi ayni yonde yeniden giris kilidi (LONG/SHORT/"").
+        # Kural sifirlanana (AL/SAT disina cikana) kadar surer.
+        self._algo_stop_kilit = ""
         self.tk_bank_rr = float(getattr(config, "PAPER_TK_BANK_RR", 1.8))
         self._tk_kayip_t = 0.0        # son zararli kapanis bar zamani
         self._tk_kayip_yon = 0        # son zararli kapanis yonu (+1/-1)
@@ -703,7 +709,14 @@ class PaperTrader:
             if mode != self.mode:
                 # Mod degisti: onceki sinyal gecersiz.
                 self.last_signal = None
+                # Stop sonrasi yeniden giris kilidi de moda baglidir.
+                self._algo_stop_kilit = ""
             self.mode = mode
+        if algograf.is_algograf_mode(self.mode):
+            # Koruyucu stop orani config'ten taze okunur (restart ile
+            # degisir; arayuzden mod secimi stopu kapatmaz).
+            self.algo_sl = float(getattr(config, "PAPER_ALGOGRAF_SL",
+                                         self.algo_sl))
         if mode == "tk" or tk2_rules.is_tk2_mode(mode):
             # YILDIZ KURALI (2026-10-28, kullanici istegi): pozisyon
             # yildiz DEGISIMINE kadar tutulur — bu yuzden TP ve BE
@@ -831,6 +844,7 @@ class PaperTrader:
             self._tk_kayip_giris_t = 0.0
             self._tk_seri = 0
             self._tk_seri_t = 0.0
+            self._algo_stop_kilit = ""
             self.balance = float(config.PAPER_INITIAL_BALANCE)
             self.start_balance = self.balance
             self.backtest_stats = None
@@ -1139,9 +1153,11 @@ class PaperTrader:
                             bar_low, bar_high, signal)
 
         # ALGO-GRAF (2026-11-13): yalnızca grafik çizgi sıralaması kuralı.
-        # SL/TP/banka/ribbon yok — pozisyon çıkış kuralına kadar tutulur.
+        # TP/banka/ribbon yok; kural çıkışına kadar tutulur. Tek ek:
+        # `PAPER_ALGOGRAF_SL` kadar koruyucu stop (acil çıkış).
         if algograf.is_algograf_mode(self.mode):
-            return self._algograf(price, timeframe, signal)
+            return self._algograf(price, timeframe, signal,
+                                  bar_low, bar_high)
 
         # 1) likidasyon kontrolu
         p = self.position
@@ -2533,25 +2549,67 @@ class PaperTrader:
         return None
 
     def _algograf(self, price: float, timeframe: str,
-                  signal: Optional[str]) -> Optional[str]:
+                  signal: Optional[str],
+                  bar_low: Optional[float] = None,
+                  bar_high: Optional[float] = None) -> Optional[str]:
         """ALGO-GRAF yürütücüsü (2026-11-13, kullanici kurali).
 
         Karar `core/algograf.py` serisinden gelir (AL / SAT / AL-KAPAT /
-        SAT-KAPAT / NÖTR). Kural SADEDIR: SL, TP, kâr bankası, bekleme,
+        SAT-KAPAT / NÖTR). Kural SADEDIR: TP, kâr bankası, bekleme,
         ribbon filtresi YOKTUR — kullanici kurali "pozisyonda kal" der.
-        Pozisyon yalnizca kuralin çıkış etiketiyle kapanır.
+        Pozisyon kuralin çıkış etiketiyle kapanır.
+
+        KORUYUCU STOP (kullanici onayi 2026-11-13): kural setinde çıkış
+        yalnizca çizgi diziliminden geldigi icin 10x boyutlamada tek bir
+        ters trend hesabi tuketebiliyordu. `algo_sl` orani kadar ters
+        hareket pozisyonu kapatir; KURAL DEGISMEZ, yalnizca acil cikis
+        eklenir. Stop sonrasi kural sifirlanana (AL/SAT disina cikana)
+        kadar ayni yonde yeni giris yapilmaz.
 
         Aç/kapa maker (LIMIT) sayilir: karar kapanan barin kapanisinda
         verilir, dolum ayni fiyattan yapilir (geriye donuk testte de
-        ayni semantik -> ileri-bakis yok).
+        ayni semantik -> ileri-bakis yok). Stop cikisi ise market
+        sayilir (taker); bar ici dip/zirve yalnizca geriye donuk testte
+        verilir.
         """
         lab = str(signal or "").strip()
+        p = self.position
+
+        # ---- 1) KORUYUCU STOP ------------------------------------
+        if p is not None and p.stop_price > 0 and self.algo_sl > 0:
+            if p.side == LONG:
+                vurdu = price <= p.stop_price or (
+                    bar_low is not None and bar_low <= p.stop_price)
+            else:
+                vurdu = price >= p.stop_price or (
+                    bar_high is not None and bar_high >= p.stop_price)
+            if vurdu:
+                # GAP: fiyat stop'un otesindeyse dolum anlik fiyattan
+                # (daha kotu); degilse stop seviyesinden.
+                cikis = (min(p.stop_price, price) if p.side == LONG
+                         else max(p.stop_price, price))
+                yon = p.side
+                self._close(cikis, "ALGO-GRAF: koruyucu stop "
+                            f"({_px(p.stop_price)})", timeframe)
+                # Ayni yonde yeniden giris kilidi: kural sifirlanana
+                # kadar bekle (stop->tekrar stop dongusunu onler).
+                self._algo_stop_kilit = yon
+                return "ALGO-GRAF: koruyucu stop — pozisyon kapandi"
+
         if not lab:
             return None
-        p = self.position
+
+        # Kilidi yalnizca kural o yonden CIKINCA dusur.
+        if self._algo_stop_kilit == LONG and lab not in ("AL", "GÜÇLÜ AL"):
+            self._algo_stop_kilit = ""
+        if self._algo_stop_kilit == SHORT and lab not in ("SAT",
+                                                         "GÜÇLÜ SAT"):
+            self._algo_stop_kilit = ""
 
         if lab in ("AL", "GÜÇLÜ AL"):
             if p is not None and p.side == LONG:
+                return None
+            if self._algo_stop_kilit == LONG:
                 return None
             if p is not None:
                 # Seri normalde once AL-KAPAT uretir; yine de guvenlik:
@@ -2560,16 +2618,22 @@ class PaperTrader:
                             timeframe, maker=True)
             self._open(LONG, price, "ALGO-GRAF: cizgi dizilimi LONG",
                        timeframe, maker=True)
+            if self.position is not None and self.algo_sl > 0:
+                self.position.stop_price = price * (1.0 - self.algo_sl)
             return "ALGO-GRAF: LONG acildi (maker)"
 
         if lab in ("SAT", "GÜÇLÜ SAT"):
             if p is not None and p.side == SHORT:
+                return None
+            if self._algo_stop_kilit == SHORT:
                 return None
             if p is not None:
                 self._close(price, "ALGO-GRAF: yon degisimi (maker)",
                             timeframe, maker=True)
             self._open(SHORT, price, "ALGO-GRAF: cizgi dizilimi SHORT",
                        timeframe, maker=True)
+            if self.position is not None and self.algo_sl > 0:
+                self.position.stop_price = price * (1.0 + self.algo_sl)
             return "ALGO-GRAF: SHORT acildi (maker)"
 
         if lab in ("AL-KAPAT", "SAT-KAPAT", "NÖTR"):

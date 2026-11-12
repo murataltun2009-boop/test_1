@@ -40,13 +40,14 @@
 // v16: zarar korumasi sureleri 1 bar (seri freni 10->1, seviye yasagi 15->1).
 // v17: ALGO-GRAF — grafik cizgi siralama algoritmasi (iki yon / yalniz LONG /
 //      yalniz SHORT); cizgiler MAVI/YESIL/TURUNCU/PEMBE/MOR.
-const VERSION = "ta-v45";
+// v18: ALGO-GRAF koruyucu stop (PAPER_ALGOGRAF_SL) + yeniden giris kilidi.
+const VERSION = "ta-v46";
 const SHELL = "shell-" + VERSION;
 
 const PRECACHE = [
   "/",
-  "/static/style.css?v=45",
-  "/static/app.js?v=45",
+  "/static/style.css?v=46",
+  "/static/app.js?v=46",
   "/static/vendor/echarts.min.js",
   "/static/icon-192.png",
   "/static/icon-512.png",

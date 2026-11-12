@@ -253,6 +253,54 @@ kontrol("13.3 backtest calisti", st.get("mode") == "algograf"
         and st.get("bars") == len(candles))
 
 # ==================================================================
+print("14) Koruyucu stop + ayni yonde yeniden giris kilidi")
+p = trader("algograf")
+p.algo_sl = 0.01
+p._algograf(100.0, "5m", "AL")
+kontrol("14.1 LONG stop seviyesi %1 altta",
+        p.position is not None and abs(p.position.stop_price - 99.0) < 1e-9)
+p._algograf(99.5, "5m", "AL")
+kontrol("14.2 stop'a degmeden pozisyon durur", p.position is not None)
+p._algograf(99.5, "5m", "AL", 98.99, 100.0)
+kontrol("14.3 bar dip stop'u vurdu -> kapandi", p.position is None
+        and len(p.trades) == 1)
+kontrol("14.4 stop cikisi stop fiyatindan",
+        abs(p.trades[0].exit - 99.0) < 1e-9)
+p._algograf(99.5, "5m", "AL")
+kontrol("14.5 ayni yonde yeniden giris YOK (kilit)",
+        p.position is None)
+p._algograf(99.5, "5m", "NÖTR")
+p._algograf(99.6, "5m", "AL")
+kontrol("14.6 kural sifirlaninca yeniden giris var",
+        p.position is not None and p.position.side == LONG)
+
+# SHORT stop: giris 100 -> stop 101, anlik fiyat asarsa kapanir.
+p = trader("algograf")
+p.algo_sl = 0.01
+p._algograf(100.0, "5m", "SAT")
+kontrol("14.7 SHORT stop seviyesi %1 ustte",
+        p.position is not None and abs(p.position.stop_price - 101.0) < 1e-9)
+p._algograf(101.4, "5m", "SAT")
+kontrol("14.8 fiyat stop'u gecti -> kapandi", p.position is None
+        and len(p.trades) == 1)
+kontrol("14.9 gap dolumu anlik fiyattan",
+        abs(p.trades[0].exit - 101.4) < 1e-9)
+
+# Stop kapali: kural disi cikis yok.
+p = trader("algograf")
+p.algo_sl = 0.0
+p._algograf(100.0, "5m", "AL")
+p._algograf(90.0, "5m", "AL")
+kontrol("14.10 algo_sl=0 -> stop yok", p.position is not None)
+
+# Backtest: stop seriye DEGIL yurutmeye ait; etiket serisi degismez.
+p = trader("algograf")
+p.algo_sl = 0.01
+sig = ["AL"] * 10
+kontrol("14.11 seri uretimi stoptan etkilenmez",
+        len(p._build_signal_series(candles, "5m")) == len(candles))
+
+# ==================================================================
 print()
 print(f"SONUC: {_GECEN} gecti, {_KALAN} kaldi")
 if _KALAN:
