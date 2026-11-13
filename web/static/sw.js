@@ -41,13 +41,14 @@
 // v17: ALGO-GRAF — grafik cizgi siralama algoritmasi (iki yon / yalniz LONG /
 //      yalniz SHORT); cizgiler MAVI/YESIL/TURUNCU/PEMBE/MOR.
 // v18: ALGO-GRAF koruyucu stop (PAPER_ALGOGRAF_SL) + yeniden giris kilidi.
-const VERSION = "ta-v46";
+// v19: ALGO-GRAF 4 cizgi (EMA200/SMA200 grafikten kaldirildi).
+const VERSION = "ta-v47";
 const SHELL = "shell-" + VERSION;
 
 const PRECACHE = [
   "/",
-  "/static/style.css?v=46",
-  "/static/app.js?v=46",
+  "/static/style.css?v=47",
+  "/static/app.js?v=47",
   "/static/vendor/echarts.min.js",
   "/static/icon-192.png",
   "/static/icon-512.png",

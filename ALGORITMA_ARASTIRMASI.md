@@ -2272,6 +2272,10 @@ seviye yasağı 1 bar, eşik 2 zarar). `test_paper` 90/90,
 
 ## OTURUM 26 — ALGO-GRAF: grafik çizgi sıralaması (2026-11-13)
 
+> NOT: Bu 5 çizgili sürüm (EMA200 mor dahil) OTURUM 27'de 4 çizgiye
+> indirildi; EMA200/SMA200 grafikten kaldırıldı. Güncel kurallar ve
+> ölçüm OTURUM 27'dedir.
+
 KULLANICI KURALI (5 dk): karar yalnızca grafik panelindeki çizgilerin
 üstten alta sıralamasından gelir. Renk → çizgi eşlemesi (kullanıcının
 verdiği hex kodlarıyla birebir):
@@ -2382,5 +2386,61 @@ backtest modu, koruyucu stop + yeniden giriş kilidi). `test_tk2.py`
 138/138, `test_paper` 90/90, `test_tk_fix` 37/37, `py_compile` temiz.
 `logs/islemler.csv` oluşmadı. Arayüz cache sürümü `?v=46` / `ta-v46`.
 
+## OTURUM 27 - ALGO-GRAF 4 cizgiye indirildi (2026-11-13, kullanici kurali)
 
+KULLANICI DEGISIKLIGI: EMA200 (mor/lila #b07cff) ve SMA200 (gri/mavi-gri
+#8d9db0) artik grafikte GORUNMEZ ve hicbir kuralda kullanilmaz. Grafik
+panelindeki cizgi tanimlari (web/static/app.js MA_DEF / IDX) dort cizgiye
+indirildi: TURUNCU=EMA20 #f7a35c, MAVI=EMA50 #4fc3f7, PEMBE=HULL9
+#ff8fb1, YESIL=VWMA20 #7dd6a0. Seri indeksleri (yildiz serileri dahil)
+buna gore kaydirildi; sunucu API'si ma degerlerini yine dondurur ama
+grafikte cizilmez.
 
+GUNCEL KURALLAR (core/algograf.py):
+  SHORT       : MAVI en ustte, PEMBE en altta (TURUNCU ve YESIL arada)
+                oldugu surece SHORT ac ve pozisyonda kal.
+  SHORT KAPAT : PEMBE, TURUNCU'nun altina inerse VEYA onunla cakisirsa;
+                ya da PEMBE, YESIL'in altina inerse veya onunla
+                cakisirsa SHORT'u kapat.
+  LONG        : PEMBE en ustte, MAVI en altta oldugu aralikta LONG
+                acik kalsin.
+  LONG KAPAT  : YESIL, PEMBE'nin ustune cikarsa LONG'u kapat.
+  NOTR        : YESIL en ustte, PEMBE en altta -> pozisyon NOTR.
+  Kararsizlikta NOTR.
+
+  * Acik LONG; YESIL>PEMBE, NOTR dizilimi veya SHORT dizilimi gelince
+    AL-KAPAT ile kapanir. Acik SHORT; PEMBE turuncu/yesil altinda
+    kalmayinca, NOTR veya LONG diziliminde SAT-KAPAT ile kapanir.
+  * Varyantlar ayni mantikla: algograf (iki yon), algograf_long (yalniz
+    LONG: PEMBE ust + MAVI alt giris, YESIL>PEMBE cikis),
+    algograf_short (yalniz SHORT: MAVI ust + PEMBE alt giris, PEMBE
+    turuncu/yesil altina inince veya cakisinca cikis).
+  * Yurutme degismedi: TP/kar bankasi/bekleme yok, ac/kapa maker,
+    koruyucu stop %1 (PAPER_ALGOGRAF_SL) + stop sonrasi kural
+    sifirlanana kadar ayni yonde yeni giris kilidi.
+
+OLCUM (5m 50.000 bar, 3 sembol, 	ools/research_algograf.py):
+
+  1x (kaldiracsiz, ~0,4x notional) - kuralin saf kenari, stop %1:
+    mod              BTC                    ETH                    SOL
+    algograf         -384,24$ (1636, PF 0,65) -413,98$ (1846, PF 0,73) -602,12$ (1933, PF 0,68)
+    algograf_long    -171,01$  (718, PF 0,67) -151,63$  (831, PF 0,79) -222,94$  (868, PF 0,76)
+    algograf_short   -212,49$  (918, PF 0,63) -264,99$ (1015, PF 0,67) -379,14$ (1065, PF 0,61)
+
+  10x: hesap 50k bar sonunda tukeniyor (~-1000$); stop 0/%0,5/%1/%2/%3
+  sonucu degistirmiyor (birikimli kayip, tek felaket hareket degil).
+
+  ONEMLI: EMA200 kisiti kalkinca giris sayisi 1x'te ~643 -> ~1636'ya
+  cikti (BTC iki yon) ve net sonuc 5 cizgili surumden DAHA KOTU oldu
+  (once -130,42$, simdi -384,24$). Sebep: MAVI/PEMBE siralamasi tek
+  basina cok daha sik saglaniyor; islem basina komisyon kenari yiyor.
+  Yalniz-LONG yine en az kaybeden varyant ama o da uc sembolde negatif.
+  Kullanici kurali aynen uygulandi; karar kullanicida.
+
+DOGRULAMA: 	est_algograf.py **59/59** (4 cizgi eslemesi, SHORT/LONG/
+NOTR kurallari, cakisinca kapatma, tolerans, uc varyant, nedensellik,
+paper ac/kapa, koruyucu stop + kilit). 	est_tk2.py 138/138,
+	est_paper 90/90, 	est_tk_fix 37/37, py_compile temiz,
+
+ode --check app.js temiz. logs/islemler.csv olusmadi. Arayuz cache
+surumu ?v=47 / 	a-v47.

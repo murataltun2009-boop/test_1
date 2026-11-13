@@ -434,9 +434,9 @@ PAPER_TK2_MIN_HOLD = 0
 PAPER_TK2_BANK_USD = 10.0
 # ALGO-GRAF (2026-11-13 kullanici kurali): 5 dk grafik cizgi siralama
 # algoritmasi. Cizgiler: MAVI=EMA50, YESIL=VWMA20, TURUNCU=EMA20,
-# PEMBE=HULL9, MOR=EMA200 (SMA200 kullanilmaz). Cakisma/ayni seviye
-# toleransi fiyatin bu oranidir; altinda kalan farklar siralama sayilmaz
-# (kararsizlik -> NOTR).
+# PEMBE=HULL9. EMA200/SMA200 grafikten kaldirildi, kurallarda kullanilmaz.
+# Cakisma/ayni seviye toleransi fiyatin bu oranidir; altinda kalan farklar
+# siralama sayilmaz (kararsizlik -> NOTR).
 PAPER_ALGOGRAF_TOUCH = 0.0005
 # ALGO-GRAF KORUYUCU STOP (2026-11-13 kullanici onayi): kural setinde
 # cikis yalnizca cizgi dizilimiyle geliyordu; 10x boyutlamada tek bir

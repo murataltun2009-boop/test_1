@@ -63,8 +63,10 @@ def main():
     t0 = time.monotonic()
     rows = []
     series = {}
+    data = {}
     for sym in SYMBOLS:
         candles = load(sym, TF, bars)
+        data[sym] = candles
         res = analyze(
             symbol=sym, timeframe=TF,
             open_times=[c.open_time for c in candles],
@@ -110,6 +112,23 @@ def main():
             for sym in SYMBOLS:
                 r = next(x[3] for x in rows
                          if x[0] == sym and x[1] == mode and x[2] == sl)
+                cells.append(f"{r['net']:+9.2f}$({r['trades']:3d})"
+                             .rjust(18))
+            etiket = f"{mode}" + ("" if sl == 0 else f" SL%{sl*100:.1f}")
+            print("  " + f"{etiket:15s}" + "".join(cells))
+        print()
+
+    # --------------------------------------------------------------
+    # 1x (kaldiracsiz): 10x'te hesap tukendigi icin kuralin SAF kenari
+    # yalnizca burada gorunur (~0,4x notional, hesap ayakta kalir).
+    print("1x (kaldiracsiz) — kuralin saf kenari")
+    print(head)
+    for mode in MODES:
+        for sl in (0.0, 0.01):
+            cells = []
+            for sym in SYMBOLS:
+                r = bt(sym, data[sym], series[(sym, mode)], mode,
+                       sl=sl, lev=1.0)
                 cells.append(f"{r['net']:+9.2f}$({r['trades']:3d})"
                              .rjust(18))
             etiket = f"{mode}" + ("" if sl == 0 else f" SL%{sl*100:.1f}")

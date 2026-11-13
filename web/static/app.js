@@ -55,15 +55,13 @@ if ("serviceWorker" in navigator) {
 
   var IDX = {
     candle: 0, volume: 1, composite: 2,
-    ema20: 3, ema50: 4, ema200: 5, sma200: 6, hma: 7, vwma: 8,
-    buyStars: 9, sellStars: 10, neutralStars: 11
+    ema20: 3, ema50: 4, hma: 5, vwma: 6,
+    buyStars: 7, sellStars: 8, neutralStars: 9
   };
-  var MA_ORDER = ["ema20", "ema50", "ema200", "sma200", "hma", "vwma"];
+  var MA_ORDER = ["ema20", "ema50", "hma", "vwma"];
   var MA_DEF = [
     { key: "ema20", color: "#f7a35c", width: 1.2 },
     { key: "ema50", color: "#4fc3f7", width: 1.2 },
-    { key: "ema200", color: "#b07cff", width: 1.4 },
-    { key: "sma200", color: "#8d9db0", width: 1.1 },
     { key: "hma",   color: "#ff8fb1", width: 1.3 },
     { key: "vwma",  color: "#7dd6a0", width: 1.2 }
   ];
@@ -134,11 +132,11 @@ if ("serviceWorker" in navigator) {
   function watchMark(barTimeSec) {
     // Tiklanan bara kesikli sari dikey cizgi.
     // DİKKAT: mum serisinin (index 0) markLine'i CANLI FIYAT cizgisi
-    // icin kullaniliyor — burada yildiz serisine (index 9, id: starsBuy)
+    // icin kullaniliyor — burada yildiz serisine (index 7, id: starsBuy)
     // sparse series arrayiyle mege uygulanir, cakismaz.
     try {
-      var patch = new Array(9);
-      patch[9] = { id: "starsBuy", markLine: {
+      var patch = new Array(IDX.neutralStars + 1);
+      patch[IDX.buyStars] = { id: "starsBuy", markLine: {
         silent: true, symbol: "none", animation: false,
         lineStyle: { color: "#f5c542", type: "dashed", width: 1.2 },
         label: { show: false },
@@ -498,19 +496,19 @@ if ("serviceWorker" in navigator) {
         }
       ],
       series: buildSeries().concat(maSeries).concat([
-        {                                        // 9 · AL yildizlari
+        {                                        // 7 · AL yildizlari
           id: "starsBuy", name: "AL", type: "scatter",
           symbol: STAR_BUY, z: 20, silent: true, tooltip: { show: false },
           symbolSize: function (v) { return (v && v[2]) ? 21 : 13; },
           data: []
         },
-        {                                        // 10 · SAT yildizlari
+        {                                        // 8 · SAT yildizlari
           id: "starsSell", name: "SAT", type: "scatter",
           symbol: STAR_SELL, z: 20, silent: true, tooltip: { show: false },
           symbolSize: function (v) { return (v && v[2]) ? 21 : 13; },
           data: []
         },
-        {                                        // 11 · NÖTR yildizlari (gri)
+        {                                        // 9 · NÖTR yildizlari (gri)
           id: "starsNeutral", name: "NÖTR", type: "scatter",
           symbol: STAR_NEUTRAL, z: 15, silent: true, tooltip: { show: false },
           symbolSize: 12,
@@ -603,7 +601,7 @@ if ("serviceWorker" in navigator) {
       state.candleMap = {};
       state.markers = [];
       var patch = [];
-      for (var i = 0; i <= 10; i++) {
+      for (var i = 0; i <= IDX.neutralStars; i++) {
         patch[i] = (i === IDX.candle || i === IDX.buyStars || i === IDX.sellStars)
           ? { data: [] }
           : { data: [] };
@@ -631,7 +629,7 @@ if ("serviceWorker" in navigator) {
 
     var times = state.candles.map(function (c) { return c[0]; });
 
-    // Dizi her zaman DOLU (0..10) tutulur: setOption dizi bazinda
+    // Dizi her zaman DOLU (0..9) tutulur: setOption dizi bazinda
     // birlestirdigi icin delik birakilmamalidir.
     var series = [];
     series[IDX.candle]    = { data: state.candles.map(ohlc) };
@@ -998,7 +996,7 @@ if ("serviceWorker" in navigator) {
     state.markers = [];
     state.firstLoad = true;
     var patch = [];
-    for (var i = 0; i <= 10; i++) patch[i] = { data: [] };
+    for (var i = 0; i <= IDX.neutralStars; i++) patch[i] = { data: [] };
     patch[IDX.candle].markLine = { data: [] };
     chart.setOption({ xAxis: [{ data: [] }, { data: [] }], series: patch });
     el.price.textContent = "—";
@@ -1356,13 +1354,14 @@ if ("serviceWorker" in navigator) {
         : "") +
       (algo
         ? " · ALGO-GRAF grafik çizgi sıralaması: MAVİ=EMA50, YEŞİL=VWMA20, "
-          + "TURUNCU=EMA20, PEMBE=HULL9, MOR=EMA200 (SMA200 kullanılmaz); "
+          + "TURUNCU=EMA20, PEMBE=HULL9 (EMA200/SMA200 grafikte yok, "
+          + "kurallarda kullanılmaz); "
           + (el.pMode.value === "algograf_long"
               ? "varyant: YALNIZ LONG (PEMBE en üst + MAVİ en altta LONG, "
                 + "YEŞİL PEMBE'nin üstüne çıkınca kapat); "
               : el.pMode.value === "algograf_short"
               ? "varyant: YALNIZ SHORT (MAVİ en üst + PEMBE en altta SHORT, "
-                + "PEMBE ayrılınca/yeşil veya turuncuya değince kapat); "
+                + "PEMBE turuncu/yeşil altına inince veya çakışınca kapat); "
               : "varyant: iki yön (tüm kurallar); ")
           + "AL=LONG açar, SAT=SHORT açar, AL-KAPAT açık LONG'u, "
           + "SAT-KAPAT açık SHORT'u kapatır; kararsızlıkta NÖTR; "
@@ -1479,7 +1478,7 @@ if ("serviceWorker" in navigator) {
     state.markers = [];
     state.firstLoad = true;
     var patch = [];
-    for (var i = 0; i <= 10; i++) patch[i] = { data: [] };
+    for (var i = 0; i <= IDX.neutralStars; i++) patch[i] = { data: [] };
     patch[IDX.candle].markLine = { data: [] };
     chart.setOption({ xAxis: [{ data: [] }, { data: [] }], series: patch });
     el.price.textContent = "—";
