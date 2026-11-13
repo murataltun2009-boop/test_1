@@ -449,6 +449,13 @@ PAPER_ALGOGRAF_TOUCH = 0.0
 # kapanir ve kural sifirlanana (AL/SAT disina cikana) kadar ayni yonde
 # yeni giris yapilmaz. 0 = stop kapali.
 PAPER_ALGOGRAF_SL = 0.01
+# ALGO-GRAF KISMI KAR BANKASI (2026-11-14 kullanici kurali): acik
+# pozisyonun kari bu DOLAR tutarini gecince, bu buyuklukte (nominal) bir
+# pozisyon dilimi satilir; dilimin kari cuzdana yazilir, KALAN pozisyon
+# ayni giris/stop ile devam eder. Kar her +tutar adiminda tekrar bankalanir
+# (10$, 20$, 30$ ...). Arayuzden degistirilebilir; varsayilan 10$.
+# 0 = kapali.
+PAPER_ALGOGRAF_BANK_USD = 10.0
 # TIK2 STABILIZASYON (2026-11-07): kural serisi ~2 barda bir donuyordu.
 # HULL giris kapisi ile 1m'de 4 sembolun 4'unde de hamdan iyi; ayrinti
 # ALGORITMA_ARASTIRMASI.md OTURUM 17. (Beklemeler 2026-11-07'de

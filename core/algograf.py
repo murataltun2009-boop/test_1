@@ -43,6 +43,11 @@ KORUYUCU STOP kural katmanında DEĞİLDİR: `paper._algograf` giriş
 fiyatından `PAPER_ALGOGRAF_SL` kadar ters harekette pozisyonu kapatır
 (acil çıkış). Etiket serisi ve grafik yıldızları stop yüzünden değişmez;
 stop sonrası kural sıfırlanana kadar aynı yönde yeni giriş yapılmaz.
+
+KISMI KÂR BANKASI (2026-11-14) da yürütme katmanındadır: açık kâr
+`PAPER_ALGOGRAF_BANK_USD` (varsayılan 10$) tutarını geçince o büyüklükte
+bir pozisyon dilimi satılır, kâr cüzdana yazılır, kalan pozisyon aynı
+giriş/stop ile devam eder. Kural etiketleri değişmez.
 """
 from __future__ import annotations
 

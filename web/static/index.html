@@ -6,7 +6,7 @@
      maximum-scale kilitlenmez: kullanici grafikte yakinlastirabilmeli. -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>BTCUSDT 4 Saat · Canlı Teknik Analiz</title>
-<link rel="stylesheet" href="/static/style.css?v=47">
+<link rel="stylesheet" href="/static/style.css?v=48">
 
 <!-- ---- PWA: "Ana ekrana ekle" icin gerekli etiketler ---------- -->
 <link rel="manifest" href="/static/manifest.webmanifest">
@@ -178,6 +178,10 @@
           <label class="wfull" id="bankWrap" style="display:none">TİK2 kâr bankası ($)
             <input id="pBank" type="number" step="1" min="0" max="100000" value="10">
             <span class="hint">açık pozisyon kârı bu tutara ulaşınca kapanır, kazanç cüzdana yazılır · 0 = kapalı</span>
+          </label>
+          <label class="wfull" id="algoBankWrap" style="display:none">ALGO-GRAF kısmi kâr bankası ($)
+            <input id="pAlgoBank" type="number" step="1" min="0" max="100000" value="10">
+            <span class="hint">açık pozisyon kârı bu tutarı geçince bu büyüklükte pozisyon dilimi satılır, kâr cüzdana yazılır, kalan devam eder · 0 = kapalı</span>
           </label>
           <label class="wfull">Karar mekanizması
             <select id="pMode">
@@ -362,6 +366,6 @@ window.addEventListener("error", function (e) {
   box.textContent = "JS HATA: " + msg;
 });
 </script>
-<script src="/static/app.js?v=47"></script>
+<script src="/static/app.js?v=48"></script>
 </body>
 </html>

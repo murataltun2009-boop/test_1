@@ -81,6 +81,9 @@ class Position:
     # barda DEĞİL, sonraki bardan itibaren devreye girer — giriş
     # salınımı pozisyonu anında kapatmasın.
     entry_bar: int = 0
+    # ALGO-GRAF kısmi kâr bankası: sıradaki bankalama kâr eşiği ($).
+    # 0 = henüz kurulmadı (ilk kontrolde algo_bank_usd ile başlatılır).
+    bank_next_usd: float = 0.0
 
 
 @dataclass
@@ -603,6 +606,13 @@ class PaperTrader:
         # ALGO-GRAF koruyucu stop (giris fiyatindan ters yon orani).
         # 0 = kapali; kural cikislari her zaman gecerlidir.
         self.algo_sl = float(getattr(config, "PAPER_ALGOGRAF_SL", 0.01))
+        # ALGO-GRAF KISMI KAR BANKASI (2026-11-14 kullanici kurali):
+        # acik pozisyonun kari bu DOLAR tutarini gecince, bu buyuklukte
+        # (nominal) bir pozisyon dilimi satilir; dilimin kari cuzdana
+        # yazilir, KALAN pozisyon ayni giris/stop ile devam eder. Kar
+        # her +esik adiminda tekrar bankalanir. 0 = kapali.
+        self.algo_bank_usd = float(
+            getattr(config, "PAPER_ALGOGRAF_BANK_USD", 10.0))
         # Stop sonrasi ayni yonde yeniden giris kilidi (LONG/SHORT/"").
         # Kural sifirlanana (AL/SAT disina cikana) kadar surer.
         self._algo_stop_kilit = ""
@@ -648,6 +658,8 @@ class PaperTrader:
         self.commission_paid = 0.0
         self.wins = 0
         self.losses = 0
+        # ALGO-GRAF kismi kar bankasinda cuzdana yazilan toplam kar.
+        self.banked_profit = 0.0
 
     # ------------------------------------------------------------------
     # Ayarlar
@@ -664,11 +676,13 @@ class PaperTrader:
                   risk_pct: Optional[float] = None,
                   lock_pct: Optional[float] = None,
                   pull_atr: Optional[float] = None,
-                  tk2_bank_usd: Optional[float] = None) -> None:
+                  tk2_bank_usd: Optional[float] = None,
+                  algo_bank_usd: Optional[float] = None) -> None:
         with self._lock:
             self._configure(balance, leverage, fee_rate, wallet_fraction,
                             lookback, confirm, short_rule, mode, min_hold,
-                            risk_pct, lock_pct, pull_atr, tk2_bank_usd)
+                            risk_pct, lock_pct, pull_atr, tk2_bank_usd,
+                            algo_bank_usd)
 
     def _configure(self, balance: Optional[float] = None,
                    leverage: Optional[float] = None,
@@ -682,7 +696,8 @@ class PaperTrader:
                    risk_pct: Optional[float] = None,
                    lock_pct: Optional[float] = None,
                    pull_atr: Optional[float] = None,
-                   tk2_bank_usd: Optional[float] = None) -> None:
+                   tk2_bank_usd: Optional[float] = None,
+                   algo_bank_usd: Optional[float] = None) -> None:
         if balance is not None and balance > 0:
             self.balance = float(balance)
             # Yeni baslangic bakiyesi: kâr/zarar buna gore olcerilir.
@@ -800,6 +815,8 @@ class PaperTrader:
                     config, "PAPER_TK2_BANK_USD", self.tk2_bank_usd))
         if tk2_bank_usd is not None and float(tk2_bank_usd) >= 0:
             self.tk2_bank_usd = float(tk2_bank_usd)
+        if algo_bank_usd is not None and float(algo_bank_usd) >= 0:
+            self.algo_bank_usd = float(algo_bank_usd)
         if min_hold is not None and 0 <= int(min_hold) <= 500:
             self.min_hold_bars = int(min_hold)
         if risk_pct is not None and 0 < float(risk_pct) <= 0.50:
@@ -852,6 +869,7 @@ class PaperTrader:
             self.commission_paid = 0.0
             self.wins = 0
             self.losses = 0
+            self.banked_profit = 0.0
 
     # ------------------------------------------------------------------
     # Hesaplar
@@ -2472,6 +2490,9 @@ class PaperTrader:
             eff_leverage=eff_lev, trail_frac=trail_frac, locked=locked,
             entry_bar=(int(candles_for_target[-1].open_time)
                        if candles_for_target else 0))
+        # ALGO-GRAF kismi kar bankasi: ilk esik giris aninda kurulur.
+        if algograf.is_algograf_mode(self.mode) and self.algo_bank_usd > 0:
+            self.position.bank_next_usd = float(self.algo_bank_usd)
         self._bars_held = 0        # yeni pozisyon: bekleme sayaci sifirlanir
         if side == LONG:
             self.last_long_price = price
@@ -2595,6 +2616,44 @@ class PaperTrader:
                 # kadar bekle (stop->tekrar stop dongusunu onler).
                 self._algo_stop_kilit = yon
                 return "ALGO-GRAF: koruyucu stop — pozisyon kapandi"
+
+        # ---- 2) KISMI KAR BANKASI (2026-11-14 kullanici kurali) ----
+        # Acik pozisyonun kari `algo_bank_usd` dolarini gecince, o
+        # BUYUKLUKTE (nominal) bir pozisyon dilimi satilir; dilimin kari
+        # cuzdana yazilir, KALAN pozisyon ayni giris/stop ile devam eder.
+        # Esik her +tutar adiminda yukselir -> kar merdiveni gibi calisir.
+        p = self.position
+        if p is not None and self.algo_bank_usd > 0 and p.qty > 0:
+            adim = float(self.algo_bank_usd)
+            if p.bank_next_usd <= 0:
+                p.bank_next_usd = adim
+            # Fiyat tek barda sicrarsa birden fazla dilim bankalanabilir.
+            for _ in range(100):
+                p = self.position
+                if p is None or p.qty <= 0:
+                    break
+                esik = float(p.bank_next_usd or adim)
+                if p.side == LONG:
+                    seviye = p.entry + esik / p.qty
+                    vurdu = ((bar_high is not None and bar_high >= seviye)
+                             or price >= seviye)
+                else:
+                    seviye = p.entry - esik / p.qty
+                    vurdu = ((bar_low is not None and bar_low <= seviye)
+                             or price <= seviye)
+                if not vurdu:
+                    break
+                dilim = min(p.qty, adim / seviye)
+                if dilim <= 0:
+                    break
+                self._partial_close(
+                    dilim, seviye, "ALGO-GRAF: kısmi kâr bankası",
+                    timeframe, maker=True)
+                if self.position is None:
+                    # Pozisyon $adim'dan kucuktu: dilim tamamini kapatti.
+                    return ("ALGO-GRAF: kısmi kâr bankası — pozisyon "
+                            "kapandi (kalan yok)")
+                self.position.bank_next_usd = esik + adim
 
         if not lab:
             return None
@@ -3567,6 +3626,52 @@ class PaperTrader:
         self.tk_pend_bar = bar_t
         return None
 
+    def _partial_close(self, qty: float, price: float, reason: str,
+                       timeframe: str, maker: bool = True) -> bool:
+        """Pozisyonun bir DILIMINI kapatir; kalan pozisyon devam eder.
+
+        ALGO-GRAF kismi kar bankasi icin (2026-11-14 kullanici kurali):
+        dilim satilir, dilimin kari cuzdana yazilir; qty / teminat /
+        notional oransal azalir, GIRIS ve STOP degismez. Tam kapanis
+        gibi `trades` listesine yazilmaz (K/Z sayaci ve islem sayisi
+        sisirilmesin); `banked_profit` ve bakiye guncellenir.
+        """
+        p = self.position
+        if p is None or qty <= 0 or price <= 0:
+            return False
+        qty = min(float(qty), p.qty)
+        if qty <= 0:
+            return False
+        if qty >= p.qty - 1e-12:
+            self._close(price, reason, timeframe, maker=maker)
+            return True
+
+        frac = qty / p.qty
+        notional_close = qty * price
+        fc_rate = self.maker_rate if maker else self.fee_rate
+        fee_close = notional_close * fc_rate
+        gross = ((price - p.entry) * qty if p.side == LONG
+                 else (p.entry - price) * qty)
+        fee_open_share = p.fee_open * frac
+        net = gross - fee_open_share - fee_close
+
+        self.balance += gross - fee_close
+        self.gross_pnl += gross
+        self.commission_paid += fee_close
+        self.banked_profit += max(0.0, gross - fee_close)
+
+        p.qty -= qty
+        p.margin *= (1.0 - frac)
+        p.notional *= (1.0 - frac)
+        p.fee_open -= fee_open_share
+
+        self._emit("trade",
+                   f"{p.side} kısmi kâr bankası @ {_px(price)} · "
+                   f"{qty:.8f} adet ({notional_close:,.2f}$) satıldı · "
+                   f"net {net:+,.2f} · kalan {p.qty:.8f} adet · "
+                   f"{reason}")
+        return True
+
     def _close(self, price: float, reason: str, timeframe: str,
                reset_signal: bool = True, maker: bool = False) -> None:
         p = self.position
@@ -3738,6 +3843,8 @@ class PaperTrader:
             "mode": self.mode,
             "min_hold_bars": self.min_hold_bars,
             "tk2_bank_usd": round(self.tk2_bank_usd, 2),
+            "algo_bank_usd": round(self.algo_bank_usd, 2),
+            "banked_profit": round(self.banked_profit, 2),
             "trend_risk_pct": self.trend_risk_pct,
             "muro_risk_pct": self.muro_risk_pct,
             "ppt_risk_pct": self.mode_ppt_risk_pct,

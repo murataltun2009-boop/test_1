@@ -104,7 +104,7 @@ if ("serviceWorker" in navigator) {
    "pBalance", "pLev", "pFrac", "pFee", "pLook", "pHold", "pConfirm",
    "pBacktest", "pRule", "pMode", "pStart", "pLive", "pStop", "pReset",
    "pRisk", "riskWrap", "pLock", "lockWrap", "pPull", "pullWrap",
-   "pBank", "bankWrap",
+   "pBank", "bankWrap", "pAlgoBank", "algoBankWrap",
    "ruleWrap", "modeNote", "modeNote2", "modeNote3", "modeNote3ppt",
    "modeNote4",
    "modeThr",
@@ -1064,6 +1064,10 @@ if ("serviceWorker" in navigator) {
           d.tk2_bank_usd !== undefined && d.tk2_bank_usd !== null) {
         el.pBank.value = d.tk2_bank_usd;
       }
+      if (el.pAlgoBank && document.activeElement !== el.pAlgoBank &&
+          d.algo_bank_usd !== undefined && d.algo_bank_usd !== null) {
+        el.pAlgoBank.value = d.algo_bank_usd;
+      }
       if (document.activeElement !== el.pRule) el.pRule.value = d.short_rule;
       if (document.activeElement !== el.pMode) {
         el.pMode.value = d.mode;
@@ -1231,6 +1235,10 @@ if ("serviceWorker" in navigator) {
         var b = parseFloat(el.pBank.value);
         return isNaN(b) ? 10 : b;
       })(),
+      algo_bank_usd: (function () {
+        var b = el.pAlgoBank ? parseFloat(el.pAlgoBank.value) : 10;
+        return isNaN(b) ? 10 : b;
+      })(),
       // Dilimi sunucuya ACIKCA bildir: sunucudaki aktif dilim WS mesajiyla
       // guncelleniyor ve iki istek araya girince yanlis dilim test edilebiliyor.
       timeframe: state.tf
@@ -1291,6 +1299,9 @@ if ("serviceWorker" in navigator) {
     if (el.riskWrap) el.riskWrap.style.display = trend ? "" : "none";
     if (el.lockWrap) el.lockWrap.style.display = trend ? "" : "none";
     if (el.bankWrap) el.bankWrap.style.display = tik2fam ? "" : "none";
+    if (el.algoBankWrap) {
+      el.algoBankWrap.style.display = algofam ? "" : "none";
+    }
     if (el.pullWrap) el.pullWrap.style.display = (mode === "trend" || mode === "ppt") ? "" : "none";
     el.pRule.disabled = kilit;
     // Kullanilan esikleri yaz: osilator modunda bilesik esikler
@@ -1365,9 +1376,12 @@ if ("serviceWorker" in navigator) {
               : "varyant: iki yön (tüm kurallar); ")
           + "AL=LONG açar, SAT=SHORT açar, AL-KAPAT açık LONG'u, "
           + "SAT-KAPAT açık SHORT'u kapatır; kararsızlıkta NÖTR; "
-          + "TP/kâr bankası/bekleme YOK — pozisyon kural çıkışına "
-          + "kadar tutulur; koruyucu stop %1 (acil çıkış); "
-          + "aç/kapa LIMIT (maker)"
+          + "TP/bekleme YOK — pozisyon kural çıkışına kadar tutulur; "
+          + "kısmi kâr bankası: açık kâr "
+          + (parseFloat(el.pAlgoBank.value) || 10) + "$'ı geçince bu "
+          + "büyüklükte dilim satılır, kâr cüzdana yazılır, kalan devam "
+          + "eder (her +tutar adımında tekrar) · 0 = kapalı; "
+          + "koruyucu stop %1 (acil çıkış); aç/kapa ve banka LIMIT (maker)"
         : "") +
       (tik
         ? " · TİK yıldız kuralı: yeşil yıldız→LONG, kırmızı yıldız→"
@@ -1401,7 +1415,7 @@ if ("serviceWorker" in navigator) {
   });
   syncModeUI();
   ["pBalance", "pLev", "pFrac", "pFee", "pLook", "pHold", "pRisk",
-   "pLock", "pPull", "pBank"].forEach(function (id) {
+   "pLock", "pPull", "pBank", "pAlgoBank"].forEach(function (id) {
       el[id].addEventListener("input", function () { state.userTouched = true; });
     });
 

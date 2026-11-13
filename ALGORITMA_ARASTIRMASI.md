@@ -2479,3 +2479,45 @@ DOGRULAMA: `test_algograf.py` **61/61** (7.2 kucuk fark siralama sayilir,
 7.3/7.5 tolerans verilince eski davranis, 7.6 canli BTC ornegi LONG acar).
 `test_tk2` 138/138, `test_paper` 90/90, `test_tk_fix` 37/37, py_compile
 temiz, `node --check` temiz. `logs/islemler.csv` olusmadi.
+
+
+## OTURUM 29 - ALGO-GRAF kismi kar bankasi (2026-11-14, kullanici kurali)
+
+KULLANICI KURALI: acik pozisyonun kari **10$**'i gectiginde, pozisyonun
+**10$ buyuklugunde (nominal) bir dilimi** satilir; dilimin kari cuzdana
+yazilir, KALAN pozisyon ayni giris/stop ile devam eder. Boylece kucuk
+dilimlerle kar kesinlesir, tam kapatma/yeniden giris komisyonu odenmez.
+Kar her +10$ adiminda tekrar bankalanir (10, 20, 30...). Tutar arayuzden
+degistirilebilir (`PAPER_ALGOGRAF_BANK_USD`, varsayilan 10; 0 = kapali).
+
+UYGULAMA:
+  * `Position.bank_next_usd`: siradaki bankalama kar esigi; girişte
+    `algo_bank_usd` ile kurulur, her dilimden sonra +tutar artar.
+  * `paper._algograf` 2. adim: kar esigi asilinca `_partial_close` ile
+    `tutar / seviye` adet satilir. Seviye = giris + esik/adet (LONG) veya
+    giris - esik/adet (SHORT); canli tikte anlik fiyat da tetikler.
+  * `_partial_close`: qty/teminat/notional oransal azalir, GIRIS ve STOP
+    degismez; dilimin brüt kari - cikis komisyonu bakiyeye eklenir.
+    Tam kapanis gibi `trades` listesine yazilmaz (K/Z ve islem sayisi
+    sisirilmesin); `banked_profit` sayaci ve durum alanlari eklendi.
+  * Dilim cikisi LIMIT (maker, %0,02) sayilir. Esik tek barda birden
+    fazla kez asilirsa dilimler sirayla bankalanir (guvenlik: 100 tur).
+  * Yalniz ALGO-GRAF: TK/TK2 bankalari degismedi.
+
+ARAYUZ/SUNUCU: `pAlgoBank` / `algoBankWrap` alani (yalniz ALGO-GRAF
+seciliyken gorunur), `/api/paper/config` -> `algo_bank_usd`, durumda
+`algo_bank_usd` ve `banked_profit`. Cache `?v=48` / `ta-v48`.
+
+OLCUM (5m 50.000 bar, 1x, stop %1, banka 10$ acik):
+  mod              BTC                ETH                SOL
+  algograf         -498,94$ (2521)    -547,87$ (2627)    -678,32$ (2563)
+  algograf_long    -251,93$ (1262)    -275,54$ (1335)    -258,46$ (1259)
+  algograf_short   -245,59$ (1260)    -273,11$ (1292)    -422,83$ (1304)
+  (10$ dilimler pozisyona gore cok kucuk oldugu icin net etki ~1-6$;
+  kural yatirim psikolojisi/kar realizasyonu icin, kenar yaratmiyor.)
+
+DOGRULAMA: `test_algograf.py` **77/77** (bolum 13: esik alti/ustu, dilim
+boyu, giris-stop degismezligi, esik merdiveni, SHORT, bar ici zirve,
+maker komisyon, 0 = kapali, tam kapanis yazilmamasi). `test_tk2`
+138/138, `test_paper` 90/90, `test_tk_fix` 37/37, py_compile ve
+`node --check` temiz. `logs/islemler.csv` olusmadi.

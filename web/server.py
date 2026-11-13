@@ -357,6 +357,7 @@ def create_app(service: MarketService, store: SignalStore,
             lock_pct=_num(data.get("lock_pct")),
             pull_atr=_num(data.get("pull_atr")),
             tk2_bank_usd=_num(data.get("tk2_bank_usd")),
+            algo_bank_usd=_num(data.get("algo_bank_usd")),
         )
         # Mod degisince grafik yildizlarini yeni algoritmaya gore
         # hemen yeniden uretip gonder.
@@ -463,6 +464,7 @@ def create_app(service: MarketService, store: SignalStore,
             lock_pct=_num(data.get("lock_pct")),
             pull_atr=_num(data.get("pull_atr")),
             tk2_bank_usd=_num(data.get("tk2_bank_usd")),
+            algo_bank_usd=_num(data.get("algo_bank_usd")),
         )
         # TİK2 onayi (2026-11-11, kullanici kurali — 3 varyant):
         # tk2 = iki yon, tk2_long = yalniz LONG, tk2_short = yalniz SHORT.
@@ -515,10 +517,13 @@ def create_app(service: MarketService, store: SignalStore,
                 f"SAT=SHORT açar, AL-KAPAT açık LONG'u, SAT-KAPAT açık "
                 f"SHORT'u kapatır · PEMBE turuncu/yeşil altına inince "
                 f"veya çakışınca SHORT, YEŞİL>PEMBE olunca LONG kapanır · "
-                f"kararsızlıkta NÖTR · TP/kâr bankası/bekleme YOK — "
-                f"pozisyon kural çıkışına kadar tutulur; koruyucu stop "
-                f"%{paper.algo_sl*100:.2f} (acil çıkış) · aç/kapa LIMIT "
-                f"(maker){dur}")
+                f"kararsızlıkta NÖTR · TP/bekleme YOK — pozisyon kural "
+                f"çıkışına kadar tutulur; kısmi kâr bankası: açık kâr "
+                f"{paper.algo_bank_usd:.2f}$'ı geçince bu büyüklükte "
+                f"dilim satılır, kâr cüzdana yazılır, kalan devam eder "
+                f"(her +tutar adımında tekrar) · 0 = kapalı; koruyucu stop "
+                f"%{paper.algo_sl*100:.2f} (acil çıkış) · aç/kapa ve banka "
+                f"LIMIT (maker){dur}")
         # TIK modu onayi: kullaniciya motorun GERCEKTEN tik ile
         # calistigini (eski surecte sessiz yok-sayma tehlikesi) ve
         # simulasyonun duraklatip duraklatmadigini acikla.
@@ -677,6 +682,7 @@ def create_app(service: MarketService, store: SignalStore,
             lock_pct=_num(data.get("lock_pct")),
             pull_atr=_num(data.get("pull_atr")),
             tk2_bank_usd=_num(data.get("tk2_bank_usd")),
+            algo_bank_usd=_num(data.get("algo_bank_usd")),
         )
         # TİK2 onayi (2026-11-11, kullanici kurali — 3 varyant):
         # tk2 = iki yon, tk2_long = yalniz LONG, tk2_short = yalniz SHORT.
@@ -729,10 +735,13 @@ def create_app(service: MarketService, store: SignalStore,
                 f"SAT=SHORT açar, AL-KAPAT açık LONG'u, SAT-KAPAT açık "
                 f"SHORT'u kapatır · PEMBE turuncu/yeşil altına inince "
                 f"veya çakışınca SHORT, YEŞİL>PEMBE olunca LONG kapanır · "
-                f"kararsızlıkta NÖTR · TP/kâr bankası/bekleme YOK — "
-                f"pozisyon kural çıkışına kadar tutulur; koruyucu stop "
-                f"%{paper.algo_sl*100:.2f} (acil çıkış) · aç/kapa LIMIT "
-                f"(maker){dur}")
+                f"kararsızlıkta NÖTR · TP/bekleme YOK — pozisyon kural "
+                f"çıkışına kadar tutulur; kısmi kâr bankası: açık kâr "
+                f"{paper.algo_bank_usd:.2f}$'ı geçince bu büyüklükte "
+                f"dilim satılır, kâr cüzdana yazılır, kalan devam eder "
+                f"(her +tutar adımında tekrar) · 0 = kapalı; koruyucu stop "
+                f"%{paper.algo_sl*100:.2f} (acil çıkış) · aç/kapa ve banka "
+                f"LIMIT (maker){dur}")
         # TIK modu onayi: kullaniciya motorun GERCEKTEN tik ile
         # calistigini (eski surecte sessiz yok-sayma tehlikesi) ve
         # simulasyonun duraklatip duraklatmadigini acikla.
