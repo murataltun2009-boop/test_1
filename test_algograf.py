@@ -155,15 +155,26 @@ print("7) Cakisma / tolerans")
 # Tum cizgiler ayni seviyede: hicbir siralama kurulu degil -> NOTR.
 kontrol("7.1 tam cakisma -> NOTR",
         algograf.series(ma([(100.0, 100.0, 100.0, 100.0)])) == ["NÖTR"])
-# MAVI ile TURUNCU cakisirsa "MAVI en ustte" siralama sayilmaz.
-kontrol("7.2 mavi~turuncu SHORT'u bozar",
-        algograf.series(ma([(104.0, 104.02, 98.0, 100.0)]))[0] == "NÖTR")
-# Tolerans buyutulunce cakisma pencere genisler.
-kontrol("7.3 tolerans %0,05 iken 0,10 fark siralama sayilir",
+# 2026-11-13 DUZELTME: varsayilan tolerans 0 (siki siralama). Kucuk fark
+# da "en ustte" sayilir; aksi halde BTC 69k'da ~34$'lik olu bant LONG/SHORT
+# girislerini tamamen engelliyordu.
+kontrol("7.2 kucuk fark (0,02) da siralama sayilir -> SAT",
+        algograf.series(ma([(104.0, 104.02, 98.0, 100.0)]))[0] == "SAT")
+# Acikca tolerans verilirse eski olu bant davranisi korunur.
+kontrol("7.3 tolerans %0,05 iken 0,02 fark cakisma sayilir",
+        algograf.series(ma([(104.0, 104.02, 98.0, 100.0)]),
+                        touch=0.0005)[0] == "NÖTR")
+kontrol("7.4 0,10 fark siki modda siralama sayilir",
         algograf.series(ma([(104.0, 104.10, 98.0, 100.0)]))[0] == "SAT")
-kontrol("7.4 tolerans %0,20 iken ayni fark cakisma sayilir",
+kontrol("7.5 tolerans %0,20 iken ayni fark cakisma sayilir",
         algograf.series(ma([(104.0, 104.10, 98.0, 100.0)]),
                         touch=0.002)[0] == "NÖTR")
+# Canli BTC hatasi (2026-11-13 19:05): PEMBE>YESIL>TURUNCU>MAVI, MAVI ile
+# TURUNCU arasi yalnizca ~8$ (0,0115%). Eski %0,05 bant bunu NÖTR yapiyordu;
+# siki modda LONG acilmalidir.
+kontrol("7.6 BTC 5m: dar MAVI-TURUNCU farki LONG acar",
+        algograf.series(ma([(68870.05, 68862.10, 68976.09,
+                             68925.32)])) == ["AL"])
 
 # ==================================================================
 print("8) Varyantlar")

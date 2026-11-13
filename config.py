@@ -437,7 +437,11 @@ PAPER_TK2_BANK_USD = 10.0
 # PEMBE=HULL9. EMA200/SMA200 grafikten kaldirildi, kurallarda kullanilmaz.
 # Cakisma/ayni seviye toleransi fiyatin bu oranidir; altinda kalan farklar
 # siralama sayilmaz (kararsizlik -> NOTR).
-PAPER_ALGOGRAF_TOUCH = 0.0005
+# 2026-11-13 DUZELTME: varsayilan 0 (siki siralama). Eski %0,05 degeri
+# BTC 69k'da ~34$'lik olu bant demekti; 5 dk grafikte cizgiler bu kadar
+# yakinken kural "cakisiyor" sayilip LONG/SHORT hic acilmiyordu. 0 iken
+# "en ustte" = kesin buyuk; esitlik/degme cakisma sayilir (cikis kapatir).
+PAPER_ALGOGRAF_TOUCH = 0.0
 # ALGO-GRAF KORUYUCU STOP (2026-11-13 kullanici onayi): kural setinde
 # cikis yalnizca cizgi dizilimiyle geliyordu; 10x boyutlamada tek bir
 # ters trend hesabi tuketebiliyordu. Bu stop KURALI DEGISTIRMEZ, yalnizca

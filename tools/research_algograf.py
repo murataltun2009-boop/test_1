@@ -5,8 +5,8 @@ Uc algoritma (algograf / algograf_long / algograf_short) 5m 50.000 bar
 gercek Binance Futures verisinde olculur. Ikinci bolum koruyucu stopun
 (`PAPER_ALGOGRAF_SL`) etkisini tarar.
 
-Cizgiler: MAVI=EMA50, YESIL=VWMA20, TURUNCU=EMA20, PEMBE=HULL9,
-MOR=EMA200 (SMA200 kullanilmaz).
+Cizgiler: MAVI=EMA50, YESIL=VWMA20, TURUNCU=EMA20, PEMBE=HULL9
+(EMA200/SMA200 grafikte yok, kurallarda kullanilmaz).
 
 Kullanim:
     python tools/research_algograf.py

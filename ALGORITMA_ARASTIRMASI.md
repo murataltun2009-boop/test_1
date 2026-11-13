@@ -2419,7 +2419,7 @@ GUNCEL KURALLAR (core/algograf.py):
     koruyucu stop %1 (PAPER_ALGOGRAF_SL) + stop sonrasi kural
     sifirlanana kadar ayni yonde yeni giris kilidi.
 
-OLCUM (5m 50.000 bar, 3 sembol, 	ools/research_algograf.py):
+OLCUM (5m 50.000 bar, 3 sembol, tools/research_algograf.py):
 
   1x (kaldiracsiz, ~0,4x notional) - kuralin saf kenari, stop %1:
     mod              BTC                    ETH                    SOL
@@ -2437,10 +2437,45 @@ OLCUM (5m 50.000 bar, 3 sembol, 	ools/research_algograf.py):
   Yalniz-LONG yine en az kaybeden varyant ama o da uc sembolde negatif.
   Kullanici kurali aynen uygulandi; karar kullanicida.
 
-DOGRULAMA: 	est_algograf.py **59/59** (4 cizgi eslemesi, SHORT/LONG/
+DOGRULAMA: test_algograf.py **59/59** (4 cizgi eslemesi, SHORT/LONG/
 NOTR kurallari, cakisinca kapatma, tolerans, uc varyant, nedensellik,
-paper ac/kapa, koruyucu stop + kilit). 	est_tk2.py 138/138,
-	est_paper 90/90, 	est_tk_fix 37/37, py_compile temiz,
+paper ac/kapa, koruyucu stop + kilit). test_tk2.py 138/138,
+test_paper 90/90, test_tk_fix 37/37, py_compile temiz,
+node --check app.js temiz. logs/islemler.csv olusmadi. Arayuz cache
+surumu ?v=47 / ta-v47.
 
-ode --check app.js temiz. logs/islemler.csv olusmadi. Arayuz cache
-surumu ?v=47 / 	a-v47.
+
+## OTURUM 28 - ALGO-GRAF: cakisma toleransi 0 (canli LONG acmama duzeltmesi)
+
+KULLANICI GERI BILDIRIMI (2026-11-13): BTCUSDT 5m'de cizgiler istenen
+sirada gorunurken LONG/AL acilmadi.
+
+KOK NEDEN: `PAPER_ALGOGRAF_TOUCH = 0.0005` (fiyatin %0,05'i) siralama
+karsilastirmalarinda OLU BANT olarak kullaniliyordu. BTC ~69.000$ iken bu
+~34$ demek; 19:05 UTC barinda MAVI (68862,10) TURUNCU'nun (68870,05)
+yalnizca ~8$ altindaydi (%0,0115) -> `_below` kosulu saglanmadi ->
+cizgiler "cakisiyor" sayildi -> NOTR -> LONG acilmadi. 5 dk grafikte
+cizgi araliklari sik sik bu bandin altinda kaldigi icin kural pratikte
+kilitleniyordu.
+
+DUZELTME: `PAPER_ALGOGRAF_TOUCH` varsayilani **0** yapildi (siki
+siralama). "En ustte" = kesin buyuk; esitlik/degme hala cakisma sayilir
+(esitlikte `_above`/`_below` False -> NOTR; SHORT cikisi PEMBE
+TURUNCU/YESIL'e degince kapatir). Istenirse config'ten 0'dan buyuk deger
+verilerek eski olu bant davranisi geri getirilebilir.
+
+ORNEK (canli bar 2026-11-13 19:05 UTC):
+  PEMBE 68976,09 > YESIL 68925,32 > TURUNCU 68870,05 > MAVI 68862,10
+  eski tolerans: NOTR - yeni siki mod: AL (LONG)
+
+OLCUM (5m 50.000 bar, 1x, stop %1):
+  mod              BTC                ETH                SOL
+  algograf         -499,19$ (2521)    -548,83$ (2627)    -682,97$ (2563)
+  algograf_long    -251,79$ (1262)    -275,07$ (1335)    -260,36$ (1259)
+  algograf_short   -245,97$ (1260)    -274,55$ (1292)    -425,59$ (1304)
+  (islem sayisi artti, net daha negatif; beklendigi gibi komisyon etkisi.)
+
+DOGRULAMA: `test_algograf.py` **61/61** (7.2 kucuk fark siralama sayilir,
+7.3/7.5 tolerans verilince eski davranis, 7.6 canli BTC ornegi LONG acar).
+`test_tk2` 138/138, `test_paper` 90/90, `test_tk_fix` 37/37, py_compile
+temiz, `node --check` temiz. `logs/islemler.csv` olusmadi.

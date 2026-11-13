@@ -33,9 +33,11 @@ Kurallar (sıralama = fiyat değeri büyükten küçüğe, üstten alta):
 Etiketler pozisyona duyarlıdır:
     AL / SAT / AL-KAPAT / SAT-KAPAT / NÖTR
 
-"Çakışma" (aynı seviye) toleransı fiyatın `PAPER_ALGOGRAF_TOUCH` kadarıdır
-(varsayılan %0,05). Sıralama karşılaştırmaları bu ölü bandı aşmayı ister;
-bu yüzden çizgiler iç içe geçtiğinde sonuç NÖTR'dür (kararsızlık kuralı).
+"Çakışma" (aynı seviye) eşiği fiyatın `PAPER_ALGOGRAF_TOUCH` kadarıdır.
+Varsayılan 0'dır: "en üstte" = kesin büyük, eşitlik sıralama sayılmaz
+(kararsızlık -> NÖTR). Sıfırdan büyük değer bir ölü bant ekler; 5 dk
+grafikte çizgiler sık sık birkaç dolar aralıkla ayrıldığı için geniş bant
+girişleri tamamen engelleyebilir (2026-11-13'te %0,05 -> 0 yapıldı).
 
 KORUYUCU STOP kural katmanında DEĞİLDİR: `paper._algograf` giriş
 fiyatından `PAPER_ALGOGRAF_SL` kadar ters harekette pozisyonu kapatır
@@ -81,12 +83,12 @@ def side_for_mode(mode: object) -> Optional[int]:
 
 
 def touch_ratio() -> float:
-    """Çakışma/aynı seviye toleransı (fiyat oranı)."""
+    """Çakışma/aynı seviye toleransı (fiyat oranı). Varsayılan 0 = sıkı."""
     try:
         return max(0.0, float(getattr(config, "PAPER_ALGOGRAF_TOUCH",
-                                     0.0005)))
+                                     0.0)))
     except (TypeError, ValueError):
-        return 0.0005
+        return 0.0
 
 
 def decide_target(label: str, current: int = 0) -> Optional[int]:
