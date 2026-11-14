@@ -2521,3 +2521,63 @@ boyu, giris-stop degismezligi, esik merdiveni, SHORT, bar ici zirve,
 maker komisyon, 0 = kapali, tam kapanis yazilmamasi). `test_tk2`
 138/138, `test_paper` 90/90, `test_tk_fix` 37/37, py_compile ve
 `node --check` temiz. `logs/islemler.csv` olusmadi.
+
+
+## OTURUM 30 - ALGO-GRAF KAR DILIMI bankasi + "Uygula" (2026-11-14)
+
+KULLANICI DUZELTMESI: OTURUM 29'daki "10$ NOTIONAL dilim" yanlis
+yorumdu. Kullanici netlestirdi: **"kârın 10$'lık dilimini sat"** —
+pozisyonun 10$ buyuklugundeki bir parcasi degil, **kari tam 10$ olan
+adet dilimi** satilacak. Ayrica tutar arayuzden degistirilebilmeli ve
+yanindaki **Uygula** butonu **acik pozisyona aninda** etki etmeli.
+
+YENI DAVRANIS (`paper._algograf` 2. adim):
+  * Esik hala DOLAR kar esigi (`Position.bank_next_usd`). Esik asilinca
+    dilim adedi `tutar / |dolum - giris|` olarak hesaplanir -> dilimin
+    kari tam `tutar` dolar olur (komisyon dusulmeden).
+  * Dolum fiyati tetik seviyesinden KOTU olmaz: LONG'da `max(fiyat,
+    seviye)`, SHORT'ta `min(fiyat, seviye)`. Fiyat seviyeyi asmissa
+    (gap) daha iyi fiyattan dolar.
+  * Satistan sonra `qty/teminat/notional` oransal azalir; **giris ve
+    stop degismez**, kalan pozisyon devam eder. Dilim cikisi LIMIT
+    (maker, %0,02).
+  * Yeni esik = **kalan pozisyonun dolum fiyatindaki kari + tutar** ->
+    kalan pozisyon TAZE +tutar kazaninca tekrar bankalanir (10$, 20$,
+    30$ ...). Ayni fiyatta ikinci kez bankalanmaz.
+  * Kâr TAM esige esitse dilim = pozisyonun tamami olur; bu durumda
+    pozisyon normal `_close` ile kapanir (klasik TP). Kalan birakmak
+    isteyen kullanici tutari yuksek secer.
+  * `_partial_close` tam kapanis gibi `trades` listesine yazilmaz; K/Z
+    sayaci ve islem sayisi sisirilmez, `banked_profit` artar.
+
+ANINDA UYGULAMA: `PaperTrader._configure` icinde `algo_bank_usd`
+GERCEKTEN degistiyse acik pozisyonun `bank_next_usd`'i sifirlanir; bir
+sonraki tick'te yeni tutarla yeniden kurulur. `0` yapilirsa banka
+kapanir (acik pozisyon da bankalanmaz). Ayni tutar tekrar gonderilirse
+esik korunur (gereksiz sifirlama yok). Arayuz: `pAlgoBank` alaninin
+yaninda **Uygula** (`pAlgoBankApply`) -> `/api/paper/config` + log
+"hangi tutar, acik pozisyona hemen uygulandi".
+
+NOT: 10$ tutarla ve 4000$ pozisyonda normal tik akisinda esik ilk
+asildiginda kar zaten 10$ oldugu icin dilim tamami kaplar -> pratikte
+10$ take-profit gibi davranir. Kalan birakmak icin tutari (or. 30$)
+yuksek tutmak gerekir; gap'lerde ise kalan otomatik devam eder.
+
+ARAYUZ/SUNUCU: alan basligi "ALGO-GRAF kâr dilimi ($)", ipucu metni ve
+ALGO-GRAF acilis logu yeni semantige gore guncellendi. Cache `?v=49` /
+`ta-v49`.
+
+OLCUM (5m 50.000 bar, 1x, stop %1, 10$ kar dilimi acik):
+  mod              BTC                ETH                SOL
+  algograf         -492,28$ (2529)    -547,61$ (2646)    -575,59$ (2598)
+  algograf_long    -253,19$ (1267)    -281,19$ (1341)    -217,24$ (1278)
+  algograf_short   -237,66$ (1263)    -267,20$ (1305)    -361,32$ (1320)
+  (OTURUM 29'a gore SOL belirgin iyilesme, BTC/ETH ~ayni; islem sayisi
+  neredeyse degismedi cunku dilim cogu zaman tamami kapliyor.)
+
+DOGRULAMA: `test_algograf.py` **84/84** -- bolum 13: esik alti/ustu, kar
+dilimi adedi (10$/0,75$), net banka ~9,73$, giris degismezligi, "kalan
+kar + taze tutar" esigi, ayni fiyatta tekrar banka yok, tam esikte tam
+kapanis, 0 = kapali, SHORT, bar ici zirve -> seviyeden dolum, maker
+komisyon, **Uygula**: `configure(algo_bank_usd=2)` -> acik pozisyon
+20 adede iner, `0` -> banka kapanir, ayni tutar -> esik korunur.

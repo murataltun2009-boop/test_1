@@ -104,7 +104,7 @@ if ("serviceWorker" in navigator) {
    "pBalance", "pLev", "pFrac", "pFee", "pLook", "pHold", "pConfirm",
    "pBacktest", "pRule", "pMode", "pStart", "pLive", "pStop", "pReset",
    "pRisk", "riskWrap", "pLock", "lockWrap", "pPull", "pullWrap",
-   "pBank", "bankWrap", "pAlgoBank", "algoBankWrap",
+   "pBank", "bankWrap", "pAlgoBank", "algoBankWrap", "pAlgoBankApply",
    "ruleWrap", "modeNote", "modeNote2", "modeNote3", "modeNote3ppt",
    "modeNote4",
    "modeThr",
@@ -1377,10 +1377,11 @@ if ("serviceWorker" in navigator) {
           + "AL=LONG açar, SAT=SHORT açar, AL-KAPAT açık LONG'u, "
           + "SAT-KAPAT açık SHORT'u kapatır; kararsızlıkta NÖTR; "
           + "TP/bekleme YOK — pozisyon kural çıkışına kadar tutulur; "
-          + "kısmi kâr bankası: açık kâr "
-          + (parseFloat(el.pAlgoBank.value) || 10) + "$'ı geçince bu "
-          + "büyüklükte dilim satılır, kâr cüzdana yazılır, kalan devam "
-          + "eder (her +tutar adımında tekrar) · 0 = kapalı; "
+          + "kâr dilimi bankası: açık kâr "
+          + (parseFloat(el.pAlgoBank.value) || 10) + "$'a ulaşınca kârı "
+          + "bu tutara denk gelen dilim satılır, kâr cüzdana yazılır, "
+          + "kalan aynı giriş/stop ile devam eder (kalan için taze "
+          + "+tutar) · 0 = kapalı; "
           + "koruyucu stop %1 (acil çıkış); aç/kapa ve banka LIMIT (maker)"
         : "") +
       (tik
@@ -1449,6 +1450,30 @@ if ("serviceWorker" in navigator) {
                  "Cüzdan, açık pozisyon ve işlem geçmişi silinir.")) return;
     paperCall("/api/paper/reset");
   });
+
+  // ALGO-GRAF kâr dilimi: "Uygula" yeni tutarı ANINDA açık pozisyona
+  // uygular. Sunucu tarafında banka eşiği sıfırlanır ve bir sonraki
+  // tick'te yeni tutarla yeniden kurulur (0 = banka tamamen kapanır).
+  if (el.pAlgoBankApply) {
+    el.pAlgoBankApply.addEventListener("click", function (ev) {
+      ev.preventDefault();
+      var tutar = parseFloat(el.pAlgoBank.value);
+      if (isNaN(tutar) || tutar < 0) {
+        addLog(nowTs(), "error", "Kâr dilimi tutarı geçersiz");
+        return;
+      }
+      state.userTouched = true;
+      paperCall("/api/paper/config").then(function (d) {
+        if (d && d.ok) {
+          addLog(nowTs(), "info",
+            "ALGO-GRAF kâr dilimi güncellendi: " +
+            (tutar > 0
+              ? fmtUsd(tutar) + " · açık pozisyona hemen uygulandı"
+              : "kapalı (0$)"));
+        }
+      });
+    });
+  }
 
   // ==================================================================
   // Coin (sembol) seçimi

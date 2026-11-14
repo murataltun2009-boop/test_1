@@ -43,13 +43,15 @@
 // v18: ALGO-GRAF koruyucu stop (PAPER_ALGOGRAF_SL) + yeniden giris kilidi.
 // v19: ALGO-GRAF 4 cizgi (EMA200/SMA200 grafikten kaldirildi).
 // v20: ALGO-GRAF kismi kar bankasi (10$ dilim, kalan pozisyon devam).
-const VERSION = "ta-v48";
+// v21: ALGO-GRAF kar DILIMI bankasi (10$ kar dilimi) + Uygula butonu
+//      (tutar degisince acik pozisyona aninda uygulanir).
+const VERSION = "ta-v49";
 const SHELL = "shell-" + VERSION;
 
 const PRECACHE = [
   "/",
-  "/static/style.css?v=48",
-  "/static/app.js?v=48",
+  "/static/style.css?v=49",
+  "/static/app.js?v=49",
   "/static/vendor/echarts.min.js",
   "/static/icon-192.png",
   "/static/icon-512.png",

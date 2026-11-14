@@ -518,10 +518,12 @@ def create_app(service: MarketService, store: SignalStore,
                 f"SHORT'u kapatır · PEMBE turuncu/yeşil altına inince "
                 f"veya çakışınca SHORT, YEŞİL>PEMBE olunca LONG kapanır · "
                 f"kararsızlıkta NÖTR · TP/bekleme YOK — pozisyon kural "
-                f"çıkışına kadar tutulur; kısmi kâr bankası: açık kâr "
-                f"{paper.algo_bank_usd:.2f}$'ı geçince bu büyüklükte "
-                f"dilim satılır, kâr cüzdana yazılır, kalan devam eder "
-                f"(her +tutar adımında tekrar) · 0 = kapalı; koruyucu stop "
+                f"çıkışına kadar tutulur; kâr dilimi bankası: açık kâr "
+                f"{paper.algo_bank_usd:.2f}$'a ulaşınca kârı bu tutara "
+                f"denk gelen dilim satılır, kâr cüzdana yazılır, kalan "
+                f"aynı giriş/stop ile devam eder (kalan için taze +tutar) "
+                f"· 0 = kapalı · tutar değişince Uygula ile açık pozisyona "
+                f"hemen uygulanır; koruyucu stop "
                 f"%{paper.algo_sl*100:.2f} (acil çıkış) · aç/kapa ve banka "
                 f"LIMIT (maker){dur}")
         # TIK modu onayi: kullaniciya motorun GERCEKTEN tik ile
@@ -736,10 +738,12 @@ def create_app(service: MarketService, store: SignalStore,
                 f"SHORT'u kapatır · PEMBE turuncu/yeşil altına inince "
                 f"veya çakışınca SHORT, YEŞİL>PEMBE olunca LONG kapanır · "
                 f"kararsızlıkta NÖTR · TP/bekleme YOK — pozisyon kural "
-                f"çıkışına kadar tutulur; kısmi kâr bankası: açık kâr "
-                f"{paper.algo_bank_usd:.2f}$'ı geçince bu büyüklükte "
-                f"dilim satılır, kâr cüzdana yazılır, kalan devam eder "
-                f"(her +tutar adımında tekrar) · 0 = kapalı; koruyucu stop "
+                f"çıkışına kadar tutulur; kâr dilimi bankası: açık kâr "
+                f"{paper.algo_bank_usd:.2f}$'a ulaşınca kârı bu tutara "
+                f"denk gelen dilim satılır, kâr cüzdana yazılır, kalan "
+                f"aynı giriş/stop ile devam eder (kalan için taze +tutar) "
+                f"· 0 = kapalı · tutar değişince Uygula ile açık pozisyona "
+                f"hemen uygulanır; koruyucu stop "
                 f"%{paper.algo_sl*100:.2f} (acil çıkış) · aç/kapa ve banka "
                 f"LIMIT (maker){dur}")
         # TIK modu onayi: kullaniciya motorun GERCEKTEN tik ile

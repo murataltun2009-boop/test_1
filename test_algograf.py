@@ -299,81 +299,124 @@ kontrol("12.11 seri uretimi stoptan etkilenmez",
         len(p._build_signal_series(candles, "5m")) == len(candles))
 
 # ==================================================================
-print("13) ALGO-GRAF kismi kar bankasi (10$ dilim, pozisyon devam)")
+print("13) ALGO-GRAF kar dilimi bankasi (10$ kar dilimi, kalan devam)")
+# --- 13A: gap ile kalan pozisyon korunur ---------------------------
 p = trader("algograf")
 p.algo_sl = 0.0
 p._algograf(100.0, "5m", "AL")
 kontrol("13.1 pozisyon boyu 40 adet (4000$ / 100$)",
         p.position is not None and abs(p.position.qty - 40.0) < 1e-9)
-kontrol("13.2 varsayilan banka esigi 10$",
+kontrol("13.2 varsayilan dilim 10$ ve ilk esik 10$",
         abs(p.algo_bank_usd - 10.0) < 1e-9 and
         abs(p.position.bank_next_usd - 10.0) < 1e-9)
 p._algograf(100.2, "5m", "AL")
-kontrol("13.3 esik altinda (8$) banka YOK", p.position is not None
+kontrol("13.3 esik altinda (8$ kar) banka YOK", p.position is not None
         and abs(p.position.qty - 40.0) < 1e-9
         and p.banked_profit == 0.0)
 bakiye0 = p.balance
-p._algograf(100.3, "5m", "AL")
-kontrol("13.4 kar 10$'i gecti -> dilim satildi, pozisyon ACIK",
+# 100,75 -> kar 30$; dilim = 10$ / 0,75$ = 13,333 adet satilir.
+p._algograf(100.75, "5m", "AL")
+kontrol("13.4 kari 10$ olan dilim satildi, pozisyon ACIK",
         p.position is not None and p.position.qty < 40.0)
-kontrol("13.5 banka 100,25$ seviyesinden (10$ nominal dilim)",
-        abs((p.position.qty + 10.0 / 100.25) - 40.0) < 1e-9)
-kontrol("13.6 kar cuzdana yazildi", p.balance > bakiye0
-        and p.banked_profit > 0.0)
-kontrol("13.7 giris ve stop DEGISMEDI",
+kontrol("13.5 dilim adedi = 10$ / (fiyat-giris) = 13,333",
+        abs((40.0 - p.position.qty) - 10.0 / 0.75) < 1e-6)
+kontrol("13.6 dilimin kari cuzdana yazildi (~9,73$ net)",
+        p.balance > bakiye0 and 9.5 < p.banked_profit < 10.0)
+kontrol("13.7 giris DEGISMEDI (kalan ayni pozisyondan devam)",
         abs(p.position.entry - 100.0) < 1e-9)
-kontrol("13.8 sonraki esik 20$", abs(p.position.bank_next_usd - 20.0) < 1e-9)
+kontrol("13.8 yeni esik = kalan kar (20$) + taze 10$ = 30$",
+        abs(p.position.bank_next_usd - 30.0) < 1e-6)
 kontrol("13.9 tam kapanis gibi trade yazilmadi", len(p.trades) == 0)
-p._algograf(100.6, "5m", "AL")
-kontrol("13.10 her +10$ adiminda tekrar banka",
-        abs(p.position.bank_next_usd - 30.0) < 1e-9)
-kontrol("13.11 hacim elbette kuculmeye devam etti", p.position.qty < 39.9)
+p._algograf(100.75, "5m", "AL")
+kontrol("13.10 ayni fiyatta tekrar banka YOK", p.position is not None
+        and abs(p.position.bank_next_usd - 30.0) < 1e-6)
+p._algograf(101.125, "5m", "AL")
+kontrol("13.11 kalan TAZE +10$ kazaninca tekrar banka",
+        p.position is not None
+        and abs((40.0 - p.position.qty)
+                - (10.0 / 0.75 + 10.0 / 1.125)) < 1e-6)
+kontrol("13.12 ikinci dilim de cuzdana yazildi", p.banked_profit > 19.0)
 
-# Banka kapali: 0 -> hic dokunmaz.
+# --- 13B: kar TAM esige esitse dilim = pozisyonun tamami (TP) ------
+p = trader("algograf")
+p.algo_sl = 0.0
+p._algograf(100.0, "5m", "AL")
+p._algograf(100.25, "5m", "AL")
+kontrol("13.13 kar tam 10$ iken tamami satilir (klasik TP)",
+        p.position is None and len(p.trades) == 1
+        and abs(p.trades[0].exit - 100.25) < 1e-9)
+
+# --- 13C: 0 = kapali ----------------------------------------------
 p = trader("algograf")
 p.algo_sl = 0.0
 p.algo_bank_usd = 0.0
 p._algograf(100.0, "5m", "AL")
 p._algograf(110.0, "5m", "AL")
-kontrol("13.12 algo_bank_usd=0 -> banka yok",
+kontrol("13.14 algo_bank_usd=0 -> banka yok",
         p.position is not None and abs(p.position.qty - 40.0) < 1e-9
         and p.banked_profit == 0.0)
 
-# SHORT yonunde de calisir.
+# --- 13D: SHORT yonunde de calisir --------------------------------
 p = trader("algograf")
 p.algo_sl = 0.0
 p._algograf(100.0, "5m", "SAT")
-p._algograf(99.7, "5m", "SAT")
-kontrol("13.13 SHORT'ta da dilim bankalanir",
+p._algograf(99.25, "5m", "SAT")
+kontrol("13.15 SHORT'ta da kar dilimi bankalanir",
         p.position is not None and p.position.side == SHORT
-        and p.position.qty < 40.0 and p.banked_profit > 0.0)
+        and abs((40.0 - p.position.qty) - 10.0 / 0.75) < 1e-6
+        and p.banked_profit > 0.0)
 
-# Geriye donuk testte bar ici zirve esigi tetikler.
+# --- 13E: bar ici zirve tetikler, seviyeden (kotu olmayan) dolar ---
 p = trader("algograf")
 p.algo_sl = 0.0
 p._algograf(100.0, "5m", "AL")
 p._algograf(100.1, "5m", "AL", 99.9, 100.4)
-kontrol("13.14 bar ici zirve (100,4) esigi tetikledi",
-        p.position is not None and p.position.qty < 40.0
-        and abs(p.position.bank_next_usd - 20.0) < 1e-9)
+kontrol("13.16 bar ici zirve esigi tetikledi, seviyeden doldu",
+        p.position is None and len(p.trades) == 1
+        and abs(p.trades[0].exit - 100.25) < 1e-9)
 
-# Maker komisyon: 10$ dilimde ~0,002$ (taker 0,005$ degil).
+# --- 13F: maker komisyon (dilim notional * %0,02) -----------------
 p = trader("algograf")
 p.algo_sl = 0.0
 p._algograf(100.0, "5m", "AL")
 kom0 = p.commission_paid
-p._algograf(100.3, "5m", "AL")
-kontrol("13.15 banka dilimi maker komisyonlu",
-        abs((p.commission_paid - kom0) - 10.0 * p.maker_rate) < 1e-9)
+p._algograf(100.75, "5m", "AL")
+beklenen = (10.0 / 0.75) * 100.75 * p.maker_rate
+kontrol("13.17 banka dilimi maker komisyonlu",
+        abs((p.commission_paid - kom0) - beklenen) < 1e-9)
 
-# Fiyat tek adimda cok sicrarsa 10/20/30$ dilimleri sirayla bankalanir.
+# --- 13G: Uygula -> acik pozisyona ANINDA yeni tutar --------------
 p = trader("algograf")
 p.algo_sl = 0.0
 p._algograf(100.0, "5m", "AL")
-p._algograf(100.9, "5m", "AL")
-kontrol("13.16 sicrama -> uc dilim (esik 40$)",
-        p.position is not None
-        and abs(p.position.bank_next_usd - 40.0) < 1e-9)
+p._algograf(100.1, "5m", "AL")
+kontrol("13.18 4$ karda banka yok (esik 10$)",
+        abs(p.position.qty - 40.0) < 1e-9 and p.banked_profit == 0.0)
+p.configure(algo_bank_usd=2.0)
+kontrol("13.19 tutar degisti -> esik sifirlandi (aninda uygula)",
+        abs(p.algo_bank_usd - 2.0) < 1e-9
+        and p.position.bank_next_usd == 0.0)
+p._algograf(100.1, "5m", "AL")
+kontrol("13.20 yeni tutar acik pozisyona hemen uygulandi",
+        abs(p.position.qty - 20.0) < 1e-6 and p.banked_profit > 0.0)
+
+p.configure(algo_bank_usd=0.0)
+kontrol("13.21 0 yapilinca esik kapanir",
+        p.algo_bank_usd == 0.0 and p.position.bank_next_usd == 0.0)
+p._algograf(120.0, "5m", "AL")
+kontrol("13.22 0 iken acik pozisyon bankalanmaz",
+        abs(p.position.qty - 20.0) < 1e-6)
+
+# Ayni tutar tekrar gonderilirse esik BOZULMAZ (spurious sifirlama yok).
+p = trader("algograf")
+p.algo_sl = 0.0
+p._algograf(100.0, "5m", "AL")
+p._algograf(100.75, "5m", "AL")
+esik0 = p.position.bank_next_usd
+p.configure(algo_bank_usd=10.0)
+kontrol("13.23 ayni tutar -> esik korunur",
+        abs(p.position.bank_next_usd - esik0) < 1e-9)
+
 
 # ==================================================================
 print()
