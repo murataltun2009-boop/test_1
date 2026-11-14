@@ -2581,3 +2581,70 @@ kar + taze tutar" esigi, ayni fiyatta tekrar banka yok, tam esikte tam
 kapanis, 0 = kapali, SHORT, bar ici zirve -> seviyeden dolum, maker
 komisyon, **Uygula**: `configure(algo_bank_usd=2)` -> acik pozisyon
 20 adede iner, `0` -> banka kapanir, ayni tutar -> esik korunur.
+
+
+## OTURUM 31 - ALGO-GRAF SHORT kurali duzeltmesi (2026-11-14)
+
+KULLANICI GERI BILDIRIMI: "yalniz SHORT kurali bu haliyle devreye
+girmiyor, yanlislar var". Yeni kural (kullanici metni):
+
+  SHORT GIRIS : MAVI (EMA50) EN USTTE, PEMBE (HULL9) EN ALTTA oldugu
+                surece TURUNCU (EMA20) ve YESIL (VWMA20) bu ikisinin
+                ARASINDA -> SHORT ac ve pozisyonda kal.
+  SHORT KAPAT : iki kuraldan HANGISI ONCE olusursa kapat:
+                1) TURUNCU (EMA20), YESIL'in (VWMA20) ALTINA inerse veya
+                   onunla CAKISIRSA,
+                2) HULL degeri "AL"a donerse (fiyat HULL9'un ustune
+                   cikarsa).
+                N O T R dizilimi veya LONG dizilimi TEK BASINA kapatmaz.
+
+UYGULAMA (`core/algograf.py`):
+  * `short_exit = not _above(EMA20, VWMA20)` (esik 0 -> cakisma da
+    kapatir).
+  * HULL=AL: `fiyat > HULL9 * (1 + MA_DEADZONE)`; olü bant
+    `core.analysis._ma_v` ile AYNI (MA_DEADZONE = %0,02). Fiyat serisi
+    `series(..., prices=...)` ile verilir (canli: `res.c`, backtest:
+    kapanmis mumlarin kapanislari).
+  * AL GECISI: giris aninda HULL zaten AL olabilir; tek basina AL olmak
+    kapatmaz, AL'a DONUS kapatir. Aksi halde pozisyon her 2 barda bir
+    acilip kapaniyordu. Karsilastirma bir onceki barla yapilir; seri
+    nedensel kalir.
+  * Kapatma listesinden `neutral` ve `long_entry` CIKARILDI (kullanici:
+    "yalniz bu iki kural kapatsin").
+
+TUTARLILIK DUZELTMESI (kritik): giris kosulu EMA20 ile VWMA20 arasinda
+SIRA sartı icermiyordu. Kapatma kurali "EMA20 <= VWMA20" oldugu icin,
+boyle bir girisin hemen ardindan kapatma geliyor ve her bar ac-kapa
+dongusu olusuyordu. OLCUM: `algograf_short` BTC **1263 -> 4171** islem.
+Bu yuzden giris kosuluna `EMA20 > VWMA20` eklendi (ikisi de MAVI ile
+PEMBE arasinda kalir). Ayni olcum **2599** isleme indi ve kural artik
+kendi kendisiyle celismiyor. Test 2.9/2.10 bunu kilitler.
+
+KAPSAM: kullanici "tum ALGO-GRAF modlari" dedi -> iki yonlu `algograf`
+modunun SHORT tarafi da ayni kurallari kullanir. `algograf_long`
+degismedi.
+
+ARAYUZ/SUNUCU: secenek metni, ALGO-GRAF yardim notu ve acilis logu yeni
+kurala gore guncellendi. Cache `?v=50` / `ta-v50`.
+
+OLCUM (5m 50.000 bar, 1x, stop %1, 10$ kar dilimi acik):
+  mod              BTC                ETH                SOL
+  algograf         -728,49$ (3858)    -776,99$ (4015)    -817,96$ (3910)
+  algograf_long    -253,19$ (1267)    -281,19$ (1341)    -217,24$ (1278)
+  algograf_short   -473,40$ (2598)    -489,70$ (2679)    -601,83$ (2645)
+  (stop'suz saf kural: algograf_short -471,46$ / -452,73$ / -560,88$.)
+  Onceki surum: algograf_short -237,66$ (1263) / -267,20$ (1305) /
+  -361,32$ (1320) idi. Yeni kural pozisyonu daha uzun tutuyor ama
+  EMA20 ~ VWMA20 teması cok sik oldugu icin tur sayisi ~2 katina cikti;
+  net sonuc bu ornekte daha negatif. Bu bir KURAL tercihidir; kenar
+  iddiasi degildir. Daha az tur istenirse cakisma bandi (kucuk tolerans)
+  veya kapanistan sonra N bar bekleme eklenebilir.
+
+DOGRULAMA: `test_algograf.py` **89/89** -- bolum 2: giris, pozisyonda
+kalma, PEMBE yukselisi tek basina kapatmaz, EMA20<VWMA20 ve cakisma
+kapatir, EMA20>VWMA20 tutar, HULL=AL gecisi kapatir, giriste HULL=AL
+kapatmaz, EMA20<=VWMA20 iken giris yok. Bolum 5/6: NOTR ve LONG
+dizilimi SHORT'u tek basina kapatmaz. Bolum 8: varyant serileri yeni
+kurala gore. `test_tk2` 138/138, `test_paper` 90/90, `test_tk_fix`
+37/37, py_compile ve `node --check` temiz. `logs/islemler.csv`
+olusmadi.

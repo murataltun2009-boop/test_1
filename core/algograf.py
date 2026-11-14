@@ -15,10 +15,15 @@ Grafik panelindeki çizgiler ve renkleri:
 Kurallar (sıralama = fiyat değeri büyükten küçüğe, üstten alta):
 
   SHORT  : MAVİ en üstte, PEMBE en altta olduğu sürece (TURUNCU ve YEŞİL
-           bu ikisinin arasında) SHORT aç ve pozisyonda kal.
-  SHORT KAPAT: PEMBE, TURUNCU'nun altına inerse veya onunla çakışırsa;
-           ya da PEMBE, YEŞİL'in altına inerse veya onunla çakışırsa
-           SHORT'u kapat.
+           bu ikisinin arasında ve TURUNCU, YEŞİL'in üstünde) SHORT aç ve
+           pozisyonda kal.
+  SHORT KAPAT (2026-11-14 kullanıcı düzeltmesi — iki kuraldan hangisi
+           önce olursa):
+             1) TURUNCU (EMA20), YEŞİL'in (VWMA20) altına inerse veya
+                onunla çakışırsa,
+             2) HULL satırı "AL"a dönerse (fiyat HULL9'un üstüne çıkarsa).
+           Bunların dışında SHORT açık kalır (NÖTR dizilim veya LONG
+           dizilimi tek başına kapatmaz).
   LONG   : PEMBE en üstte, MAVİ en altta olduğu aralıkta LONG açık kalsın.
   LONG KAPAT: YEŞİL, PEMBE'nin üstüne çıkarsa LONG'u kapat.
   NÖTR   : YEŞİL en üstte, PEMBE en altta kaldığında pozisyon NÖTR kalsın.
@@ -27,8 +32,8 @@ Kurallar (sıralama = fiyat değeri büyükten küçüğe, üstten alta):
 ÜÇ VARYANT:
     algograf       : iki yön (tüm kurallar)
     algograf_long  : yalnız LONG (PEMBE üst + MAVİ alt; YEŞİL>PEMBE kapatır)
-    algograf_short : yalnız SHORT (MAVİ üst + PEMBE alt; PEMBE ayrılınca
-                     kapatır)
+    algograf_short : yalnız SHORT (MAVİ üst + PEMBE alt; EMA20 ≤ VWMA20
+                     veya HULL=AL kapatır)
 
 Etiketler pozisyona duyarlıdır:
     AL / SAT / AL-KAPAT / SAT-KAPAT / NÖTR
@@ -58,6 +63,7 @@ from typing import Optional
 import numpy as np
 
 import config
+from core.analysis import MA_DEADZONE as _MA_DEADZONE
 
 # Grafik çizgisi -> analysis.ma_series anahtarı (yalnız 4 çizgi).
 LINE_KEYS: dict[str, str] = {
@@ -131,17 +137,27 @@ def _below(a: float, b: float, eps: float) -> bool:
 
 
 def _conditions(t: float, mavi: float, pembe: float, yesil: float,
-                eps: float) -> dict[str, bool]:
+                eps: float, price: Optional[float] = None) -> dict[str, bool]:
     """Bir barın kullanıcı kuralı koşulları (4 çizgi).
 
     t=TURUNCU(EMA20), mavi=MAVİ(EMA50), pembe=HULL9, yesil=VWMA20.
+    `price` verilirse HULL satırının AL/SAT kararı da üretilir
+    (`core.analysis._ma_v` ile birebir aynı ölü bant).
     """
     # SHORT: MAVİ en üstte, PEMBE en altta; TURUNCU ve YEŞİL arada.
+    # 2026-11-14: TURUNCU (EMA20) YEŞİL'in (VWMA20) ÜSTÜNDE olmalı —
+    # aksi halde kapatma kuralı (EMA20 ≤ VWMA20) girişle çelişir ve
+    # pozisyon her barda açılıp kapanır (ölçüm: 1263 -> 4171 işlem).
     short_entry = (_above(mavi, t, eps) and _above(mavi, yesil, eps)
-                   and _below(pembe, t, eps) and _below(pembe, yesil, eps))
-    # SHORT KAPAT: PEMBE, TURUNCU veya YEŞİL'in altında değil (dokundu /
-    # çakıştı / üstüne çıktı).
-    short_exit = not (_below(pembe, t, eps) and _below(pembe, yesil, eps))
+                   and _below(pembe, t, eps) and _below(pembe, yesil, eps)
+                   and _above(t, yesil, eps))
+    # SHORT KAPAT 1 (2026-11-14 kullanıcı kuralı): TURUNCU (EMA20) YEŞİL
+    # (VWMA20) çizgisinin altına inerse VEYA onunla çakışırsa.
+    short_exit = not _above(t, yesil, eps)
+    # HULL satırı "AL": fiyat HULL9'un belirgin üstünde (ölü bant
+    # analysis.MA_DEADZONE). Fiyat verilmezse bu kapatma devre dışı.
+    hull_al = bool(price is not None and pembe > 0
+                   and float(price) > pembe * (1.0 + _MA_DEADZONE))
     # LONG: PEMBE en üstte, MAVİ en altta.
     long_entry = (_above(pembe, t, eps) and _above(pembe, yesil, eps)
                   and _below(mavi, t, eps) and _below(mavi, yesil, eps))
@@ -152,6 +168,7 @@ def _conditions(t: float, mavi: float, pembe: float, yesil: float,
                and _above(yesil, pembe, eps)
                and _below(pembe, t, eps) and _below(pembe, mavi, eps))
     return {"short_entry": short_entry, "short_exit": short_exit,
+            "hull_al": hull_al,
             "long_entry": long_entry, "long_exit": long_exit,
             "neutral": neutral}
 
@@ -166,7 +183,8 @@ def _arrays(ma_series: dict) -> Optional[tuple]:
 
 
 def series(ma_series: dict, *, side: Optional[int] = None,
-           touch: Optional[float] = None) -> list[str]:
+           touch: Optional[float] = None,
+           prices: Optional[object] = None) -> list[str]:
     """Bar başına ALGO-GRAF kararı (pozisyona duyarlı).
 
     `ma_series`: analysis.TimeframeAnalysis.ma_series (ema20/ema50/hma/vwma
@@ -175,6 +193,10 @@ def series(ma_series: dict, *, side: Optional[int] = None,
     `side`: +1 yalnız LONG, -1 yalnız SHORT, None iki yön. `paper.py` ve
     `service.py` AYNI fonksiyonu çağırır; canlı, geriye dönük test ve
     grafik yıldızları birebir aynı kararı gösterir.
+
+    `prices`: bar kapanış fiyatları (aynı uzunlukta). SHORT kapatmanın
+    ikinci kuralı "HULL satırı AL" (fiyat HULL9'un üstünde) için gerekir;
+    verilmezse o kural devre dışı kalır.
 
     Seri NEDENSELDİR: i. bar yalnızca 0..i barlarına bakar.
     """
@@ -185,11 +207,18 @@ def series(ma_series: dict, *, side: Optional[int] = None,
     n = min(len(t_a), len(m_a), len(p_a), len(y_a))
     if n <= 0:
         return []
+    pr_a = None
+    if prices is not None:
+        try:
+            pr_a = np.asarray(prices, dtype=float).reshape(-1)
+        except (TypeError, ValueError):
+            pr_a = None
     eps_oran = touch_ratio() if touch is None else max(0.0, float(touch))
     yon = 0 if side is None else (1 if int(side) > 0 else -1)
 
     out: list[str] = []
     state = 0              # +1 LONG, -1 SHORT, 0 düz
+    hull_al_prev: Optional[bool] = None
 
     for i in range(n):
         t = float(t_a[i])
@@ -201,8 +230,20 @@ def series(ma_series: dict, *, side: Optional[int] = None,
             # Gösterge ısınması / eksik veri: karar yok.
             out.append("NÖTR")
             continue
+        price = None
+        if pr_a is not None and i < pr_a.size and math.isfinite(pr_a[i]):
+            price = float(pr_a[i])
         eps = abs(t) * eps_oran
-        c = _conditions(t, mavi, pembe, yesil, eps)
+        c = _conditions(t, mavi, pembe, yesil, eps, price)
+
+        # HULL AL GEÇİŞİ: giriş anında HULL zaten AL olabilir; tek başına
+        # "AL" olmak kapatmaz, AL'a DÖNÜŞ kapatır (yoksa pozisyon her
+        # barda açılıp kapanırdı). Karşılaştırma bir önceki barla yapılır.
+        hull_al = bool(c["hull_al"])
+        hull_flip = bool(price is not None and hull_al_prev is not None
+                         and hull_al and not hull_al_prev)
+        if price is not None:
+            hull_al_prev = hull_al
 
         if state > 0:
             # ---- AÇIK LONG ------------------------------------------
@@ -216,9 +257,10 @@ def series(ma_series: dict, *, side: Optional[int] = None,
 
         if state < 0:
             # ---- AÇIK SHORT -----------------------------------------
-            # Çıkış: PEMBE, TURUNCU/YEŞİL'in altında değil; NÖTR veya
-            # LONG dizilimi.
-            if c["short_exit"] or c["neutral"] or c["long_entry"]:
+            # Çıkış YALNIZ iki kural: EMA20 ≤ VWMA20 veya HULL=AL geçişi.
+            # NÖTR / LONG dizilimi tek başına kapatmaz (kullanıcı kuralı
+            # 2026-11-14: "pozisyonda kal; yalnız bu iki kural kapatır").
+            if c["short_exit"] or hull_flip:
                 out.append("SAT-KAPAT")
                 state = 0
             else:
@@ -239,9 +281,10 @@ def series(ma_series: dict, *, side: Optional[int] = None,
 
 
 def label_at(ma_series: dict, idx: int, *,
-             side: Optional[int] = None) -> str:
+             side: Optional[int] = None,
+             prices: Optional[object] = None) -> str:
     """Tek barın kararı (seri baştan üretilir; nedensel)."""
-    s = series(ma_series, side=side)
+    s = series(ma_series, side=side, prices=prices)
     if 0 <= int(idx) < len(s):
         return s[int(idx)]
     return "NÖTR"

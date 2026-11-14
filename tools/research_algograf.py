@@ -77,7 +77,7 @@ def main():
         print(f"\n--- {sym} {TF} {len(candles)} bar ---", flush=True)
         for mode in MODES:
             side = algograf.side_for_mode(mode)
-            sig = algograf.series(res.ma_series, side=side)
+            sig = algograf.series(res.ma_series, side=side, prices=res.c)
             series[(sym, mode)] = sig
             say = {k: sig.count(k) for k in algograf.LABELS}
             r = bt(sym, candles, sig, mode)

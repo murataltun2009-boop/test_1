@@ -5,8 +5,10 @@ Kullanıcı kuralı (5 dk, 4 çizgi — EMA200/SMA200 grafikte yok):
   * Çizgiler: MAVİ=EMA50, YEŞİL=VWMA20, TURUNCU=EMA20, PEMBE=HULL9.
   * SHORT: MAVİ en üstte, PEMBE en altta (turuncu/yeşil arada) -> SHORT
     aç ve pozisyonda kal.
-  * SHORT KAPAT: PEMBE, TURUNCU'nun veya YEŞİL'in altına inerse ya da
-    onlarla çakışırsa kapat.
+  * SHORT KAPAT (2026-11-14): iki kuraldan hangisi önce olursa kapat:
+      1) TURUNCU (EMA20) YEŞİL'in (VWMA20) altına inerse veya çakışırsa,
+      2) HULL satırı AL'a dönerse (fiyat HULL9 üstüne çıkarsa).
+    NÖTR/LONG dizilimi tek başına kapatmaz.
   * LONG: PEMBE en üstte, MAVİ en altta olduğu aralıkta LONG açık kalır.
   * LONG KAPAT: YEŞİL, PEMBE'nin üstüne çıkınca kapat.
   * NÖTR: YEŞİL en üstte, PEMBE en altta -> pozisyon NÖTR.
@@ -108,19 +110,47 @@ kontrol("1.10 yon eslemesi", algograf.side_for_mode("algograf_long") == 1
         and algograf.side_for_mode("algograf") is None)
 
 # ==================================================================
-print("2) SHORT: MAVI ust + PEMBE alt -> ac/koru; PEMBE ayrilinca kapat")
+print("2) SHORT: MAVI ust + PEMBE alt -> ac/koru; EMA20<=VWMA20 veya HULL=AL kapatir")
 seri = algograf.series(ma([R1, R1, R1B]))
 kontrol("2.1 giris SAT", seri[0] == "SAT")
 kontrol("2.2 pozisyonda kal (SAT)", seri[1] == "SAT")
-kontrol("2.3 PEMBE turuncunun ustune cikti -> SAT-KAPAT", seri[2] == "SAT-KAPAT")
+# 2026-11-14: PEMBE'nin turuncunun ustune cikmasi TEK BASINA kapatmaz
+# (fiyat verilmedigi icin HULL=AL kurali da devre disi).
+kontrol("2.3 PEMBE turuncunun ustune cikti -> hala SAT (yeni kural)",
+        seri[2] == "SAT")
 
-# PEMBE yesil ile cakisirsa (yesilin biraz ustunde) da kapatir.
-seri = algograf.series(ma([R1, (101.0, 104.0, 100.02, 100.0)]))
-kontrol("2.4 PEMBE ~ YESIL (cakisma) -> SAT-KAPAT", seri[1] == "SAT-KAPAT")
+# Kural 1a: TURUNCU (EMA20) YESIL'in (VWMA20) altina indi -> kapat.
+seri = algograf.series(ma([R1, (99.0, 104.0, 98.0, 100.0)]))
+kontrol("2.4 EMA20 < VWMA20 -> SAT-KAPAT", seri[1] == "SAT-KAPAT")
 
-# PEMBE en altta kaldikca tutmaya devam eder.
-seri = algograf.series(ma([R1, (101.0, 104.0, 99.0, 100.0)]))
-kontrol("2.5 PEMBE hala en altta -> SAT", seri[1] == "SAT")
+# Kural 1b: TURUNCU YESIL ile cakisiyor (esit) -> kapat.
+seri = algograf.series(ma([R1, (100.0, 104.0, 98.0, 100.0)]))
+kontrol("2.5 EMA20 ~ VWMA20 (cakisma) -> SAT-KAPAT",
+        seri[1] == "SAT-KAPAT")
+
+# TURUNCU YESIL'in ustunde kaldikca tutmaya devam eder.
+seri = algograf.series(ma([R1, (100.5, 104.0, 98.0, 100.0)]))
+kontrol("2.6 EMA20 > VWMA20 -> hala SAT", seri[1] == "SAT")
+
+# Kural 2: HULL satiri AL'a donerse kapat (fiyat HULL9'un ustune cikti).
+# R1'de PEMBE=98 -> esik 98*1,0002 = 98,0196. Bar0 fiyat 98,0 (HULL=SAT),
+# bar1 fiyat 98,5 (HULL=AL) -> gecis -> kapat.
+m = ma([R1, R1])
+seri = algograf.series(m, prices=[98.0, 98.5])
+kontrol("2.7 HULL=AL gecisi -> SAT-KAPAT", seri == ["SAT", "SAT-KAPAT"])
+
+# Giris aninda HULL zaten AL ise tek basina kapatmaz (yoksa her 2 barda
+# bir acilip kapanirdi); AL'a DONUS aranir.
+seri = algograf.series(ma([R1, R1, R1]), prices=[100.0, 100.0, 100.0])
+kontrol("2.8 giriste HULL=AL, donus yok -> SAT (pozisyonda kal)",
+        seri == ["SAT", "SAT", "SAT"])
+
+# Giriş koşulu kapatma kuralıyla çelişmemeli: EMA20 ≤ VWMA20 iken
+# SHORT AÇILMAZ (yoksa her bar aç-kapa döngüsü oluşuyordu).
+kontrol("2.9 EMA20 <= VWMA20 iken giris yok (cakisma yok)",
+        algograf.series(ma([(99.0, 104.0, 98.0, 100.0)])) == ["NÖTR"])
+kontrol("2.10 EMA20 = VWMA20 iken giris yok",
+        algograf.series(ma([(100.0, 104.0, 98.0, 100.0)])) == ["NÖTR"])
 
 # ==================================================================
 print("3) LONG: PEMBE ust + MAVI alt; YESIL>PEMBE kapatir")
@@ -137,18 +167,24 @@ seri = algograf.series(ma([(98.0, 99.0, 101.0, 100.0)]))
 kontrol("4.2 kararsiz dizilim -> NOTR", seri[0] == "NÖTR")
 
 # ==================================================================
-print("5) Acik pozisyonda notr dizilim kapatir")
+print("5) Acik pozisyonda notr dizilim")
 seri = algograf.series(ma([R3, RN]))
 kontrol("5.1 LONG iken NOTR -> AL-KAPAT", seri[1] == "AL-KAPAT")
+# 2026-11-14: SHORT'ta NÖTR dizilimi tek başına kapatmaz; kapanış
+# EMA20 ≤ VWMA20 veya HULL=AL ile olur. RN'de TURUNCU(100) < YEŞİL(102)
+# olduğu için kural 1 yine de kapatır.
 seri = algograf.series(ma([R1, RN]))
-kontrol("5.2 SHORT iken NOTR -> SAT-KAPAT", seri[1] == "SAT-KAPAT")
+kontrol("5.2 SHORT iken EMA20 < VWMA20 -> SAT-KAPAT", seri[1] == "SAT-KAPAT")
 
 # ==================================================================
 print("6) Karsilikli dizilimler")
 seri = algograf.series(ma([R3, R1]))
 kontrol("6.1 LONG iken SHORT dizilimi -> AL-KAPAT", seri[1] == "AL-KAPAT")
+# SHORT iken LONG dizilimi (R3: EMA20=101 > VWMA20=99) tek başına
+# kapatmaz; kullanıcı kuralı yalnız iki kapatma koşulu tanımlar.
 seri = algograf.series(ma([R1, R3]))
-kontrol("6.2 SHORT iken LONG dizilimi -> SAT-KAPAT", seri[1] == "SAT-KAPAT")
+kontrol("6.2 SHORT iken LONG dizilimi tek basina kapatmaz",
+        seri[1] == "SAT")
 
 # ==================================================================
 print("7) Cakisma / tolerans")
@@ -180,14 +216,17 @@ kontrol("7.6 BTC 5m: dar MAVI-TURUNCU farki LONG acar",
 print("8) Varyantlar")
 rows = [R1, R1B, R3, R3B, RN]
 m = ma(rows)
+# 2026-11-14 SHORT kapatma kuralı: R1B (PEMBE yukarıda, EMA20=101 >
+# VWMA20=100) ve R3 (LONG dizilimi, EMA20=101 > VWMA20=99) artık
+# kapatmaz; kapanış R3B'de EMA20(101) < VWMA20(105) ile gelir.
 kontrol("8.1 iki yon", algograf.series(m) ==
-        ["SAT", "SAT-KAPAT", "AL", "AL-KAPAT", "NÖTR"])
+        ["SAT", "SAT", "SAT", "SAT-KAPAT", "NÖTR"])
 kontrol("8.2 yalniz LONG: short yok",
         algograf.series(m, side=1) ==
         ["NÖTR", "NÖTR", "AL", "AL-KAPAT", "NÖTR"])
 kontrol("8.3 yalniz SHORT: long yok",
         algograf.series(m, side=-1) ==
-        ["SAT", "SAT-KAPAT", "NÖTR", "NÖTR", "NÖTR"])
+        ["SAT", "SAT", "SAT", "SAT-KAPAT", "NÖTR"])
 kontrol("8.4 long-only SHORT diziliminde giris yapmaz",
         algograf.series(ma([R1, R1]), side=1) == ["NÖTR", "NÖTR"])
 kontrol("8.5 short-only LONG diziliminde giris yapmaz",

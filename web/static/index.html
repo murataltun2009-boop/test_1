@@ -6,7 +6,7 @@
      maximum-scale kilitlenmez: kullanici grafikte yakinlastirabilmeli. -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>BTCUSDT 4 Saat · Canlı Teknik Analiz</title>
-<link rel="stylesheet" href="/static/style.css?v=49">
+<link rel="stylesheet" href="/static/style.css?v=50">
 
 <!-- ---- PWA: "Ana ekrana ekle" icin gerekli etiketler ---------- -->
 <link rel="manifest" href="/static/manifest.webmanifest">
@@ -208,7 +208,7 @@
               <optgroup label="— ALGO-GRAF (grafik çizgi sıralaması, 5 dk) —">
                 <option value="algograf">ALGO-GRAF — iki yön (tüm çizgi kuralları)</option>
                 <option value="algograf_long">ALGO-GRAF — yalnız LONG (PEMBE üst / MAVİ alt; YEŞİL&gt;PEMBE kapatır)</option>
-                <option value="algograf_short">ALGO-GRAF — yalnız SHORT (MAVİ üst / PEMBE alt; PEMBE turuncu veya yeşilin altına inince kapatır)</option>
+                <option value="algograf_short">ALGO-GRAF - yalnız SHORT (MAVİ en üst / PEMBE en alt, EMA20 VWMA20'nin üstünde; kapatma: EMA20, VWMA20 altına iner veya çakışırsa ya da HULL=AL olursa)</option>
               </optgroup>
             </select>
           </label>
@@ -367,6 +367,6 @@ window.addEventListener("error", function (e) {
   box.textContent = "JS HATA: " + msg;
 });
 </script>
-<script src="/static/app.js?v=49"></script>
+<script src="/static/app.js?v=50"></script>
 </body>
 </html>

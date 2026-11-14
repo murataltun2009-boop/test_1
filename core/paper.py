@@ -2108,7 +2108,8 @@ class PaperTrader:
         if algograf.is_algograf_mode(self.mode):
             return algograf.series(
                 res.ma_series,
-                side=algograf.side_for_mode(self.mode))
+                side=algograf.side_for_mode(self.mode),
+                prices=res.c)
 
         if self.mode == "ma_only":
             seriler = res.ma_scores

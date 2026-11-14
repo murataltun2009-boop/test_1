@@ -904,7 +904,8 @@ class MarketService:
         if cached is not None and cached[0] == key:
             return cached[1]
         seri = algograf.series(
-            res.ma_series, side=algograf.side_for_mode(mode))
+            res.ma_series, side=algograf.side_for_mode(mode),
+            prices=res.c)
         self._algograf_label_cache[tf] = (key, seri)
         return seri
 
