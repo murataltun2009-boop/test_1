@@ -17,13 +17,12 @@ Kurallar (sıralama = fiyat değeri büyükten küçüğe, üstten alta):
   SHORT  : MAVİ en üstte, PEMBE en altta olduğu sürece (TURUNCU ve YEŞİL
            bu ikisinin arasında ve TURUNCU, YEŞİL'in üstünde) SHORT aç ve
            pozisyonda kal.
-  SHORT KAPAT (2026-11-14 kullanıcı düzeltmesi — iki kuraldan hangisi
+  SHORT KAPAT (2026-11-15 kullanıcı düzeltmesi — iki kuraldan hangisi
            önce olursa):
-             1) TURUNCU (EMA20), YEŞİL'in (VWMA20) altına inerse veya
-                onunla çakışırsa,
-             2) HULL satırı "AL"a dönerse (fiyat HULL9'un üstüne çıkarsa).
-           Bunların dışında SHORT açık kalır (NÖTR dizilim veya LONG
-           dizilimi tek başına kapatmaz).
+             1) SHORT dizilimi bozulursa (MAVİ en üst / PEMBE en alt /
+                EMA20 > VWMA20 koşullarından biri biterse),
+             2) HULL satırı "AL" DURUMUNDAYSA (fiyat HULL9'un üstünde).
+           HULL AL iken yeni SHORT açılmaz; NÖTR beklenir.
   LONG (iki yön)   : PEMBE en üstte, MAVİ en altta olduğu aralıkta LONG
            açık kalsın; YEŞİL, PEMBE'nin üstüne çıkarsa kapat.
   LONG (yalnız algograf_long — 2026-11-15 kullanıcı kuralı):
@@ -40,8 +39,9 @@ Kurallar (sıralama = fiyat değeri büyükten küçüğe, üstten alta):
     algograf       : iki yön (tüm kurallar)
     algograf_long  : yalnız LONG (PEMBE üst + MAVİ alt VEYA HULL & VWMA
                      AL; YEŞİL>PEMBE veya HULL SAT kapatır)
-    algograf_short : yalnız SHORT (MAVİ üst + PEMBE alt; EMA20 ≤ VWMA20
-                     veya HULL=AL kapatır)
+    algograf_short : yalnız SHORT (MAVİ üst + PEMBE alt; SHORT dizilimi
+                     bozulur veya HULL AL olursa kapatır; HULL AL iken
+                     yeni SHORT açmaz)
 
 Etiketler pozisyona duyarlıdır:
     AL / SAT / AL-KAPAT / SAT-KAPAT / NÖTR
@@ -150,8 +150,8 @@ def _conditions(t: float, mavi: float, pembe: float, yesil: float,
     """Bir barın kullanıcı kuralı koşulları (4 çizgi).
 
     t=TURUNCU(EMA20), mavi=MAVİ(EMA50), pembe=HULL9, yesil=VWMA20.
-    `price` verilirse HULL satırının AL/SAT kararı da üretilir
-    (`core.analysis._ma_v` ile birebir aynı ölü bant).
+    `price` verilirse HULL satırının AL/SAT kararı ve VWMA satırının AL
+    kararı da üretilir (`core.analysis._ma_v` ile birebir aynı ölü bant).
     """
     # SHORT: MAVİ en üstte, PEMBE en altta; TURUNCU ve YEŞİL arada.
     # 2026-11-14: TURUNCU (EMA20) YEŞİL'in (VWMA20) ÜSTÜNDE olmalı —
@@ -160,8 +160,11 @@ def _conditions(t: float, mavi: float, pembe: float, yesil: float,
     short_entry = (_above(mavi, t, eps) and _above(mavi, yesil, eps)
                    and _below(pembe, t, eps) and _below(pembe, yesil, eps)
                    and _above(t, yesil, eps))
-    # SHORT KAPAT 1 (2026-11-14 kullanıcı kuralı): TURUNCU (EMA20) YEŞİL
-    # (VWMA20) çizgisinin altına inerse VEYA onunla çakışırsa.
+    # SHORT KAPAT (2026-11-15): iki koşuldan hangisi önce olursa —
+    #   1) SHORT dizilimi bozulursa (`short_entry` false; EMA20 ≤ VWMA20
+    #      bunun özel hâli, `short_exit`),
+    #   2) HULL "AL" durumundaysa (`hull_al`).
+    # `short_exit` yardımcı bayrak olarak korunur.
     short_exit = not _above(t, yesil, eps)
     # HULL satırı "AL": fiyat HULL9'un belirgin üstünde (ölü bant
     # analysis.MA_DEADZONE). Fiyat verilmezse bu kapatma devre dışı.
@@ -214,9 +217,9 @@ def series(ma_series: dict, *, side: Optional[int] = None,
     grafik yıldızları birebir aynı kararı gösterir.
 
     `prices`: bar kapanış fiyatları (aynı uzunlukta). SHORT kapatmanın
-    ikinci kuralı "HULL satırı AL" (fiyat HULL9'un üstünde) ve yalnız-LONG
-    kuralları (HULL/VWMA AL, HULL SAT) için gerekir; verilmezse o kurallar
-    devre dışı kalır (yalnız dizilim kuralları çalışır).
+    HULL "AL" durumu (fiyat HULL9'un üstünde) ve yalnız-LONG kuralları
+    (HULL/VWMA AL, HULL SAT) için gerekir; verilmezse o kurallar devre
+    dışı kalır (yalnız dizilim kuralları çalışır).
 
     Seri NEDENSELDİR: i. bar yalnızca 0..i barlarına bakar.
     """
@@ -238,7 +241,6 @@ def series(ma_series: dict, *, side: Optional[int] = None,
 
     out: list[str] = []
     state = 0              # +1 LONG, -1 SHORT, 0 düz
-    hull_al_prev: Optional[bool] = None
 
     for i in range(n):
         t = float(t_a[i])
@@ -255,15 +257,6 @@ def series(ma_series: dict, *, side: Optional[int] = None,
             price = float(pr_a[i])
         eps = abs(t) * eps_oran
         c = _conditions(t, mavi, pembe, yesil, eps, price)
-
-        # HULL AL GEÇİŞİ: giriş anında HULL zaten AL olabilir; tek başına
-        # "AL" olmak kapatmaz, AL'a DÖNÜŞ kapatır (yoksa pozisyon her
-        # barda açılıp kapanırdı). Karşılaştırma bir önceki barla yapılır.
-        hull_al = bool(c["hull_al"])
-        hull_flip = bool(price is not None and hull_al_prev is not None
-                         and hull_al and not hull_al_prev)
-        if price is not None:
-            hull_al_prev = hull_al
 
         if state > 0:
             # ---- AÇIK LONG ------------------------------------------
@@ -291,10 +284,13 @@ def series(ma_series: dict, *, side: Optional[int] = None,
 
         if state < 0:
             # ---- AÇIK SHORT -----------------------------------------
-            # Çıkış YALNIZ iki kural: EMA20 ≤ VWMA20 veya HULL=AL geçişi.
-            # NÖTR / LONG dizilimi tek başına kapatmaz (kullanıcı kuralı
-            # 2026-11-14: "pozisyonda kal; yalnız bu iki kural kapatır").
-            if c["short_exit"] or hull_flip:
+            # 2026-11-15 kullanıcı kuralı: SHORT'tan çıkış iki koşuldan
+            # hangisi önce olursa:
+            #   1) SHORT dizilimi bozulursa (MAVİ en üst + PEMBE en alt
+            #      + EMA20 > VWMA20 koşullarından biri biterse),
+            #   2) HULL satırı "AL" DURUMUNDAYSA (fiyat HULL9'un üstünde).
+            # HULL AL iken yeni SHORT da açılmaz; NÖTR beklenir.
+            if not c["short_entry"] or c["hull_al"]:
                 out.append("SAT-KAPAT")
                 state = 0
             else:
@@ -312,13 +308,14 @@ def series(ma_series: dict, *, side: Optional[int] = None,
             else:
                 out.append("NÖTR")
         elif yon < 0:
-            # YALNIZ-SHORT: LONG dizilimi giriş üretmez.
-            if c["short_entry"]:
+            # YALNIZ-SHORT: LONG dizilimi giriş üretmez. HULL AL (durum)
+            # iken yeni SHORT açılmaz; NÖTR beklenir (2026-11-15).
+            if c["short_entry"] and not c["hull_al"]:
                 out.append("SAT")
                 state = -1
             else:
                 out.append("NÖTR")
-        elif c["short_entry"]:
+        elif c["short_entry"] and not c["hull_al"]:
             out.append("SAT")
             state = -1
         elif c["long_entry"]:

@@ -5,10 +5,11 @@ Kullanıcı kuralı (5 dk, 4 çizgi — EMA200/SMA200 grafikte yok):
   * Çizgiler: MAVİ=EMA50, YEŞİL=VWMA20, TURUNCU=EMA20, PEMBE=HULL9.
   * SHORT: MAVİ en üstte, PEMBE en altta (turuncu/yeşil arada) -> SHORT
     aç ve pozisyonda kal.
-  * SHORT KAPAT (2026-11-14): iki kuraldan hangisi önce olursa kapat:
-      1) TURUNCU (EMA20) YEŞİL'in (VWMA20) altına inerse veya çakışırsa,
-      2) HULL satırı AL'a dönerse (fiyat HULL9 üstüne çıkarsa).
-    NÖTR/LONG dizilimi tek başına kapatmaz.
+  * SHORT KAPAT (2026-11-15): iki kuraldan hangisi önce olursa kapat:
+      1) SHORT dizilimi bozulursa (MAVİ en üst / PEMBE en alt /
+         EMA20 > VWMA20 koşullarından biri biterse),
+      2) HULL satırı AL DURUMUNDAYSA (fiyat HULL9 üstünde).
+    HULL AL iken yeni SHORT açılmaz; NÖTR beklenir.
   * LONG: PEMBE en üstte, MAVİ en altta olduğu aralıkta LONG açık kalır.
   * LONG KAPAT: YEŞİL, PEMBE'nin üstüne çıkınca kapat.
   * Yalnız LONG (algograf_long, 2026-11-15): PEMBE üst + MAVİ alt dizilimi
@@ -117,14 +118,14 @@ kontrol("1.10 yon eslemesi", algograf.side_for_mode("algograf_long") == 1
         and algograf.side_for_mode("algograf") is None)
 
 # ==================================================================
-print("2) SHORT: MAVI ust + PEMBE alt -> ac/koru; EMA20<=VWMA20 veya HULL=AL kapatir")
+print("2) SHORT: MAVI ust + PEMBE alt -> ac/koru; dizilim bozulur veya HULL=AL kapatir")
 seri = algograf.series(ma([R1, R1, R1B]))
 kontrol("2.1 giris SAT", seri[0] == "SAT")
 kontrol("2.2 pozisyonda kal (SAT)", seri[1] == "SAT")
-# 2026-11-14: PEMBE'nin turuncunun ustune cikmasi TEK BASINA kapatmaz
-# (fiyat verilmedigi icin HULL=AL kurali da devre disi).
-kontrol("2.3 PEMBE turuncunun ustune cikti -> hala SAT (yeni kural)",
-        seri[2] == "SAT")
+# 2026-11-15: SHORT dizilimi bozulunca (PEMBE, TURUNCU'nun ustune cikti)
+# SHORT kapanir.
+kontrol("2.3 dizilim bozuldu (PEMBE>TURUNCU) -> SAT-KAPAT",
+        seri[2] == "SAT-KAPAT")
 
 # Kural 1a: TURUNCU (EMA20) YESIL'in (VWMA20) altina indi -> kapat.
 seri = algograf.series(ma([R1, (99.0, 104.0, 98.0, 100.0)]))
@@ -139,18 +140,24 @@ kontrol("2.5 EMA20 ~ VWMA20 (cakisma) -> SAT-KAPAT",
 seri = algograf.series(ma([R1, (100.5, 104.0, 98.0, 100.0)]))
 kontrol("2.6 EMA20 > VWMA20 -> hala SAT", seri[1] == "SAT")
 
-# Kural 2: HULL satiri AL'a donerse kapat (fiyat HULL9'un ustune cikti).
+# Kural 2: HULL satiri AL DURUMUNDAYSA kapat (fiyat HULL9'un ustunde).
 # R1'de PEMBE=98 -> esik 98*1,0002 = 98,0196. Bar0 fiyat 98,0 (HULL=SAT),
-# bar1 fiyat 98,5 (HULL=AL) -> gecis -> kapat.
+# bar1 fiyat 98,5 (HULL=AL) -> kapat.
 m = ma([R1, R1])
 seri = algograf.series(m, prices=[98.0, 98.5])
-kontrol("2.7 HULL=AL gecisi -> SAT-KAPAT", seri == ["SAT", "SAT-KAPAT"])
+kontrol("2.7 HULL=AL durumu -> SAT-KAPAT", seri == ["SAT", "SAT-KAPAT"])
 
-# Giris aninda HULL zaten AL ise tek basina kapatmaz (yoksa her 2 barda
-# bir acilip kapanirdi); AL'a DONUS aranir.
+# HULL AL'de kaldikca SHORT kapali kalir (NOTR); HULL SAT'a donunce
+# dizilim hala gecerliyse yeniden girer.
+seri = algograf.series(ma([R1, R1, R1, R1]),
+                       prices=[97.5, 98.5, 99.0, 97.5])
+kontrol("2.8 HULL AL boyunca NOTR, SAT'a donunce yeniden SAT",
+        seri == ["SAT", "SAT-KAPAT", "NÖTR", "SAT"])
+
+# Giris aninda HULL zaten AL ise SHORT ACILMAZ (NOTR bekle).
 seri = algograf.series(ma([R1, R1, R1]), prices=[100.0, 100.0, 100.0])
-kontrol("2.8 giriste HULL=AL, donus yok -> SAT (pozisyonda kal)",
-        seri == ["SAT", "SAT", "SAT"])
+kontrol("2.8b giriste HULL=AL -> SHORT acilmaz (NOTR)",
+        seri == ["NÖTR", "NÖTR", "NÖTR"])
 
 # Giriş koşulu kapatma kuralıyla çelişmemeli: EMA20 ≤ VWMA20 iken
 # SHORT AÇILMAZ (yoksa her bar aç-kapa döngüsü oluşuyordu).
@@ -177,21 +184,19 @@ kontrol("4.2 kararsiz dizilim -> NOTR", seri[0] == "NÖTR")
 print("5) Acik pozisyonda notr dizilim")
 seri = algograf.series(ma([R3, RN]))
 kontrol("5.1 LONG iken NOTR -> AL-KAPAT", seri[1] == "AL-KAPAT")
-# 2026-11-14: SHORT'ta NÖTR dizilimi tek başına kapatmaz; kapanış
-# EMA20 ≤ VWMA20 veya HULL=AL ile olur. RN'de TURUNCU(100) < YEŞİL(102)
-# olduğu için kural 1 yine de kapatır.
+# 2026-11-15: SHORT'ta NÖTR/LONG dizilimi de kapatir (dizilim bozuldu).
+# RN'de MAVİ(98) en üstte değil -> çıkış.
 seri = algograf.series(ma([R1, RN]))
-kontrol("5.2 SHORT iken EMA20 < VWMA20 -> SAT-KAPAT", seri[1] == "SAT-KAPAT")
+kontrol("5.2 SHORT iken NÖTR dizilimi -> SAT-KAPAT", seri[1] == "SAT-KAPAT")
 
 # ==================================================================
 print("6) Karsilikli dizilimler")
 seri = algograf.series(ma([R3, R1]))
 kontrol("6.1 LONG iken SHORT dizilimi -> AL-KAPAT", seri[1] == "AL-KAPAT")
-# SHORT iken LONG dizilimi (R3: EMA20=101 > VWMA20=99) tek başına
-# kapatmaz; kullanıcı kuralı yalnız iki kapatma koşulu tanımlar.
+# 2026-11-15: SHORT iken LONG dizilimi de kapatir (dizilim bozuldu).
 seri = algograf.series(ma([R1, R3]))
-kontrol("6.2 SHORT iken LONG dizilimi tek basina kapatmaz",
-        seri[1] == "SAT")
+kontrol("6.2 SHORT iken LONG dizilimi -> SAT-KAPAT",
+        seri[1] == "SAT-KAPAT")
 
 # ==================================================================
 print("7) Cakisma / tolerans")
@@ -223,17 +228,16 @@ kontrol("7.6 BTC 5m: dar MAVI-TURUNCU farki LONG acar",
 print("8) Varyantlar")
 rows = [R1, R1B, R3, R3B, RN]
 m = ma(rows)
-# 2026-11-14 SHORT kapatma kuralı: R1B (PEMBE yukarıda, EMA20=101 >
-# VWMA20=100) ve R3 (LONG dizilimi, EMA20=101 > VWMA20=99) artık
-# kapatmaz; kapanış R3B'de EMA20(101) < VWMA20(105) ile gelir.
+# 2026-11-15 SHORT çıkışı: R1B'de PEMBE TURUNCU'nun üstüne çıktığı için
+# dizilim bozulur ve SHORT kapanır (HULL AL durumu ayrıca kapatır).
 kontrol("8.1 iki yon", algograf.series(m) ==
-        ["SAT", "SAT", "SAT", "SAT-KAPAT", "NÖTR"])
+        ["SAT", "SAT-KAPAT", "AL", "AL-KAPAT", "NÖTR"])
 kontrol("8.2 yalniz LONG: short yok",
         algograf.series(m, side=1) ==
         ["NÖTR", "NÖTR", "AL", "AL-KAPAT", "NÖTR"])
 kontrol("8.3 yalniz SHORT: long yok",
         algograf.series(m, side=-1) ==
-        ["SAT", "SAT", "SAT", "SAT-KAPAT", "NÖTR"])
+        ["SAT", "SAT-KAPAT", "NÖTR", "NÖTR", "NÖTR"])
 kontrol("8.4 long-only SHORT diziliminde giris yapmaz",
         algograf.series(ma([R1, R1]), side=1) == ["NÖTR", "NÖTR"])
 kontrol("8.5 short-only LONG diziliminde giris yapmaz",

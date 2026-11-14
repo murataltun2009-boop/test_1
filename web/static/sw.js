@@ -50,13 +50,15 @@
 //      notional ile aninda yeniden giris; islem satirlari log panelinde.
 // v24: ALGO-GRAF yalniz LONG: PEMBE ust + MAVI alt VEYA HULL & VWMA AL ->
 //      ac/tut; YESIL>PEMBE (both-AL degilken) veya HULL SAT -> kapat.
-const VERSION = "ta-v52";
+// v25: ALGO-GRAF SHORT cikisi: SHORT dizilimi bozulursa veya HULL AL
+//      durumundaysa kapat; HULL AL iken yeni SHORT acilmaz (NOTR bekle).
+const VERSION = "ta-v53";
 const SHELL = "shell-" + VERSION;
 
 const PRECACHE = [
   "/",
-  "/static/style.css?v=52",
-  "/static/app.js?v=52",
+  "/static/style.css?v=53",
+  "/static/app.js?v=53",
   "/static/vendor/echarts.min.js",
   "/static/icon-192.png",
   "/static/icon-512.png",

@@ -2783,3 +2783,58 @@ OLCUM (5m 50.000 bar, 1x, 10$ banka açık):
 DOGRULAMA: `test_algograf` 106/106, `test_tk2` 138/138, `test_paper`
 90/90, `test_tk_fix` 37/37; py_compile ve `node --check` temiz;
 `logs/islemler.csv` oluşmadı.
+
+## OTURUM 34 - ALGO-GRAF SHORT çıkışı: dizilim bozulması + HULL AL durumu (2026-11-15)
+
+KULLANICI GERI BILDIRIMI: "YALNIZCA algograf_SHORT kuralında şöyle bir
+eksik var. Short çıkış noktasının tespitinde problem var. Eğer HULL
+değeri AL ise SHORT kapalı olsun ve nötrde beklesin. Yalnızca SHORT
+kurallarında shorttan çıkış çizgi aralığı ya da HULL->AL duruma geçmesi
+hangisi varsa SHORT'u kapalı tutsun."
+
+KULLANICI NETLESTIRMESI: çıkış "çizgi aralığı" = SHORT dizilimi
+bozulunca kapat (MAVİ en üst + PEMBE en alt + EMA20 > VWMA20
+koşullarından biri biterse). Kapsam: iki yönlü `algograf` DAHİL (SHORT
+tarafı), yani SHORT kuralları tüm modlarda geçerli; LONG tarafı ve
+`algograf_long` değişmedi.
+
+KOK NEDEN: eski uygulama HULL'u yalnızca AL'a DÖNÜŞ anında kapatıyordu
+(`hull_flip`); HULL AL DURUMUNDA bekleyen SHORT bir sonraki barda
+dizilim hâlâ geçerliyse yeniden açılıyordu. Ayrıca NÖTR/LONG dizilimi
+tek başına kapatmıyordu (2026-11-14 kuralı).
+
+YENI DAVRANIS (`core/algograf.py::series`, `state < 0`):
+  1) Açık SHORT, SHORT dizilimi bozulduğu anda kapanır:
+     `not short_entry` (EMA20 ≤ VWMA20 bu koşulun özel hâli).
+  2) HULL satırı "AL" DURUMUNDAYSA kapanır: `c["hull_al"]`
+     (fiyat > HULL9 × (1 + MA_DEADZONE)); AL→SAT geçişi artık aranmaz.
+  3) Düzken HULL AL ise yeni SHORT AÇILMAZ (`short_entry and not
+     hull_al`); HULL SAT'a dönene kadar NÖTR beklenir. Bu, iki yönlü
+     `algograf` için de geçerli.
+  4) `hull_flip` / `hull_al_prev` durumu kaldırıldı (artık gereksiz).
+  `short_exit` bayrağı `_conditions` içinde yardımcı olarak korunur.
+
+TESTLER: bölüm 2 yenilendi — 2.3 dizilim bozulması (PEMBE>TURUNCU) ->
+SAT-KAPAT; 2.7 HULL=AL durumu -> SAT-KAPAT; 2.8 HULL AL boyunca NÖTR,
+SAT'a dönünce yeniden SAT; 2.8b girişte HULL AL -> SHORT açılmaz;
+5.2/6.2 NÖTR/LONG dizilimi artık SAT-KAPAT; 8.1/8.3 iki yön ve yalnız
+SHORT serileri yeni çıkışa göre. Toplam **107/107**.
+
+OLCUM (5m 50.000 bar, 1x, stop %1, 10$ banka açık):
+  mod              BTC                ETH                SOL
+  algograf         -634,87$ (3419)    -648,02$ (3537)    -681,64$ (3377)
+  algograf_short   -381,97$ (2150)    -375,45$ (2182)    -401,42$ (2082)
+  ONCEKI (OTURUM 33): algograf -722,20$ (3864) / -778,90$ (4040) /
+  -885,85$ (3942); algograf_short -468,71$ (2598) / -497,93$ (2687) /
+  -612,97$ (2649). Erken çıkış + HULL AL kilidi hem kaybı hem işlem
+  sayısını azalttı. `algograf_long` DEĞİŞMEDİ (-937,15$ / -1010,60$ /
+  -1000,03$).
+
+ARAYUZ/SUNUCU: `algograf_short` seçenek metni, mod notu, başlatma logu
+(2 yer) yeni SHORT çıkışına göre güncellendi ("dizilim bozulur veya
+HULL AL ise kapat; HULL AL iken yeni SHORT açılmaz"). Cache `?v=53` /
+`ta-v53` (SW precache dahil).
+
+DOGRULAMA: `test_algograf` 107/107, `test_tk2` 138/138, `test_paper`
+90/90, `test_tk_fix` 37/37; py_compile ve `node --check` temiz;
+`logs/islemler.csv` oluşmadı.

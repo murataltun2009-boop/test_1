@@ -508,7 +508,8 @@ def create_app(service: MarketService, store: SignalStore,
                 "algograf_long": "yalnız LONG (PEMBE üst / MAVİ alt "
                                  "veya HULL & VWMA AL; YEŞİL>PEMBE "
                                  "veya HULL SAT kapatır)",
-                "algograf_short": "yalnız SHORT (MAVİ üst / PEMBE alt)",
+                "algograf_short": "yalnız SHORT (MAVİ üst / PEMBE alt; "
+                                  "dizilim bozulur veya HULL AL kapatır)",
             }.get(paper.mode, paper.mode)
             service._emit_log(
                 "info", "simulator",
@@ -518,11 +519,12 @@ def create_app(service: MarketService, store: SignalStore,
                 f"yok, kurallarda kullanılmaz) · AL=LONG açar, "
                 f"SAT=SHORT açar, AL-KAPAT açık LONG'u, SAT-KAPAT açık "
                 f"SHORT'u kapatır · SHORT girişi: MAVİ en üst, PEMBE en alt, "
-                f"EMA20 VWMA20'nin üstünde · SHORT kapatma (yalnız iki kural, "
-                f"hangisi önce olursa): TURUNCU (EMA20) YEŞİL'in (VWMA20) "
-                f"altına iner veya çakışırsa, ya da HULL satırı AL'a dönerse "
-                f"(fiyat HULL9 üstü); NÖTR/LONG dizilimi tek başına "
-                f"kapatmaz · YALNIZ LONG: PEMBE üst + MAVİ alt VEYA HULL "
+                f"EMA20 VWMA20'nin üstünde · SHORT kapatma (iki kuraldan "
+                f"hangisi önce olursa): SHORT dizilimi bozulursa (MAVİ en "
+                f"üst / PEMBE en alt / EMA20 > VWMA20 koşullarından biri "
+                f"biterse) ya da HULL değeri AL ise (fiyat HULL9 üstü); "
+                f"HULL AL iken yeni SHORT açılmaz, NÖTR beklenir · "
+                f"YALNIZ LONG: PEMBE üst + MAVİ alt VEYA HULL "
                 f"ve VWMA ikisi de AL ise LONG açılır/tutulur; "
                 f"YEŞİL>PEMBE (ikisi de AL değilken) veya HULL SAT olunca "
                 f"kapanır; HULL SAT iken yeni LONG açılmaz · "
@@ -738,7 +740,8 @@ def create_app(service: MarketService, store: SignalStore,
                 "algograf_long": "yalnız LONG (PEMBE üst / MAVİ alt "
                                  "veya HULL & VWMA AL; YEŞİL>PEMBE "
                                  "veya HULL SAT kapatır)",
-                "algograf_short": "yalnız SHORT (MAVİ üst / PEMBE alt)",
+                "algograf_short": "yalnız SHORT (MAVİ üst / PEMBE alt; "
+                                  "dizilim bozulur veya HULL AL kapatır)",
             }.get(paper.mode, paper.mode)
             service._emit_log(
                 "info", "simulator",
@@ -748,11 +751,12 @@ def create_app(service: MarketService, store: SignalStore,
                 f"yok, kurallarda kullanılmaz) · AL=LONG açar, "
                 f"SAT=SHORT açar, AL-KAPAT açık LONG'u, SAT-KAPAT açık "
                 f"SHORT'u kapatır · SHORT girişi: MAVİ en üst, PEMBE en alt, "
-                f"EMA20 VWMA20'nin üstünde · SHORT kapatma (yalnız iki kural, "
-                f"hangisi önce olursa): TURUNCU (EMA20) YEŞİL'in (VWMA20) "
-                f"altına iner veya çakışırsa, ya da HULL satırı AL'a dönerse "
-                f"(fiyat HULL9 üstü); NÖTR/LONG dizilimi tek başına "
-                f"kapatmaz · YALNIZ LONG: PEMBE üst + MAVİ alt VEYA HULL "
+                f"EMA20 VWMA20'nin üstünde · SHORT kapatma (iki kuraldan "
+                f"hangisi önce olursa): SHORT dizilimi bozulursa (MAVİ en "
+                f"üst / PEMBE en alt / EMA20 > VWMA20 koşullarından biri "
+                f"biterse) ya da HULL değeri AL ise (fiyat HULL9 üstü); "
+                f"HULL AL iken yeni SHORT açılmaz, NÖTR beklenir · "
+                f"YALNIZ LONG: PEMBE üst + MAVİ alt VEYA HULL "
                 f"ve VWMA ikisi de AL ise LONG açılır/tutulur; "
                 f"YEŞİL>PEMBE (ikisi de AL değilken) veya HULL SAT olunca "
                 f"kapanır; HULL SAT iken yeni LONG açılmaz · "
