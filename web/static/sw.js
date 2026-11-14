@@ -48,13 +48,15 @@
 // v22: ALGO-GRAF SHORT kapatma: EMA20 <= VWMA20 veya HULL=AL gecisi.
 // v23: ALGO-GRAF kar bankasi: kar cuzdana + AYNI ana para x kaldiraç
 //      notional ile aninda yeniden giris; islem satirlari log panelinde.
-const VERSION = "ta-v51";
+// v24: ALGO-GRAF yalniz LONG: PEMBE ust + MAVI alt VEYA HULL & VWMA AL ->
+//      ac/tut; YESIL>PEMBE (both-AL degilken) veya HULL SAT -> kapat.
+const VERSION = "ta-v52";
 const SHELL = "shell-" + VERSION;
 
 const PRECACHE = [
   "/",
-  "/static/style.css?v=51",
-  "/static/app.js?v=51",
+  "/static/style.css?v=52",
+  "/static/app.js?v=52",
   "/static/vendor/echarts.min.js",
   "/static/icon-192.png",
   "/static/icon-512.png",

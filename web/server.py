@@ -505,7 +505,9 @@ def create_app(service: MarketService, store: SignalStore,
                 "Trade Başla'ya bas"
             _varyant = {
                 "algograf": "iki yön (tüm kurallar)",
-                "algograf_long": "yalnız LONG (PEMBE üst / MAVİ alt)",
+                "algograf_long": "yalnız LONG (PEMBE üst / MAVİ alt "
+                                 "veya HULL & VWMA AL; YEŞİL>PEMBE "
+                                 "veya HULL SAT kapatır)",
                 "algograf_short": "yalnız SHORT (MAVİ üst / PEMBE alt)",
             }.get(paper.mode, paper.mode)
             service._emit_log(
@@ -520,7 +522,10 @@ def create_app(service: MarketService, store: SignalStore,
                 f"hangisi önce olursa): TURUNCU (EMA20) YEŞİL'in (VWMA20) "
                 f"altına iner veya çakışırsa, ya da HULL satırı AL'a dönerse "
                 f"(fiyat HULL9 üstü); NÖTR/LONG dizilimi tek başına "
-                f"kapatmaz · YEŞİL>PEMBE olunca LONG kapanır · "
+                f"kapatmaz · YALNIZ LONG: PEMBE üst + MAVİ alt VEYA HULL "
+                f"ve VWMA ikisi de AL ise LONG açılır/tutulur; "
+                f"YEŞİL>PEMBE (ikisi de AL değilken) veya HULL SAT olunca "
+                f"kapanır; HULL SAT iken yeni LONG açılmaz · "
                 f"kararsızlıkta NÖTR · TP/bekleme YOK — pozisyon kural "
                 f"çıkışına kadar tutulur; kâr bankası: açık kâr "
                 f"{paper.algo_bank_usd:.2f}$'a ulaşınca kâr cüzdana yazılır "
@@ -730,7 +735,9 @@ def create_app(service: MarketService, store: SignalStore,
                 "Trade Başla'ya bas"
             _varyant = {
                 "algograf": "iki yön (tüm kurallar)",
-                "algograf_long": "yalnız LONG (PEMBE üst / MAVİ alt)",
+                "algograf_long": "yalnız LONG (PEMBE üst / MAVİ alt "
+                                 "veya HULL & VWMA AL; YEŞİL>PEMBE "
+                                 "veya HULL SAT kapatır)",
                 "algograf_short": "yalnız SHORT (MAVİ üst / PEMBE alt)",
             }.get(paper.mode, paper.mode)
             service._emit_log(
@@ -745,7 +752,10 @@ def create_app(service: MarketService, store: SignalStore,
                 f"hangisi önce olursa): TURUNCU (EMA20) YEŞİL'in (VWMA20) "
                 f"altına iner veya çakışırsa, ya da HULL satırı AL'a dönerse "
                 f"(fiyat HULL9 üstü); NÖTR/LONG dizilimi tek başına "
-                f"kapatmaz · YEŞİL>PEMBE olunca LONG kapanır · "
+                f"kapatmaz · YALNIZ LONG: PEMBE üst + MAVİ alt VEYA HULL "
+                f"ve VWMA ikisi de AL ise LONG açılır/tutulur; "
+                f"YEŞİL>PEMBE (ikisi de AL değilken) veya HULL SAT olunca "
+                f"kapanır; HULL SAT iken yeni LONG açılmaz · "
                 f"kararsızlıkta NÖTR · TP/bekleme YOK — pozisyon kural "
                 f"çıkışına kadar tutulur; kâr bankası: açık kâr "
                 f"{paper.algo_bank_usd:.2f}$'a ulaşınca kâr cüzdana yazılır "

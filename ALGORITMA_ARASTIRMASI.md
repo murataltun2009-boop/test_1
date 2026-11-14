@@ -2723,3 +2723,63 @@ maker komisyon (kapanis + yeni giris), tam 10$'da banka + giris, 0 =
 kapali, Uygula aninda, stop mesafesi korunur, log satirlari ('trade').
 `test_tk2` 138/138, `test_paper` 90/90, `test_tk_fix` 37/37, py_compile
 ve `node --check` temiz. `logs/islemler.csv` olusmadi.
+
+## OTURUM 33 - ALGO-GRAF yalnız LONG: HULL & VWMA AL ve HULL SAT kuralları (2026-11-15)
+
+KULLANICI KURALI: "ALGOGRAF YANLICA LONG POZİSYONU İÇİNDE ŞU KURALLARI
+SADECE UYGULAMALISIN: LONG--->Hull 9 Pembe EN ÜSTTE VE MA 50 EN ALTTA
+OLDUGU ARALIKTA LONG ACIK KALSIN AYNI ZAMANDA (HULL VE HACİM HAREKETLİ
+ORTALAMA) İKİSİDE AL DURUMUNDAYSA LONG ACIK KALSIN. LONGKAPAT-->VWMA 20
+... HULL 9 PEMBE ÇİZGİNİN ÜSTÜNE ÇIKTIĞI ARALIKTA LONG KAPAT VEYA HULL
+DEĞERİ SAT DURUMUNA GİRDİĞİNDE LONG KAPAT."
+
+Kullanıcı netleştirmeleri (sorular):
+  * "İkisi de AL" pozisyon YOKKEN de LONG açar (açar ve tutar).
+  * İkisi de AL iken YEŞİL > PEMBE olsa bile LONG açık kalır (both-AL
+    üstün).
+  * HULL SAT bir DURUMDUR: SAT olduğu sürece LONG kapatılır ve yeni LONG
+    açılmaz (yalnızca AL→SAT geçişi değil).
+
+UYGULAMA (`core/algograf.py`):
+  * `_conditions`: `hull_sat` (fiyat < HULL9 × (1 − MA_DEADZONE)),
+    `vwma_al` (fiyat > VWMA20 × (1 + MA_DEADZONE)), `both_al` = HULL AL
+    ve VWMA AL. Ölü bant `analysis.MA_DEADZONE` (0,0002) — canlı HULL/VWMA
+    satırının AL/SAT kararıyla birebir aynı.
+  * `series` yalnız-LONG (`side=+1`):
+      - Giriş: `not hull_sat and (long_entry or both_al)`.
+      - Açık LONG: kapat `hull_sat or (long_exit and not both_al)`;
+        NÖTR / SHORT dizilimi tek başına KAPATMAZ.
+      - Kapanış etiketi `AL-KAPAT` (paper motoru açık LONG'u kapatır).
+  * `side=None` (iki yön) ve `side=-1` (yalnız SHORT) davranışı
+    DEĞİŞMEDİ; yeni kurallar yalnız `algograf_long` içinde geçerli.
+  * `prices` verilmezse HULL/VWMA AL-SAT kuralları devre dışı kalır
+    (yalnız dizilim + YEŞİL>PEMBE çalışır); mevcut testlerdeki `side=1`
+    çağrıları bu yüzden aynı sonucu verir.
+
+TESTLER (`test_algograf.py` 8.6–8.14, 9 yeni kontrol): both-AL dizilim
+yokken giriş; yalnız HULL=AL (VWMA SAT) giriş yok; both-AL YEŞİL>PEMBE
+kapatmasını ezer; both-AL yokken YEŞİL>PEMBE kapatır; HULL SAT kapatır;
+HULL SAT iken giriş yok; ölü bant (HULL'un hemen altı SAT sayılmaz);
+SHORT dizilimi + both-AL LONG'u kapatmaz; iki yön modu değişmedi.
+Toplam **106/106**.
+
+ARAYUZ/SUNUCU: `algograf_long` seçenek metni (`index.html`), mod notu
+(`app.js`), başlatma/yardım logu (2 yer, `server.py`) yeni kurallara göre
+güncellendi. Cache `?v=52` / `ta-v52` (SW precache dahil).
+
+OLCUM (5m 50.000 bar, 1x, 10$ banka açık):
+  mod              BTC                 ETH                 SOL
+  algograf_long     -937,15$ (5109)    -1010,60$ (5208)    -1000,03$ (5193)
+  algograf_long SL%1  -953,63$ (5109)  -1000,21$ (5170)    -1000,06$ (5100)
+  ONCEKI (OTURUM 32, yalnız dizilim): -251,58$ (1273) / -277,55$ (1359) /
+  -285,54$ (1304). İki yön (`algograf`) ve yalnız SHORT sonuçları
+  DEĞİŞMEDİ (algograf SL%1: -722,20 / -778,90 / -885,85; algograf_short
+  SL%1: -468,71 / -497,93 / -612,97).
+  NOT: both-AL girişi pratikte "fiyat HULL9 ve VWMA20'nin üstünde" demek
+  olduğu için işlem sayısı ~4 kat arttı (1273 -> 5109). 1x'te komisyon
+  yükü hesabı tüketti; kural kullanıcı tanımına birebir uygulandı, sayı
+  bilgi amaçlı kaydedildi.
+
+DOGRULAMA: `test_algograf` 106/106, `test_tk2` 138/138, `test_paper`
+90/90, `test_tk_fix` 37/37; py_compile ve `node --check` temiz;
+`logs/islemler.csv` oluşmadı.

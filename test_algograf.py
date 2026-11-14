@@ -11,6 +11,10 @@ Kullanıcı kuralı (5 dk, 4 çizgi — EMA200/SMA200 grafikte yok):
     NÖTR/LONG dizilimi tek başına kapatmaz.
   * LONG: PEMBE en üstte, MAVİ en altta olduğu aralıkta LONG açık kalır.
   * LONG KAPAT: YEŞİL, PEMBE'nin üstüne çıkınca kapat.
+  * Yalnız LONG (algograf_long, 2026-11-15): PEMBE üst + MAVİ alt dizilimi
+    VEYA HULL & VWMA ikisi de AL -> LONG aç/tut (both-AL, YEŞİL > PEMBE
+    kapatmasını ezer); YEŞİL > PEMBE (both-AL yokken) veya HULL SAT ->
+    kapat; HULL SAT iken yeni LONG açılmaz.
   * NÖTR: YEŞİL en üstte, PEMBE en altta -> pozisyon NÖTR.
   * Kararsızlıkta NÖTR.
   * Varyantlar: algograf (iki yön), algograf_long (yalnız LONG),
@@ -234,6 +238,38 @@ kontrol("8.4 long-only SHORT diziliminde giris yapmaz",
         algograf.series(ma([R1, R1]), side=1) == ["NÖTR", "NÖTR"])
 kontrol("8.5 short-only LONG diziliminde giris yapmaz",
         algograf.series(ma([R3, R3]), side=-1) == ["NÖTR", "NÖTR"])
+
+# 2026-11-15 YALNIZ-LONG ek kurallar: PEMBE üst + MAVİ alt dizilimi VEYA
+# HULL & VWMA ikisi de AL (giriş ve tutma); HULL SAT kapatır ve girişi
+# engeller; both-AL, YEŞİL > PEMBE kapatmasını ezer.
+# Dizilim LONG değil ama both-AL: TURUNCU=100, MAVİ=98, PEMBE=99,
+# YEŞİL=100,5; fiyat 101 (HULL ve VWMA'nın üstünde) -> LONG açılır.
+PB = (100.0, 98.0, 99.0, 100.5)
+kontrol("8.6 both-AL (dizilim yok) -> LONG acar",
+        algograf.series(ma([PB]), side=1, prices=[101.0]) == ["AL"])
+kontrol("8.7 yalniz HULL=AL (VWMA SAT) -> giris yok",
+        algograf.series(ma([(100.0, 98.0, 99.0, 101.5)]), side=1,
+                        prices=[101.0]) == ["NÖTR"])
+kontrol("8.8 both-AL varken YESIL>PEMBE kapatmaz",
+        algograf.series(ma([R3, R3B]), side=1,
+                        prices=[105.0, 106.0]) == ["AL", "AL"])
+kontrol("8.9 YESIL>PEMBE + both-AL yok -> AL-KAPAT",
+        algograf.series(ma([R3, R3B]), side=1,
+                        prices=[105.0, 104.5]) == ["AL", "AL-KAPAT"])
+kontrol("8.10 HULL SAT -> AL-KAPAT",
+        algograf.series(ma([R3, R3]), side=1,
+                        prices=[105.0, 100.0]) == ["AL", "AL-KAPAT"])
+kontrol("8.11 HULL SAT iken giris yok",
+        algograf.series(ma([R3]), side=1, prices=[100.0]) == ["NÖTR"])
+# Ölü bant: 104 * 0,9998 = 103,98; 103,99 SAT sayılmaz.
+kontrol("8.12 HULL olu bandi SAT sayilmaz",
+        algograf.series(ma([R3]), side=1, prices=[103.99]) == ["AL"])
+kontrol("8.13 SHORT dizilimi + both-AL LONG'u kapatmaz",
+        algograf.series(ma([R3, R1]), side=1,
+                        prices=[105.0, 102.0]) == ["AL", "AL"])
+kontrol("8.14 iki yon modu degismedi (both-AL kapati degistirmez)",
+        algograf.series(ma([R3, R3B]), prices=[105.0, 106.0]) ==
+        ["AL", "AL-KAPAT"])
 
 # ==================================================================
 print("9) Nedensellik (lookahead yok)")

@@ -24,14 +24,22 @@ Kurallar (sıralama = fiyat değeri büyükten küçüğe, üstten alta):
              2) HULL satırı "AL"a dönerse (fiyat HULL9'un üstüne çıkarsa).
            Bunların dışında SHORT açık kalır (NÖTR dizilim veya LONG
            dizilimi tek başına kapatmaz).
-  LONG   : PEMBE en üstte, MAVİ en altta olduğu aralıkta LONG açık kalsın.
-  LONG KAPAT: YEŞİL, PEMBE'nin üstüne çıkarsa LONG'u kapat.
+  LONG (iki yön)   : PEMBE en üstte, MAVİ en altta olduğu aralıkta LONG
+           açık kalsın; YEŞİL, PEMBE'nin üstüne çıkarsa kapat.
+  LONG (yalnız algograf_long — 2026-11-15 kullanıcı kuralı):
+           AÇ / TUT: PEMBE en üst + MAVİ en alt dizilimi VEYA HULL ve
+           VWMA ikisi de "AL" durumu. İkisi de AL iken YEŞİL > PEMBE olsa
+           bile LONG açık kalır (both-AL üstün).
+           KAPAT: YEŞİL, PEMBE'nin üstüne çıkarsa (both-AL değilken)
+           VEYA HULL değeri "SAT" durumuna girerse. HULL SAT iken yeni
+           LONG açılmaz.
   NÖTR   : YEŞİL en üstte, PEMBE en altta kaldığında pozisyon NÖTR kalsın.
   Bu üç dizilimin dışında karar verilemeyen her durumda NÖTR.
 
 ÜÇ VARYANT:
     algograf       : iki yön (tüm kurallar)
-    algograf_long  : yalnız LONG (PEMBE üst + MAVİ alt; YEŞİL>PEMBE kapatır)
+    algograf_long  : yalnız LONG (PEMBE üst + MAVİ alt VEYA HULL & VWMA
+                     AL; YEŞİL>PEMBE veya HULL SAT kapatır)
     algograf_short : yalnız SHORT (MAVİ üst + PEMBE alt; EMA20 ≤ VWMA20
                      veya HULL=AL kapatır)
 
@@ -159,6 +167,15 @@ def _conditions(t: float, mavi: float, pembe: float, yesil: float,
     # analysis.MA_DEADZONE). Fiyat verilmezse bu kapatma devre dışı.
     hull_al = bool(price is not None and pembe > 0
                    and float(price) > pembe * (1.0 + _MA_DEADZONE))
+    # HULL satırı "SAT": fiyat HULL9'un belirgin altında (aynı ölü bant).
+    hull_sat = bool(price is not None and pembe > 0
+                    and float(price) < pembe * (1.0 - _MA_DEADZONE))
+    # VWMA satırı "AL": fiyat VWMA20'nin belirgin üstünde.
+    vwma_al = bool(price is not None and yesil > 0
+                   and float(price) > yesil * (1.0 + _MA_DEADZONE))
+    # 2026-11-15 yalnız-LONG kullanıcı kuralı: HULL ve VWMA ikisi de AL
+    # ise LONG açılır/tutulur (YEŞİL > PEMBE kapatmasını ezer).
+    both_al = hull_al and vwma_al
     # LONG: PEMBE en üstte, MAVİ en altta.
     long_entry = (_above(pembe, t, eps) and _above(pembe, yesil, eps)
                   and _below(mavi, t, eps) and _below(mavi, yesil, eps))
@@ -169,7 +186,8 @@ def _conditions(t: float, mavi: float, pembe: float, yesil: float,
                and _above(yesil, pembe, eps)
                and _below(pembe, t, eps) and _below(pembe, mavi, eps))
     return {"short_entry": short_entry, "short_exit": short_exit,
-            "hull_al": hull_al,
+            "hull_al": hull_al, "hull_sat": hull_sat,
+            "vwma_al": vwma_al, "both_al": both_al,
             "long_entry": long_entry, "long_exit": long_exit,
             "neutral": neutral}
 
@@ -196,8 +214,9 @@ def series(ma_series: dict, *, side: Optional[int] = None,
     grafik yıldızları birebir aynı kararı gösterir.
 
     `prices`: bar kapanış fiyatları (aynı uzunlukta). SHORT kapatmanın
-    ikinci kuralı "HULL satırı AL" (fiyat HULL9'un üstünde) için gerekir;
-    verilmezse o kural devre dışı kalır.
+    ikinci kuralı "HULL satırı AL" (fiyat HULL9'un üstünde) ve yalnız-LONG
+    kuralları (HULL/VWMA AL, HULL SAT) için gerekir; verilmezse o kurallar
+    devre dışı kalır (yalnız dizilim kuralları çalışır).
 
     Seri NEDENSELDİR: i. bar yalnızca 0..i barlarına bakar.
     """
@@ -248,7 +267,21 @@ def series(ma_series: dict, *, side: Optional[int] = None,
 
         if state > 0:
             # ---- AÇIK LONG ------------------------------------------
-            # Çıkış: YEŞİL > PEMBE, NÖTR dizilimi veya SHORT dizilimi.
+            if yon > 0:
+                # YALNIZ-LONG (2026-11-15 kullanıcı kuralı):
+                #   * HULL ve VWMA ikisi de AL ise YEŞİL > PEMBE olsa bile
+                #     LONG açık kalır (both-AL üstün).
+                #   * Kapat: HULL SAT durumu VEYA (YEŞİL > PEMBE ve
+                #     both-AL değil).
+                #   * NÖTR / SHORT dizilimi tek başına kapatmaz.
+                if c["hull_sat"] or (c["long_exit"] and not c["both_al"]):
+                    out.append("AL-KAPAT")
+                    state = 0
+                else:
+                    out.append("AL")
+                continue
+            # İki yön: çıkış YEŞİL > PEMBE, NÖTR dizilimi veya SHORT
+            # dizilimi.
             if c["long_exit"] or c["neutral"] or c["short_entry"]:
                 out.append("AL-KAPAT")
                 state = 0
@@ -269,10 +302,26 @@ def series(ma_series: dict, *, side: Optional[int] = None,
             continue
 
         # ---- DÜZ: giriş / nötr ---------------------------------------
-        if yon <= 0 and c["short_entry"]:
+        if yon > 0:
+            # YALNIZ-LONG giriş (2026-11-15 kullanıcı kuralı): PEMBE en üst
+            # + MAVİ en alt dizilimi VEYA HULL & VWMA ikisi de AL.
+            # HULL SAT durumunda yeni LONG açılmaz.
+            if not c["hull_sat"] and (c["long_entry"] or c["both_al"]):
+                out.append("AL")
+                state = 1
+            else:
+                out.append("NÖTR")
+        elif yon < 0:
+            # YALNIZ-SHORT: LONG dizilimi giriş üretmez.
+            if c["short_entry"]:
+                out.append("SAT")
+                state = -1
+            else:
+                out.append("NÖTR")
+        elif c["short_entry"]:
             out.append("SAT")
             state = -1
-        elif yon >= 0 and c["long_entry"]:
+        elif c["long_entry"]:
             out.append("AL")
             state = 1
         else:
