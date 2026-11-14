@@ -1381,11 +1381,12 @@ if ("serviceWorker" in navigator) {
           + "AL=LONG açar, SAT=SHORT açar, AL-KAPAT açık LONG'u, "
           + "SAT-KAPAT açık SHORT'u kapatır; kararsızlıkta NÖTR; "
           + "TP/bekleme YOK — pozisyon kural çıkışına kadar tutulur; "
-          + "kâr dilimi bankası: açık kâr "
-          + (parseFloat(el.pAlgoBank.value) || 10) + "$'a ulaşınca kârı "
-          + "bu tutara denk gelen dilim satılır, kâr cüzdana yazılır, "
-          + "kalan aynı giriş/stop ile devam eder (kalan için taze "
-          + "+tutar) · 0 = kapalı; "
+          + "kâr bankası: açık kâr "
+          + (parseFloat(el.pAlgoBank.value) || 10) + "$'a ulaşınca kâr "
+          + "cüzdana yazılır ve pozisyon AYNI yönde, AYNI ana para × "
+          + "kaldıraç notional ile anında yeniden açılır (pozisyon "
+          + "kaybolmaz, bileşik büyüme yok); "
+          + "0 = kapalı; banka işlemleri logda görünür; "
           + "koruyucu stop %1 (acil çıkış); aç/kapa ve banka LIMIT (maker)"
         : "") +
       (tik
@@ -1455,7 +1456,7 @@ if ("serviceWorker" in navigator) {
     paperCall("/api/paper/reset");
   });
 
-  // ALGO-GRAF kâr dilimi: "Uygula" yeni tutarı ANINDA açık pozisyona
+  // ALGO-GRAF kâr bankası: "Uygula" yeni tutarı ANINDA açık pozisyona
   // uygular. Sunucu tarafında banka eşiği sıfırlanır ve bir sonraki
   // tick'te yeni tutarla yeniden kurulur (0 = banka tamamen kapanır).
   if (el.pAlgoBankApply) {
@@ -1463,14 +1464,14 @@ if ("serviceWorker" in navigator) {
       ev.preventDefault();
       var tutar = parseFloat(el.pAlgoBank.value);
       if (isNaN(tutar) || tutar < 0) {
-        addLog(nowTs(), "error", "Kâr dilimi tutarı geçersiz");
+        addLog(nowTs(), "error", "Kâr bankası tutarı geçersiz");
         return;
       }
       state.userTouched = true;
       paperCall("/api/paper/config").then(function (d) {
         if (d && d.ok) {
           addLog(nowTs(), "info",
-            "ALGO-GRAF kâr dilimi güncellendi: " +
+            "ALGO-GRAF kâr bankası güncellendi: " +
             (tutar > 0
               ? fmtUsd(tutar) + " · açık pozisyona hemen uygulandı"
               : "kapalı (0$)"));

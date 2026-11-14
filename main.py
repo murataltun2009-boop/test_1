@@ -88,6 +88,9 @@ def main() -> int:
     paper = PaperTrader(symbol=config.SETTINGS.symbol)
 
     service = MarketService(config.SETTINGS, store, paper=paper)
+    # İşlem/banka satırları web log panelinde görünsün: paper motorunun
+    # olayları servisin canlı log kuyruğuna aktarılır (2026-11-14).
+    paper.set_event_handler(service.emit_paper_event)
     app = create_app(service, store, paper=paper)
 
     port = find_free_port(args.port)

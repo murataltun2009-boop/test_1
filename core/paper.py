@@ -81,7 +81,7 @@ class Position:
     # barda DEĞİL, sonraki bardan itibaren devreye girer — giriş
     # salınımı pozisyonu anında kapatmasın.
     entry_bar: int = 0
-    # ALGO-GRAF kısmi kâr bankası: sıradaki bankalama kâr eşiği ($).
+    # ALGO-GRAF kâr bankası: sıradaki bankalama kâr eşiği ($).
     # 0 = henüz kurulmadı (ilk kontrolde algo_bank_usd ile başlatılır).
     bank_next_usd: float = 0.0
 
@@ -606,11 +606,11 @@ class PaperTrader:
         # ALGO-GRAF koruyucu stop (giris fiyatindan ters yon orani).
         # 0 = kapali; kural cikislari her zaman gecerlidir.
         self.algo_sl = float(getattr(config, "PAPER_ALGOGRAF_SL", 0.01))
-        # ALGO-GRAF KAR DILIMI BANKASI (2026-11-14 kullanici kurali):
-        # acik pozisyonun kari bu DOLAR tutarina ulasinca, kari bu tutara
-        # denk gelen adet dilimi satilir (dilim = tutar/|fiyat-giris|);
-        # dilimin kari cuzdana yazilir, KALAN pozisyon ayni giris/stop ile
-        # devam eder. Kalan taze +tutar kazaninca tekrar bankalanir.
+        # ALGO-GRAF KÂR BANKASI (2026-11-14 kullanici kurali): acik
+        # pozisyonun kari bu DOLAR tutarina ulasinca pozisyon kapatilir,
+        # net kar cuzdana yazilir ve AYNI yonde, AYNI ana para × kaldiraç
+        # notional ile ANINDA yeniden girilir (pozisyon kaybolmaz,
+        # bankalanan kar pozisyonu BUYUTMEZ). Yeni esik taze +tutar kardir.
         # Arayuzden "Uygula" ile acik pozisyona aninda uygulanir; 0 = kapali.
         self.algo_bank_usd = float(
             getattr(config, "PAPER_ALGOGRAF_BANK_USD", 10.0))
@@ -2280,7 +2280,11 @@ class PaperTrader:
               candles_for_target: Optional[list] = None,
               stop_dist: Optional[float] = None,
               locked: bool = False,
-              maker: bool = False) -> None:
+              maker: bool = False,
+              notional: Optional[float] = None) -> None:
+        # Parametre adi yerel boyutlandirma degiskeniyle ayni; override
+        # degerini yerel atamadan ONCE sakla.
+        notional_override = notional
         if price <= 0:
             return
         eq = self.equity(price)
@@ -2425,6 +2429,18 @@ class PaperTrader:
             stop_price = price - (stop_dist if side == LONG else -stop_dist)
             trail_mult = trail_atr
 
+        if notional_override is not None and notional_override > 0:
+            # KÂR BANKASI SONRASI YENİDEN GİRİŞ (2026-11-14 kullanıcı
+            # kuralı): pozisyon ANA PARA × KALDIRAÇ ile AYNI büyüklükte
+            # kalır. Bakiyedeki bankalanan kâr yeni pozisyonu BÜYÜTMEZ
+            # (bileşik büyüme yok); teminat = notional / kaldıraç.
+            notional = float(notional_override)
+            eff_lev = self.leverage if self.leverage > 0 else eff_lev
+            if eff_lev <= 0:
+                return
+            margin = notional / eff_lev
+            liq_dist = 1.0 / eff_lev
+
         qty = notional / price if price > 0 else 0.0
         if qty <= 0 or margin <= 0 or notional <= 0:
             return
@@ -2499,7 +2515,7 @@ class PaperTrader:
             eff_leverage=eff_lev, trail_frac=trail_frac, locked=locked,
             entry_bar=(int(candles_for_target[-1].open_time)
                        if candles_for_target else 0))
-        # ALGO-GRAF kismi kar bankasi: ilk esik giris aninda kurulur.
+        # ALGO-GRAF kâr bankası: ilk esik giris aninda kurulur.
         if algograf.is_algograf_mode(self.mode) and self.algo_bank_usd > 0:
             self.position.bank_next_usd = float(self.algo_bank_usd)
         self._bars_held = 0        # yeni pozisyon: bekleme sayaci sifirlanir
@@ -2585,9 +2601,11 @@ class PaperTrader:
         """ALGO-GRAF yürütücüsü (2026-11-13, kullanici kurali).
 
         Karar `core/algograf.py` serisinden gelir (AL / SAT / AL-KAPAT /
-        SAT-KAPAT / NÖTR). Kural SADEDIR: TP, kâr bankası, bekleme,
-        ribbon filtresi YOKTUR — kullanici kurali "pozisyonda kal" der.
-        Pozisyon kuralin çıkış etiketiyle kapanır.
+        SAT-KAPAT / NÖTR). Kural SADEDIR: TP, bekleme ve ribbon filtresi
+        YOKTUR — kullanici kurali "pozisyonda kal" der. Pozisyon kuralin
+        çıkış etiketiyle kapanır. Iki ek vardir: koruyucu stop (`algo_sl`)
+        ve kâr bankası (`algo_bank_usd`; kâr cüzdana yazılır, pozisyon
+        aynı ana para × kaldıraç notional ile yeniden açılır).
 
         KORUYUCU STOP (kullanici onayi 2026-11-13): kural setinde çıkış
         yalnizca çizgi diziliminden geldigi icin 10x boyutlamada tek bir
@@ -2626,25 +2644,23 @@ class PaperTrader:
                 self._algo_stop_kilit = yon
                 return "ALGO-GRAF: koruyucu stop — pozisyon kapandi"
 
-        # ---- 2) KISMI KAR BANKASI (2026-11-14 kullanici kurali) ----
-        # KAR DILIMI modu (kullanicinin sectigi): acik pozisyonun kari
-        # `algo_bank_usd` dolarini gecince, KARI TAM `algo_bank_usd` dolar
-        # olan adet dilimi satilir -> dilim = tutar / |fiyat - giris|.
-        # O dilimin kari cuzdana yazilir; KALAN pozisyon ayni giris/stop
-        # ile devam eder. Esik, dolum fiyatindaki kalan kar + tutar olarak
-        # yenilenir: kalan pozisyon TAZE +tutar kar ettiginde tekrar
-        # bankalanir (10$, 20$, 30$ ... merdiveni).
-        #
-        # NOT: kar tam esige esitken (normal tik akisi) dilim pozisyonun
-        # tamamina esit olur -> bu durumda pozisyon kapanir (klasik TP).
-        # Kalan birakmak isteyen kullanici tutari yuksek secer; dolum
-        # fiyati tetik seviyesini asarsa (gap) artik kalan devam eder.
+        # ---- 2) KÂR BANKASI (2026-11-14 kullanıcı kuralı) ------------
+        # Açık pozisyonun kârı `algo_bank_usd` dolarına ulaşınca:
+        #   1) pozisyon dolum fiyatından kapatılır (maker),
+        #   2) net kâr cüzdana (bakiyeye) yazılır,
+        #   3) AYNI yönde, AYNI notional (ana para × kaldıraç) ile ANINDA
+        #      yeniden girilir; eşik taze `algo_bank_usd` olur.
+        # Örnek: 1000$ ana para 1010$ olunca 10$ kâr bankalanır ve pozisyon
+        # yine 1000$ × kaldıraç notional ile devam eder. Böylece bankalanan
+        # kâr sonraki pozisyonu BÜYÜTMEZ (bileşik büyüme yok) ve pozisyon
+        # "kaybolmaz". Bar içi zirve/dip birden fazla adım tetikleyebilir
+        # (10$, 20$, 30$ ... merdiveni); dolum asla tetik seviyesinden
+        # KÖTÜ olmaz (gap'te daha iyi fiyattan dolar).
         p = self.position
         if p is not None and self.algo_bank_usd > 0 and p.qty > 0:
             adim = float(self.algo_bank_usd)
             if p.bank_next_usd <= 0:
                 p.bank_next_usd = adim
-            # Bar ici zirve/dip tetikleyebilir -> birden fazla dilim.
             for _ in range(100):
                 p = self.position
                 if p is None or p.qty <= 0:
@@ -2660,30 +2676,39 @@ class PaperTrader:
                              or price <= seviye)
                 if not vurdu:
                     break
-                # Dolum: dinlenen LIMIT emri tetik seviyesinde; fiyat
-                # seviyeyi asmissa (gap) daha iyi fiyattan dolar. Asla
-                # seviyeden KOTU dolmaz -> bankalanan kar en az `adim`.
+                # Dolum: tetik seviyesi veya daha iyi (gap) fiyat.
                 fiyat = (max(price, seviye) if p.side == LONG
                          else min(price, seviye))
-                mesafe = abs(fiyat - p.entry)
-                if mesafe <= 0:
+                yon = p.side
+                notional_once = float(p.notional)
+                # Bankalanacak NET kâr (giriş + çıkış komisyonu düşülmüş).
+                fee_close = p.qty * fiyat * self.maker_rate
+                gross = ((fiyat - p.entry) * p.qty if yon == LONG
+                         else (p.entry - fiyat) * p.qty)
+                net = gross - p.fee_open - fee_close
+                self._close(fiyat, f"ALGO-GRAF: kâr bankası "
+                            f"({net:+,.2f}$ cüzdana)", timeframe, maker=True)
+                self.banked_profit += max(0.0, net)
+                if notional_once <= 0:
                     break
-                dilim = min(p.qty, adim / mesafe)
-                if dilim <= 0:
-                    break
-                self._partial_close(
-                    dilim, fiyat, "ALGO-GRAF: kısmi kâr bankası",
-                    timeframe, maker=True)
-                if self.position is None:
-                    # Dilim pozisyonun tamamini aldi (kar = esik).
-                    return ("ALGO-GRAF: kısmi kâr bankası — pozisyon "
-                            "kapandi (kalan yok)")
+                # Aynı yönde, AYNI ana para × kaldıraç notional ile dön.
+                self._open(yon, fiyat, "ALGO-GRAF: kâr bankası sonrası "
+                           "yeniden giriş (ana para × kaldıraç)",
+                           timeframe, maker=True, notional=notional_once)
                 yeni = self.position
-                kar_simdi = ((fiyat - yeni.entry) * yeni.qty
-                             if yeni.side == LONG
-                             else (yeni.entry - fiyat) * yeni.qty)
-                # Yeni esik: kalan pozisyonun su anki kari + taze tutar.
-                yeni.bank_next_usd = max(adim, kar_simdi + adim)
+                if yeni is None:
+                    break
+                if self.algo_sl > 0:
+                    yeni.stop_price = (fiyat * (1.0 - self.algo_sl)
+                                       if yon == LONG
+                                       else fiyat * (1.0 + self.algo_sl))
+                yeni.bank_next_usd = adim
+                self._emit("trade",
+                           f"ALGO-GRAF: kâr bankalandı {net:+,.2f}$ · "
+                           f"ana para {yeni.margin:,.2f}$ × "
+                           f"{yeni.eff_leverage:g}x = "
+                           f"{yeni.notional:,.2f}$ notional ile devam · "
+                           f"sonraki eşik {adim:,.2f}$ kâr")
 
         p = self.position
         if not lab:
@@ -3661,11 +3686,11 @@ class PaperTrader:
                        timeframe: str, maker: bool = True) -> bool:
         """Pozisyonun bir DILIMINI kapatir; kalan pozisyon devam eder.
 
-        ALGO-GRAF kismi kar bankasi icin (2026-11-14 kullanici kurali):
-        dilim satilir, dilimin kari cuzdana yazilir; qty / teminat /
-        notional oransal azalir, GIRIS ve STOP degismez. Tam kapanis
-        gibi `trades` listesine yazilmaz (K/Z sayaci ve islem sayisi
-        sisirilmesin); `banked_profit` ve bakiye guncellenir.
+        NOT (2026-11-14): ALGO-GRAF kâr bankası artık bu yolu KULLANMIYOR
+        (banka = tam kapanış + aynı ana para × kaldıraç notional ile
+        yeniden giriş). Fonksiyon eski davranışa ihtiyaç duyan araçlar
+        için korunmuştur: qty / teminat / notional oransal azalır, GIRIS
+        ve STOP değişmez. `trades` listesine yazılmaz.
         """
         p = self.position
         if p is None or qty <= 0 or price <= 0:
@@ -3838,6 +3863,16 @@ class PaperTrader:
             pass
 
     # ------------------------------------------------------------------
+    def set_event_handler(self, handler) -> None:
+        """İşlem/banka olaylarını arayüz loguna taşıyan köprüyü ata.
+
+        `handler(kind, message)` her `_emit` çağrısında çalışır (canlı
+        akış). Açılış/kapanış ve kâr bankası satırları böylece web log
+        panelinde görünür; geriye dönük testte `_quiet` olduğu için
+        çağrılmaz.
+        """
+        self._on_event = handler
+
     def _emit(self, kind: str, message: str) -> None:
         if self._quiet:
             return                     # backtest sirasında log basılmaz

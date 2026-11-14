@@ -449,11 +449,11 @@ PAPER_ALGOGRAF_TOUCH = 0.0
 # kapanir ve kural sifirlanana (AL/SAT disina cikana) kadar ayni yonde
 # yeni giris yapilmaz. 0 = stop kapali.
 PAPER_ALGOGRAF_SL = 0.01
-# ALGO-GRAF KAR DILIMI BANKASI (2026-11-14 kullanici kurali): acik
-# pozisyonun kari bu DOLAR tutarina ulasinca, KARI BU TUTARA DENK GELEN
-# adet dilimi satilir (dilim = tutar / |fiyat-giris|); dilimin kari
-# cuzdana yazilir, KALAN pozisyon ayni giris/stop ile devam eder. Kalan
-# pozisyon TAZE +tutar kazaninca tekrar bankalanir (10$, 20$, 30$ ...).
+# ALGO-GRAF KÂR BANKASI (2026-11-14 kullanici kurali): acik pozisyonun
+# kari bu DOLAR tutarina ulasinca pozisyon kapatilir, NET kar cuzdana
+# yazilir ve AYNI yonde, AYNI ana para × kaldiraç notional ile ANINDA
+# yeniden girilir (pozisyon kaybolmaz; bankalanan kar pozisyonu
+# BUYUTMEZ). Yeni esik taze +tutar kardir (10$, 20$, 30$ ...).
 # Arayuzden degistirilebilir + "Uygula" acik pozisyona aninda uygular;
 # varsayilan 10$. 0 = kapali.
 PAPER_ALGOGRAF_BANK_USD = 10.0

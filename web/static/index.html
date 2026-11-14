@@ -6,7 +6,7 @@
      maximum-scale kilitlenmez: kullanici grafikte yakinlastirabilmeli. -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>BTCUSDT 4 Saat · Canlı Teknik Analiz</title>
-<link rel="stylesheet" href="/static/style.css?v=50">
+<link rel="stylesheet" href="/static/style.css?v=51">
 
 <!-- ---- PWA: "Ana ekrana ekle" icin gerekli etiketler ---------- -->
 <link rel="manifest" href="/static/manifest.webmanifest">
@@ -179,10 +179,10 @@
             <input id="pBank" type="number" step="1" min="0" max="100000" value="10">
             <span class="hint">açık pozisyon kârı bu tutara ulaşınca kapanır, kazanç cüzdana yazılır · 0 = kapalı</span>
           </label>
-          <label class="wfull" id="algoBankWrap" style="display:none">ALGO-GRAF kâr dilimi ($)
+          <label class="wfull" id="algoBankWrap" style="display:none">ALGO-GRAF kâr bankası eşiği ($)
             <input id="pAlgoBank" type="number" step="1" min="0" max="100000" value="10">
             <button id="pAlgoBankApply" class="btn small" type="button">Uygula</button>
-            <span class="hint">açık kâr bu tutara ulaşınca, kârı bu tutara denk gelen dilim satılır ve kâr cüzdana yazılır; kalan devam eder · 0 = kapalı · Uygula açık pozisyona hemen uygular</span>
+            <span class="hint">açık kâr bu tutara ulaşınca kâr cüzdana yazılır ve pozisyon aynı yönde, aynı ana para × kaldıraç notional ile anında yeniden açılır (pozisyon kaybolmaz) · 0 = kapalı · Uygula açık pozisyona hemen uygular</span>
           </label>
           <label class="wfull">Karar mekanizması
             <select id="pMode">
@@ -367,6 +367,6 @@ window.addEventListener("error", function (e) {
   box.textContent = "JS HATA: " + msg;
 });
 </script>
-<script src="/static/app.js?v=50"></script>
+<script src="/static/app.js?v=51"></script>
 </body>
 </html>

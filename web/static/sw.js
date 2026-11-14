@@ -46,13 +46,15 @@
 // v21: ALGO-GRAF kar DILIMI bankasi (10$ kar dilimi) + Uygula butonu
 //      (tutar degisince acik pozisyona aninda uygulanir).
 // v22: ALGO-GRAF SHORT kapatma: EMA20 <= VWMA20 veya HULL=AL gecisi.
-const VERSION = "ta-v50";
+// v23: ALGO-GRAF kar bankasi: kar cuzdana + AYNI ana para x kaldiraç
+//      notional ile aninda yeniden giris; islem satirlari log panelinde.
+const VERSION = "ta-v51";
 const SHELL = "shell-" + VERSION;
 
 const PRECACHE = [
   "/",
-  "/static/style.css?v=50",
-  "/static/app.js?v=50",
+  "/static/style.css?v=51",
+  "/static/app.js?v=51",
   "/static/vendor/echarts.min.js",
   "/static/icon-192.png",
   "/static/icon-512.png",

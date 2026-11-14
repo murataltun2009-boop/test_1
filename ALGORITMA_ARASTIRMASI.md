@@ -2648,3 +2648,78 @@ dizilimi SHORT'u tek basina kapatmaz. Bolum 8: varyant serileri yeni
 kurala gore. `test_tk2` 138/138, `test_paper` 90/90, `test_tk_fix`
 37/37, py_compile ve `node --check` temiz. `logs/islemler.csv`
 olusmadi.
+
+
+## OTURUM 32 - ALGO-GRAF kar bankasi: kar cuzdana + ANA PARA x KALDIRAC ile devam (2026-11-14/15)
+
+KULLANICI GERI BILDIRIMI: "ALGOGRAF KAR DILIMI 10$ OLDUGUNDA CUZDANA
+ATIYOR AMA SONRASINDA ANA PARANIN KALDIRACIYLA DEVAM ETMIYOR. ORNEGIN
+1000$ ILE BASLADI 1010$ OLDU, 10$ KARI ALDI CUZDANA ATTI. YINE 1000$
+DOLAR ILE KAC X KALDIRACTAYSA DEVAM ETMESI LAZIM. AYRICA LOGLARDA DA
+GOZUKSUN BU ISLEMLER."
+
+KOK NEDEN: eski uygulama "kar dilimi" (profit slice) satiyordu:
+`dilim = tutar / |fiyat - giris|`. Kar tam esige esitken dilim pozisyonun
+TAMAMINA esit oluyor -> `_close` -> pozisyon kayboluyor, yeniden giris
+YOKTU. Kalan biraksa bile pozisyon kuculuyordu (qty/teminat/notional
+oransal azalir), yani "ana para x kaldiraç" boyu korunmuyordu.
+
+YENI DAVRANIS (`core/paper.py::_algograf` bolum 2):
+  1) Acik kar `algo_bank_usd` (varsayilan 10$) esigine ulasinca pozisyon
+     DOLUM FIYATINDAN tamamen kapatilir (maker).
+  2) NET kar (giris + cikis komisyonu dusulmus) cuzdana/bakiyeye yazilir
+     (`banked_profit` da guncellenir).
+  3) AYNI yonde, AYNI notional (ana para x kaldiraç) ile ANINDA yeniden
+     girilir. `_open(..., notional=...)` yeni parametresi bu boyu
+     ZORLAR: teminat = notional / kaldiraç. Boylece bankalanan kar
+     sonraki pozisyonu BUYUTMEZ (bileşik buyume yok) ve pozisyon
+     KAYBOLMAZ. 1000$ -> 1010$ ornegi: 10$ bankalanir, pozisyon yine
+     1000$ x kaldiraç notional ile devam eder.
+  4) Koruyucu stop mesafesi (`algo_sl`) yeni giris fiyatina gore yeniden
+     kurulur (ayni % mesafe). Yeni esik taze `algo_bank_usd` olur; bar
+     ici zirve/dip merdiveni (10$, 20$, 30$ ...) korunur.
+  5) Dolum asla tetik seviyesinden KOTU olmaz; gap'te daha iyi fiyattan
+     dolar.
+
+LOGLAR: `PaperTrader._emit` yalnizca dosya/konsol gunlugune yaziyordu;
+`main.py` PaperTrader'i `on_event` OLMADAN kuruyordu -> islem/banka
+satirlari web log panelinde gorunmuyordu. Eklendi:
+  * `PaperTrader.set_event_handler(handler)` (public kopru),
+  * `MarketService.emit_paper_event(kind, message)` -> canli `log`
+    kuyruguna + SQLite gunlugune "işlem" kategorisiyle yazar,
+  * `main.py`: `paper.set_event_handler(service.emit_paper_event)`.
+Artik acilis, kapanis, "kâr bankası (X$ cüzdana)", banka sonrasi
+"yeniden giriş (ana para × kaldıraç)" ve "kâr bankalandı ... notional ile
+devam" satirlari log panelinde gorunur. Geriye donuk testte `_quiet`
+oldugu icin log basilmaz (ayni semantik).
+
+DUZELTME NOTU: `_open` parametresi `notional` yerel boyutlandirma
+degiskeniyle AYNI adda oldugu icin ilk denemede override sessizce
+yutuldu (yerel `notional = margin * leverage` parametreyi golgeliyordu).
+Parametre degeri metodun basinda `notional_override`e kopyalandi; test
+13.5/13.6 bunu kilitler.
+
+ARAYUZ/SUNUCU: "ALGO-GRAF kâr bankası eşiği ($)" etiketi + yardim notu,
+baslatma logu ve mod notu yeni davranisa gore guncellendi ("kâr cüzdana
+yazilir, pozisyon ayni ana para × kaldiraç notional ile aninda yeniden
+acilir; işlemler logda gorunur"). Cache `?v=51` / `ta-v51`.
+
+OLCUM (5m 50.000 bar, 1x, stop %1, 10$ banka acik):
+  mod              BTC                ETH                SOL
+  algograf         -722,20$ (3864)    -778,90$ (4040)    -885,85$ (3942)
+  algograf_long    -251,58$ (1273)    -277,55$ (1359)    -285,54$ (1304)
+  algograf_short   -468,71$ (2598)    -497,93$ (2687)    -612,97$ (2649)
+  (stop'suz: algograf -714,74$ / -744,63$ / -816,94$; algograf_short
+  -466,77$ (2599) / -474,15$ (2693) / -585,43$ (2655).)
+  Islem sayilari onceki oturumla ayni mertebede; banka artik pozisyonu
+  kucultmedigi/kaybetmedigi icin K/Z ve komisyon degisimi kucuk.
+
+DOGRULAMA: `test_algograf.py` **97/97** -- bolum 13 tamamen yenilendi
+(31 kontrol): banka sonrasi pozisyon acik, ayni notional (ana para x
+kaldiraç), adet = notional/fiyat, net kar cuzdana, yeni giris banka
+dolum fiyatindan, esik taze 10$, banka kapanisi islem kaydinda, ayni
+fiyatta tekrar banka yok, ikinci esik, LONG ve SHORT, bar ici zirve,
+maker komisyon (kapanis + yeni giris), tam 10$'da banka + giris, 0 =
+kapali, Uygula aninda, stop mesafesi korunur, log satirlari ('trade').
+`test_tk2` 138/138, `test_paper` 90/90, `test_tk_fix` 37/37, py_compile
+ve `node --check` temiz. `logs/islemler.csv` olusmadi.

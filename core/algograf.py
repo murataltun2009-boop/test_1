@@ -49,11 +49,12 @@ fiyatından `PAPER_ALGOGRAF_SL` kadar ters harekette pozisyonu kapatır
 (acil çıkış). Etiket serisi ve grafik yıldızları stop yüzünden değişmez;
 stop sonrası kural sıfırlanana kadar aynı yönde yeni giriş yapılmaz.
 
-KÂR DİLİMİ BANKASI (2026-11-14) da yürütme katmanındadır: açık kâr
-`PAPER_ALGOGRAF_BANK_USD` (varsayılan 10$) tutarına ulaşınca, kârı bu
-tutara denk gelen adet dilimi satılır (dilim = tutar/|fiyat-giriş|); kâr
-cüzdana yazılır, kalan pozisyon aynı giriş/stop ile devam eder. Kalan
-taze +tutar kazanınca tekrar bankalanır. Kural etiketleri değişmez.
+KÂR BANKASI (2026-11-14) da yürütme katmanındadır: açık kâr
+`PAPER_ALGOGRAF_BANK_USD` (varsayılan 10$) tutarına ulaşınca pozisyon
+kapatılır, net kâr cüzdana yazılır ve AYNI yönde, AYNI ana para ×
+kaldıraç notional ile anında yeniden girilir (pozisyon kaybolmaz,
+bileşik büyüme yok). Yeni eşik taze +tutar kârdır. Kural etiketleri
+değişmez.
 """
 from __future__ import annotations
 

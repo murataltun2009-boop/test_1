@@ -1378,6 +1378,23 @@ class MarketService:
             pass
         logger.info("%s [%s] %s", stamp, category, message)
 
+    def emit_paper_event(self, kind: str, message: str) -> None:
+        """Paper motorunun işlem/banka olayını ARAYÜZ log paneline yaz.
+
+        `PaperTrader.set_event_handler` buraya bağlanır. Açılış, kapanış,
+        kâr bankası ve banka sonrası yeniden giriş satırları böylece web
+        logunda görünür (önceden yalnız dosya günlüğüne yazılıyordu).
+        Konsol günlüğüne TEKRAR yazılmaz; PaperTrader zaten `logger.info`
+        ile yazıyor.
+        """
+        level = "ok" if kind == "trade" else "info"
+        stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.events.put(("log", stamp, level, "işlem", message))
+        try:
+            self.store.log(level, "işlem", message)
+        except Exception:      # noqa: BLE001
+            pass
+
     def _emit_log_signal(self, tf: str, stamp: str, sig: Signal,
                          previous: Signal, res: TimeframeAnalysis) -> None:
         text = (f"[{tf}] {previous.value} → {sig.value}  |  "
