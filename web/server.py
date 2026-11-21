@@ -358,6 +358,7 @@ def create_app(service: MarketService, store: SignalStore,
             pull_atr=_num(data.get("pull_atr")),
             tk2_bank_usd=_num(data.get("tk2_bank_usd")),
             algo_bank_usd=_num(data.get("algo_bank_usd")),
+            algo_loss_usd=_num(data.get("algo_loss_usd")),
         )
         # Mod degisince grafik yildizlarini yeni algoritmaya gore
         # hemen yeniden uretip gonder.
@@ -465,6 +466,7 @@ def create_app(service: MarketService, store: SignalStore,
             pull_atr=_num(data.get("pull_atr")),
             tk2_bank_usd=_num(data.get("tk2_bank_usd")),
             algo_bank_usd=_num(data.get("algo_bank_usd")),
+            algo_loss_usd=_num(data.get("algo_loss_usd")),
         )
         # TİK2 onayi (2026-11-11, kullanici kurali — 3 varyant):
         # tk2 = iki yon, tk2_long = yalniz LONG, tk2_short = yalniz SHORT.
@@ -535,7 +537,10 @@ def create_app(service: MarketService, store: SignalStore,
                 f"ile anında yeniden açılır (bileşik büyüme yok, pozisyon "
                 f"kaybolmaz; işlemler logda görünür) "
                 f"· 0 = kapalı · tutar değişince Uygula ile açık pozisyona "
-                f"hemen uygulanır; koruyucu stop "
+                f"hemen uygulanır; yalnız-SHORT modunda HULL AL olur "
+                f"olmaz (bar kapanışı beklenmeden) ve net zarar "
+                f"{paper.algo_loss_usd:.2f}$'a ulaşınca pozisyon kapanır "
+                f"(zarar freni; 0 = kapalı) · koruyucu stop "
                 f"%{paper.algo_sl*100:.2f} (acil çıkış) · aç/kapa ve banka "
                 f"LIMIT (maker){dur}")
         # TIK modu onayi: kullaniciya motorun GERCEKTEN tik ile
@@ -697,6 +702,7 @@ def create_app(service: MarketService, store: SignalStore,
             pull_atr=_num(data.get("pull_atr")),
             tk2_bank_usd=_num(data.get("tk2_bank_usd")),
             algo_bank_usd=_num(data.get("algo_bank_usd")),
+            algo_loss_usd=_num(data.get("algo_loss_usd")),
         )
         # TİK2 onayi (2026-11-11, kullanici kurali — 3 varyant):
         # tk2 = iki yon, tk2_long = yalniz LONG, tk2_short = yalniz SHORT.
@@ -767,7 +773,10 @@ def create_app(service: MarketService, store: SignalStore,
                 f"ile anında yeniden açılır (bileşik büyüme yok, pozisyon "
                 f"kaybolmaz; işlemler logda görünür) "
                 f"· 0 = kapalı · tutar değişince Uygula ile açık pozisyona "
-                f"hemen uygulanır; koruyucu stop "
+                f"hemen uygulanır; yalnız-SHORT modunda HULL AL olur "
+                f"olmaz (bar kapanışı beklenmeden) ve net zarar "
+                f"{paper.algo_loss_usd:.2f}$'a ulaşınca pozisyon kapanır "
+                f"(zarar freni; 0 = kapalı) · koruyucu stop "
                 f"%{paper.algo_sl*100:.2f} (acil çıkış) · aç/kapa ve banka "
                 f"LIMIT (maker){dur}")
         # TIK modu onayi: kullaniciya motorun GERCEKTEN tik ile

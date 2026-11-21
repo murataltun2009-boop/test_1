@@ -145,6 +145,21 @@ def _below(a: float, b: float, eps: float) -> bool:
     return a < b - eps
 
 
+def hull_al(price: Optional[float], ma: Optional[float]) -> bool:
+    """HULL satırı "AL" mı? Fiyat, HULL9'un ölü bant üstünde.
+
+    `core.analysis._ma_v` ile birebir aynı eşik. Canlı akışta (bar
+    kapanışını beklemeden) HULL=AL tespiti için de kullanılır.
+    """
+    try:
+        p = float(price)
+        m = float(ma)
+    except (TypeError, ValueError):
+        return False
+    return bool(math.isfinite(p) and math.isfinite(m) and m > 0
+                and p > m * (1.0 + _MA_DEADZONE))
+
+
 def _conditions(t: float, mavi: float, pembe: float, yesil: float,
                 eps: float, price: Optional[float] = None) -> dict[str, bool]:
     """Bir barın kullanıcı kuralı koşulları (4 çizgi).
@@ -168,8 +183,7 @@ def _conditions(t: float, mavi: float, pembe: float, yesil: float,
     short_exit = not _above(t, yesil, eps)
     # HULL satırı "AL": fiyat HULL9'un belirgin üstünde (ölü bant
     # analysis.MA_DEADZONE). Fiyat verilmezse bu kapatma devre dışı.
-    hull_al = bool(price is not None and pembe > 0
-                   and float(price) > pembe * (1.0 + _MA_DEADZONE))
+    hull_alim = hull_al(price, pembe)
     # HULL satırı "SAT": fiyat HULL9'un belirgin altında (aynı ölü bant).
     hull_sat = bool(price is not None and pembe > 0
                     and float(price) < pembe * (1.0 - _MA_DEADZONE))
@@ -178,7 +192,7 @@ def _conditions(t: float, mavi: float, pembe: float, yesil: float,
                    and float(price) > yesil * (1.0 + _MA_DEADZONE))
     # 2026-11-15 yalnız-LONG kullanıcı kuralı: HULL ve VWMA ikisi de AL
     # ise LONG açılır/tutulur (YEŞİL > PEMBE kapatmasını ezer).
-    both_al = hull_al and vwma_al
+    both_al = hull_alim and vwma_al
     # LONG: PEMBE en üstte, MAVİ en altta.
     long_entry = (_above(pembe, t, eps) and _above(pembe, yesil, eps)
                   and _below(mavi, t, eps) and _below(mavi, yesil, eps))

@@ -634,8 +634,23 @@ class MarketService:
         if price != price or price <= 0:      # NaN veya gecersiz
             price = candles[-1].close
         signal = self._signal_for_mode(res, candles, tf)
+        # YALNIZ `algograf_short`: HULL "AL" bar kapanisini beklemeden
+        # aninda SHORT kapansin diye son KAPANMIS barin HULL9 degeri
+        # gecirilir. Deger analizden okunur (yeniden hesaplanmaz).
+        hull_ma = None
+        if self.paper.mode == "algograf_short" and res is not None:
+            try:
+                cs = _kapali_mumlar(candles)
+                hu = res.ma_series.get("hma")
+                if cs and hu is not None and len(hu) >= len(cs):
+                    deger = float(hu[len(cs) - 1])
+                    if deger == deger and deger > 0:   # NaN/gecersiz
+                        hull_ma = deger
+            except Exception:      # noqa: BLE001
+                hull_ma = None
         try:
-            self.paper.on_price(price, candles, tf, signal)
+            self.paper.on_price(price, candles, tf, signal,
+                                hull_ma=hull_ma)
         except Exception as exc:      # noqa: BLE001
             self._emit_log("error", "simulator", f"Simülatör hatası: {exc}")
 

@@ -184,6 +184,11 @@
             <button id="pAlgoBankApply" class="btn small" type="button">Uygula</button>
             <span class="hint">açık kâr bu tutara ulaşınca kâr cüzdana yazılır ve pozisyon aynı yönde, aynı ana para × kaldıraç notional ile anında yeniden açılır (pozisyon kaybolmaz) · 0 = kapalı · Uygula açık pozisyona hemen uygular</span>
           </label>
+          <label class="wfull" id="algoLossWrap" style="display:none">ALGO-GRAF zarar freni ($)
+            <input id="pAlgoLoss" type="number" step="1" min="0" max="100000" value="10">
+            <button id="pAlgoLossApply" class="btn small" type="button">Uygula</button>
+            <span class="hint">yalnız-SHORT: açık pozisyonun net zararı bu tutara ulaşınca anında kapanır · 0 = kapalı · Uygula açık pozisyona hemen uygular</span>
+          </label>
           <label class="wfull">Karar mekanizması
             <select id="pMode">
               <optgroup label="— Bileşik (osilatör + MA) —">
@@ -208,7 +213,7 @@
               <optgroup label="— ALGO-GRAF (grafik çizgi sıralaması, 5 dk) —">
                 <option value="algograf">ALGO-GRAF — iki yön (tüm çizgi kuralları)</option>
                 <option value="algograf_long">ALGO-GRAF — yalnız LONG (PEMBE üst / MAVİ alt veya HULL &amp; VWMA AL; YEŞİL&gt;PEMBE ya da HULL SAT kapatır)</option>
-                <option value="algograf_short">ALGO-GRAF - yalnız SHORT (MAVİ en üst / PEMBE en alt, EMA20 VWMA20'nin üstünde; kapatma: SHORT dizilimi bozulursa veya HULL değeri AL ise; HULL AL iken yeni SHORT açılmaz)</option>
+                <option value="algograf_short">ALGO-GRAF - yalnız SHORT (MAVİ en üst / PEMBE en alt, EMA20 VWMA20'nin üstünde; kapatma: SHORT dizilimi bozulursa veya HULL AL olur olmaz (bar kapanışı beklenmeden) ya da net zarar zarar freni tutarına ulaşınca; HULL AL iken yeni SHORT açılmaz)</option>
               </optgroup>
             </select>
           </label>

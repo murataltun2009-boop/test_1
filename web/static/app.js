@@ -105,6 +105,7 @@ if ("serviceWorker" in navigator) {
    "pBacktest", "pRule", "pMode", "pStart", "pLive", "pStop", "pReset",
    "pRisk", "riskWrap", "pLock", "lockWrap", "pPull", "pullWrap",
    "pBank", "bankWrap", "pAlgoBank", "algoBankWrap", "pAlgoBankApply",
+   "pAlgoLoss", "algoLossWrap", "pAlgoLossApply",
    "ruleWrap", "modeNote", "modeNote2", "modeNote3", "modeNote3ppt",
    "modeNote4",
    "modeThr",
@@ -1068,6 +1069,10 @@ if ("serviceWorker" in navigator) {
           d.algo_bank_usd !== undefined && d.algo_bank_usd !== null) {
         el.pAlgoBank.value = d.algo_bank_usd;
       }
+      if (el.pAlgoLoss && document.activeElement !== el.pAlgoLoss &&
+          d.algo_loss_usd !== undefined && d.algo_loss_usd !== null) {
+        el.pAlgoLoss.value = d.algo_loss_usd;
+      }
       if (document.activeElement !== el.pRule) el.pRule.value = d.short_rule;
       if (document.activeElement !== el.pMode) {
         el.pMode.value = d.mode;
@@ -1239,6 +1244,12 @@ if ("serviceWorker" in navigator) {
         var b = el.pAlgoBank ? parseFloat(el.pAlgoBank.value) : 10;
         return isNaN(b) ? 10 : b;
       })(),
+      // ALGO-GRAF zarar freni (yalnız algograf_short; varsayılan 10$,
+      // 0 = kapalı). Sunucu tutarı anında açık pozisyona uygular.
+      algo_loss_usd: (function () {
+        var b = el.pAlgoLoss ? parseFloat(el.pAlgoLoss.value) : 10;
+        return isNaN(b) ? 10 : b;
+      })(),
       // Dilimi sunucuya ACIKCA bildir: sunucudaki aktif dilim WS mesajiyla
       // guncelleniyor ve iki istek araya girince yanlis dilim test edilebiliyor.
       timeframe: state.tf
@@ -1301,6 +1312,10 @@ if ("serviceWorker" in navigator) {
     if (el.bankWrap) el.bankWrap.style.display = tik2fam ? "" : "none";
     if (el.algoBankWrap) {
       el.algoBankWrap.style.display = algofam ? "" : "none";
+    }
+    // Zarar freni YALNIZ yalnız-SHORT (algograf_short) modunda.
+    if (el.algoLossWrap) {
+      el.algoLossWrap.style.display = (mode === "algograf_short") ? "" : "none";
     }
     if (el.pullWrap) el.pullWrap.style.display = (mode === "trend" || mode === "ppt") ? "" : "none";
     el.pRule.disabled = kilit;
@@ -1376,10 +1391,11 @@ if ("serviceWorker" in navigator) {
               : el.pMode.value === "algograf_short"
               ? "varyant: YALNIZ SHORT (MAVİ en üst + PEMBE en altta, "
                 + "EMA20 VWMA20'nin üstünde SHORT); kapatma: SHORT "
-                + "dizilimi bozulursa (MAVİ en üst / PEMBE en alt / "
-                + "EMA20 > VWMA20 koşullarından biri biterse) VEYA HULL "
-                + "değeri AL ise (hangisi önce olursa); HULL AL iken yeni "
-                + "SHORT açılmaz, NÖTR beklenir; "
+                + "dizilimi bozulursa VEYA HULL AL olur olmaz (bar "
+                + "kapanışı beklenmeden; hangisi önce olursa) VEYA net "
+                + "zarar " + (parseFloat(el.pAlgoLoss.value) || 0)
+                + "$ zarar frenine ulaşınca; HULL AL iken yeni SHORT "
+                + "açılmaz, NÖTR beklenir; "
               : "varyant: iki yön (tüm kurallar); ")
           + "AL=LONG açar, SAT=SHORT açar, AL-KAPAT açık LONG'u, "
           + "SAT-KAPAT açık SHORT'u kapatır; kararsızlıkta NÖTR; "
