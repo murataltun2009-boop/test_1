@@ -1389,11 +1389,12 @@ if ("serviceWorker" in navigator) {
                 + "değilken) VEYA HULL değeri SAT olunca; HULL SAT iken "
                 + "yeni LONG açılmaz; "
               : el.pMode.value === "algograf_short"
-              ? "varyant: YALNIZ SHORT (MAVİ en üst + PEMBE en altta, "
-                + "EMA20 VWMA20'nin üstünde SHORT); kapatma: SHORT "
-                + "dizilimi bozulursa VEYA HULL AL olur olmaz (bar "
-                + "kapanışı beklenmeden; hangisi önce olursa) VEYA net "
-                + "zarar " + (parseFloat(el.pAlgoLoss.value) || 0)
+              ? "varyant: YALNIZ SHORT (giriş: MAVİ en üst + PEMBE en "
+                + "altta, EMA20 VWMA20'nin üstünde VEYA HULL SAT — fiyat "
+                + "HULL9'un altında; hangisi varsa SHORT açar/tutur); "
+                + "kapatma: HULL AL olur olmaz (bar kapanışı "
+                + "beklenmeden) VEYA ne dizilim ne HULL SAT kalmışsa VEYA "
+                + "net zarar " + (parseFloat(el.pAlgoLoss.value) || 0)
                 + "$ zarar frenine ulaşınca; HULL AL iken yeni SHORT "
                 + "açılmaz, NÖTR beklenir; "
               : "varyant: iki yön (tüm kurallar); ")
@@ -1474,6 +1475,29 @@ if ("serviceWorker" in navigator) {
                  "Cüzdan, açık pozisyon ve işlem geçmişi silinir.")) return;
     paperCall("/api/paper/reset");
   });
+
+  // ALGO-GRAF zarar freni: "Uygula" tutarı ANINDA açık pozisyona uygular
+  // (0 = fren tamamen kapanır). Yalnız `algograf_short` için görünür.
+  if (el.pAlgoLossApply) {
+    el.pAlgoLossApply.addEventListener("click", function (ev) {
+      ev.preventDefault();
+      var tutar = parseFloat(el.pAlgoLoss.value);
+      if (isNaN(tutar) || tutar < 0) {
+        addLog(nowTs(), "error", "Zarar freni tutarı geçersiz");
+        return;
+      }
+      state.userTouched = true;
+      paperCall("/api/paper/config").then(function (d) {
+        if (d && d.ok) {
+          addLog(nowTs(), "info",
+            "ALGO-GRAF zarar freni güncellendi: " +
+            (tutar > 0
+              ? fmtUsd(tutar) + " · açık pozisyona hemen uygulandı"
+              : "kapalı (0$)"));
+        }
+      });
+    });
+  }
 
   // ALGO-GRAF kâr bankası: "Uygula" yeni tutarı ANINDA açık pozisyona
   // uygular. Sunucu tarafında banka eşiği sıfırlanır ve bir sonraki

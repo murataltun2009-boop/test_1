@@ -2701,7 +2701,6 @@ class PaperTrader:
                 and algograf.hull_al(price, hull_ma)):
             self._close(price, "ALGO-GRAF: HULL AL (canlı) — SHORT "
                         "kapatıldı", timeframe)
-            self._algo_stop_kilit = SHORT
             return "ALGO-GRAF: HULL AL — SHORT kapatildi (canli)"
 
         # ---- 3) ZARAR FRENİ (2026-11-21, YALNIZ `algograf_short`) -----
@@ -2822,6 +2821,11 @@ class PaperTrader:
             if p is not None and p.side == SHORT:
                 return None
             if self._algo_stop_kilit == SHORT:
+                return None
+            # HULL AL iken yeni SHORT AÇILMAZ (canlı fiyat, bar kapanışı
+            # beklenmeden). Yalnız `algograf_short` için `hull_ma`
+            # geçirilir; verilmezse bu kapı devre dışıdır.
+            if algograf.hull_al(price, hull_ma):
                 return None
             if p is not None:
                 self._close(price, "ALGO-GRAF: yon degisimi (maker)",

@@ -2838,3 +2838,66 @@ HULL AL ise kapat; HULL AL iken yeni SHORT açılmaz"). Cache `?v=53` /
 DOGRULAMA: `test_algograf` 107/107, `test_tk2` 138/138, `test_paper`
 90/90, `test_tk_fix` 37/37; py_compile ve `node --check` temiz;
 `logs/islemler.csv` oluşmadı.
+
+## OTURUM 35 - ALGO-GRAF yalnız SHORT: HULL SAT girişi + anında HULL AL kapanışı + zarar freni (2026-11-22)
+
+KULLANICI GERI BILDIRIMI: "Algograf yalnız short kuralında short pozisyon
+açılıyor ama kapatılması gereken noktada çizgi değişimini bekliyor.
+HULL-AL olduğunda mevcut açık SHORT kapatılmalı; kapatmadığında büyük
+zarar oluşuyor. Ayrıca zarar freni koy: kullanıcının belirleyeceği tutar,
+varsayılan 10$. Şu haliyle dünden beri denedim hiç short açmıyor; grafik
+veya HULL hangisi SAT moduna girdiyse SHORT açsın."
+
+KOK NEDEN 1 (hiç SHORT açılmaması): `core/algograf.py::_conditions`
+içinde yerel değişken `hull_alim` olarak yeniden adlandırılmış, ancak
+dönen sözlükte `"hull_al": hull_al` yazılı kalmıştı. Buradaki `hull_al`
+FONKSİYONUN kendisi olduğu için her zaman truthy idi; `series` giriş
+kapısı (`short_entry and not c["hull_al"]`) hiç geçmiyor ve açık SHORT
+her tick'te SAT-KAPAT üretiyordu. Düzeltme: `"hull_al": hull_alim`.
+
+KOK NEDEN 2 (geç kapanış): kapanış yalnızca bar kapanışındaki etiketle
+geliyordu (5 dk'ya kadar gecikme). Canlı fiyat HULL9'un üstüne çıktığı
+AN kapatma eklendi.
+
+KURAL (yalnız `algograf_short`; iki yönlü `algograf` ve `algograf_long`
+DEĞİŞMEDİ):
+  1) GİRİŞ: SHORT dizilimi VEYA HULL "SAT" (fiyat HULL9 altında) —
+     hangisi varsa SHORT açar.
+  2) TUTMA: ikisinden biri sürdükçe; HULL SAT iken dizilim bozulsa bile
+     SHORT açık kalır.
+  3) KAPATMA: HULL "AL" (fiyat HULL9 üstü) VEYA ne dizilim ne HULL SAT
+     kalmışsa.
+  4) HULL AL iken yeni SHORT açılmaz (canlı fiyat kapısı).
+  5) HULL AL, bar kapanışı BEKLENMEDEN canlı fiyatla yakalanır; son
+     kapanmış barın HULL9'u `service._run_paper` -> `paper.on_price(...,
+     hull_ma=...)` ile geçirilir.
+  6) ZARAR FRENİ: açık pozisyonun NET zararı `PAPER_ALGOGRAF_LOSS_USD`
+     (varsayılan 10$, 0 = kapalı) tutarına ulaşınca market (taker)
+     kapanış; arayüzden "Uygula" ile anında değişir.
+
+`series` durum makinesi (`state < 0`, `yon < 0`) ve düz giriş
+(`yon < 0`) yeni kurala göre ayrıştırıldı; iki yönlü dal aynen korundu.
+
+TESTLER: bölüm 14 eklendi — HULL SAT tek başına giriş, HULL AL'de giriş
+yok, HULL SAT iken dizilim bozulsa da tutma, HULL AL -> SAT-KAPAT,
+HULL SAT'a dönünce yeniden giriş, iki yönlü modda yeni girişin
+olmaması, bar içi HULL AL kapanışı (yalnız SHORT), zarar freni
+eşiği/net-komisyon, tutar değişiminin anında uygulanması, 0 = kapalı,
+kapsam ve log satırı. Toplam **133/133**.
+
+OLCUM (BTCUSDT 5m 20.000 bar, 10x, stop kapalı, banka açık):
+  zarar freni 0$  : -1.006,72$ (354 işlem)
+  zarar freni 10$ : -1.009,26$ (371 işlem; 8 zarar freni kapanışı)
+  Çıkış dağılımı (10$): HULL AL 161, SAT-KAPAT 153, banka 49,
+  zarar freni 8. Önceki hatalı sürümde `hull_al` fonksiyonu yüzünden
+  giriş hiç açılmıyordu (0 işlem).
+
+ARAYUZ/SUNUCU: `algograf_short` seçenek metni, mod notu, başlatma logu
+(2 yer) yeni giriş/kapanış/zarar frenine göre güncellendi. Yeni alan
+`pAlgoLoss` + "Uygula" (yalnız `algograf_short` görünür), API
+`algo_loss_usd`, `config.PAPER_ALGOGRAF_LOSS_USD = 10.0`, `state()`
+alanı. Cache `?v=54` / `ta-v54` (SW precache dahil).
+
+DOGRULAMA: `test_algograf` 133/133, `test_tk2` 138/138, `test_paper`
+90/90, `test_tk_fix` 37/37; py_compile ve `node --check` temiz;
+`logs/islemler.csv` oluşmadı.
