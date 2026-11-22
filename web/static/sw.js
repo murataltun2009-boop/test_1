@@ -52,9 +52,10 @@
 //      ac/tut; YESIL>PEMBE (both-AL degilken) veya HULL SAT -> kapat.
 // v25: ALGO-GRAF SHORT cikisi: SHORT dizilimi bozulursa veya HULL AL
 //      durumundaysa kapat; HULL AL iken yeni SHORT acilmaz (NOTR bekle).
-// v26: ALGO-GRAF yalniz SHORT: giris SHORT dizilimi VEYA HULL SAT;
-//      HULL AL olur olmaz (bar kapanisi beklenmeden) SHORT kapat;
-//      net zarar dolar frenine ulasinca kapat (varsayilan 10$).
+// v26: ALGO-GRAF yalniz SHORT: giris SHORT dizilimi VE HULL SAT
+//      (HULL NOTR/AL iken giris yok); HULL AL olur olmaz (bar kapanisi
+//      beklenmeden) SHORT kapat; net zarar dolar frenine ulasinca kapat
+//      (varsayilan 10$).
 const VERSION = "ta-v54";
 const SHELL = "shell-" + VERSION;
 

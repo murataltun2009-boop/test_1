@@ -1390,13 +1390,13 @@ if ("serviceWorker" in navigator) {
                 + "yeni LONG açılmaz; "
               : el.pMode.value === "algograf_short"
               ? "varyant: YALNIZ SHORT (giriş: MAVİ en üst + PEMBE en "
-                + "altta, EMA20 VWMA20'nin üstünde VEYA HULL SAT — fiyat "
-                + "HULL9'un altında; hangisi varsa SHORT açar/tutur); "
-                + "kapatma: HULL AL olur olmaz (bar kapanışı "
-                + "beklenmeden) VEYA ne dizilim ne HULL SAT kalmışsa VEYA "
-                + "net zarar " + (parseFloat(el.pAlgoLoss.value) || 0)
-                + "$ zarar frenine ulaşınca; HULL AL iken yeni SHORT "
-                + "açılmaz, NÖTR beklenir; "
+                + "altta, EMA20 VWMA20'nin üstünde VE HULL SAT — fiyat "
+                + "HULL9'un altında; ikisi birlikte gerekir, HULL NÖTR "
+                + "veya AL iken yeni SHORT açılmaz); kapatma: SHORT "
+                + "dizilimi bozulursa VEYA HULL AL olur olmaz (bar "
+                + "kapanışı beklenmeden) VEYA net zarar "
+                + (parseFloat(el.pAlgoLoss.value) || 0)
+                + "$ zarar frenine ulaşınca; "
               : "varyant: iki yön (tüm kurallar); ")
           + "AL=LONG açar, SAT=SHORT açar, AL-KAPAT açık LONG'u, "
           + "SAT-KAPAT açık SHORT'u kapatır; kararsızlıkta NÖTR; "

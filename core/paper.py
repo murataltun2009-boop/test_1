@@ -2822,9 +2822,13 @@ class PaperTrader:
                 return None
             if self._algo_stop_kilit == SHORT:
                 return None
-            # HULL AL iken yeni SHORT AÇILMAZ (canlı fiyat, bar kapanışı
-            # beklenmeden). Yalnız `algograf_short` için `hull_ma`
-            # geçirilir; verilmezse bu kapı devre dışıdır.
+            # YALNIZ `algograf_short`: SHORT girişi için canlı fiyatın da
+            # HULL "SAT" olması şarttır (fiyat HULL9'un altında). HULL
+            # "NÖTR" (ölü bant içi) veya "AL" iken yeni SHORT AÇILMAZ.
+            # `hull_ma` yalnız bu modda geçirilir; yoksa kapı devre dışıdır.
+            if self.mode == "algograf_short" and hull_ma is not None:
+                if not algograf.hull_sat(price, hull_ma):
+                    return None
             if algograf.hull_al(price, hull_ma):
                 return None
             if p is not None:

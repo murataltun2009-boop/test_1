@@ -2859,38 +2859,46 @@ KOK NEDEN 2 (geç kapanış): kapanış yalnızca bar kapanışındaki etiketle
 geliyordu (5 dk'ya kadar gecikme). Canlı fiyat HULL9'un üstüne çıktığı
 AN kapatma eklendi.
 
-KURAL (yalnız `algograf_short`; iki yönlü `algograf` ve `algograf_long`
-DEĞİŞMEDİ):
-  1) GİRİŞ: SHORT dizilimi VEYA HULL "SAT" (fiyat HULL9 altında) —
-     hangisi varsa SHORT açar.
-  2) TUTMA: ikisinden biri sürdükçe; HULL SAT iken dizilim bozulsa bile
-     SHORT açık kalır.
-  3) KAPATMA: HULL "AL" (fiyat HULL9 üstü) VEYA ne dizilim ne HULL SAT
-     kalmışsa.
-  4) HULL AL iken yeni SHORT açılmaz (canlı fiyat kapısı).
-  5) HULL AL, bar kapanışı BEKLENMEDEN canlı fiyatla yakalanır; son
-     kapanmış barın HULL9'u `service._run_paper` -> `paper.on_price(...,
-     hull_ma=...)` ile geçirilir.
-  6) ZARAR FRENİ: açık pozisyonun NET zararı `PAPER_ALGOGRAF_LOSS_USD`
-     (varsayılan 10$, 0 = kapalı) tutarına ulaşınca market (taker)
-     kapanış; arayüzden "Uygula" ile anında değişir.
+KULLANICI DUZELTMESI (2026-11-22, ayni gun): "HATA VAR. short acilmasi
+icin hull degerinin SAT, mavi cizginin en ustte, Hull 9 Pembe cizgisinin
+en altta olmasi gerekliydi. HULL -> notr iken ve AL durumundayken short
+acmaman lazim." Yani onceki "VEYA HULL SAT" genisletmesi YANLISTI; iki
+kosul BIRLIKTE aranir.
 
-`series` durum makinesi (`state < 0`, `yon < 0`) ve düz giriş
-(`yon < 0`) yeni kurala göre ayrıştırıldı; iki yönlü dal aynen korundu.
+KURAL (yalniz `algograf_short`; iki yonlu `algograf` ve `algograf_long`
+DEGISMEDI):
+  1) GIRIS: SHORT cizgi dizilimi (MAVI en ust + PEMBE en alt + EMA20 >
+     VWMA20) VE HULL "SAT" (fiyat HULL9 altinda) BIRLIKTE gerekir.
+  2) HULL "NOTR" (olu bant ici) veya "AL" iken yeni SHORT ACILMAZ.
+  3) KAPATMA: SHORT dizilimi bozulursa VEYA HULL "AL" (fiyat HULL9 ustu)
+     olursa (2026-11-15 kurali).
+  4) HULL AL, bar kapanisi BEKLENMEDEN canli fiyatla yakalanir; son
+     kapanmis barin HULL9'u `service._run_paper` -> `paper.on_price(...,
+     hull_ma=...)` ile gecirilir.
+  5) ZARAR FRENI: acik pozisyonun NET zarari `PAPER_ALGOGRAF_LOSS_USD`
+     (varsayilan 10$, 0 = kapali) tutarina ulasinca market (taker)
+     kapanis; arayuzden "Uygula" ile aninda degisir.
 
-TESTLER: bölüm 14 eklendi — HULL SAT tek başına giriş, HULL AL'de giriş
-yok, HULL SAT iken dizilim bozulsa da tutma, HULL AL -> SAT-KAPAT,
-HULL SAT'a dönünce yeniden giriş, iki yönlü modda yeni girişin
-olmaması, bar içi HULL AL kapanışı (yalnız SHORT), zarar freni
-eşiği/net-komisyon, tutar değişiminin anında uygulanması, 0 = kapalı,
-kapsam ve log satırı. Toplam **133/133**.
+`series` durum makinesi (`state < 0`, `yon < 0`) ve duz giris
+(`yon < 0`) buna gore ayrıştırıldı; iki yonlu dal aynen korundu.
+`paper._algograf` giris kapisi canli fiyat icin de HULL SAT arar
+(`algograf.hull_sat`); HULL NOTR/AL ise SHORT acmaz.
 
-OLCUM (BTCUSDT 5m 20.000 bar, 10x, stop kapalı, banka açık):
-  zarar freni 0$  : -1.006,72$ (354 işlem)
-  zarar freni 10$ : -1.009,26$ (371 işlem; 8 zarar freni kapanışı)
-  Çıkış dağılımı (10$): HULL AL 161, SAT-KAPAT 153, banka 49,
-  zarar freni 8. Önceki hatalı sürümde `hull_al` fonksiyonu yüzünden
-  giriş hiç açılmıyordu (0 işlem).
+TESTLER: bolum 14 — HULL SAT tek basina giris YOK, dizilim+HULL SAT
+birlikte giris, dizilim SAT iken HULL NOTR/AL'de giris yok, dizilim
+bozulunca ve HULL AL'de SAT-KAPAT, HULL SAT'a donunce yeniden giris,
+iki yonlu modda kurallarin degismemesi, canli giris kapisi (HULL NOTR/AL
+-> giris yok), bar ici HULL AL kapanisi (yalniz SHORT), zarar freni
+esigi/net-komisyon, tutar degisiminin aninda uygulanmasi, 0 = kapali,
+kapsam ve log satiri. Toplam **138/138**.
+
+OLCUM (BTCUSDT 5m 20.000 bar, 10x, stop kapali, banka acik; SAT
+etiketli bar 1.318, SAT-KAPAT 587, NOTR 18.095):
+  zarar freni 0$  : -1.000,06$ (279 islem)
+  zarar freni 10$ : -1.012,73$ (281 islem; 1 zarar freni kapanisi)
+  Cikis dagilimi (10$): HULL AL 215, SAT-KAPAT 12, banka 53,
+  zarar freni 1. Onceki hatali surumde `hull_al` fonksiyonu yuzunden
+  giris hic acilmiyordu (0 islem).
 
 ARAYUZ/SUNUCU: `algograf_short` seçenek metni, mod notu, başlatma logu
 (2 yer) yeni giriş/kapanış/zarar frenine göre güncellendi. Yeni alan
@@ -2898,6 +2906,6 @@ ARAYUZ/SUNUCU: `algograf_short` seçenek metni, mod notu, başlatma logu
 `algo_loss_usd`, `config.PAPER_ALGOGRAF_LOSS_USD = 10.0`, `state()`
 alanı. Cache `?v=54` / `ta-v54` (SW precache dahil).
 
-DOGRULAMA: `test_algograf` 133/133, `test_tk2` 138/138, `test_paper`
+DOGRULAMA: `test_algograf` 138/138, `test_tk2` 138/138, `test_paper`
 90/90, `test_tk_fix` 37/37; py_compile ve `node --check` temiz;
-`logs/islemler.csv` oluşmadı.
+`logs/islemler.csv` (kullanıcı canlı kaydı) değiştirilmedi.
