@@ -56,13 +56,13 @@
 //      (HULL NOTR/AL iken giris yok); HULL AL olur olmaz (bar kapanisi
 //      beklenmeden) SHORT kapat; net zarar dolar frenine ulasinca kapat
 //      (varsayilan 10$).
-const VERSION = "ta-v54";
+const VERSION = "ta-v55";
 const SHELL = "shell-" + VERSION;
 
 const PRECACHE = [
   "/",
-  "/static/style.css?v=54",
-  "/static/app.js?v=54",
+  "/static/style.css?v=55",
+  "/static/app.js?v=55",
   "/static/vendor/echarts.min.js",
   "/static/icon-192.png",
   "/static/icon-512.png",

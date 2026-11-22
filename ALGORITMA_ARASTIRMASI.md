@@ -2904,7 +2904,7 @@ ARAYUZ/SUNUCU: `algograf_short` seçenek metni, mod notu, başlatma logu
 (2 yer) yeni giriş/kapanış/zarar frenine göre güncellendi. Yeni alan
 `pAlgoLoss` + "Uygula" (yalnız `algograf_short` görünür), API
 `algo_loss_usd`, `config.PAPER_ALGOGRAF_LOSS_USD = 10.0`, `state()`
-alanı. Cache `?v=54` / `ta-v54` (SW precache dahil).
+alanı. Cache `?v=55` / `ta-v55` (SW precache dahil).
 
 DOGRULAMA: `test_algograf` 138/138, `test_tk2` 138/138, `test_paper`
 90/90, `test_tk_fix` 37/37; py_compile ve `node --check` temiz;
