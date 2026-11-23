@@ -641,7 +641,8 @@ class PaperTrader:
         # "buradan geri cekildi mi" sorusuna dayanir.
         self.long_peak = 0.0
         self._on_event = on_event
-
+        self._short_hull_al_pending = False
+        self._long_hull_sat_pending = False
         self.running = False
         self.position: Optional[Position] = None
         self.last_long_price: Optional[float] = None
@@ -1202,6 +1203,29 @@ class PaperTrader:
         # ALGO-GRAF (2026-11-13): yalnızca grafik çizgi sıralaması kuralı.
         # TP/banka/ribbon yok; kural çıkışına kadar tutulur. Tek ek:
         # `PAPER_ALGOGRAF_SL` kadar koruyucu stop (acil çıkış).
+        # ---- Handle pending HULL AL/SAT closures (resolution on next bar) ----
+        p = self.position
+        if p is not None:
+            if self._short_hull_al_pending and p.side == SHORT:
+                if algograf.hull_al(price, hull_ma):
+                    # HULL hâlâ AL -> ikinci mum onaylandi, pozisyonu kapat
+                    self._close(price, "ALGO-GRAF: HULL AL (onaylandı) — SHORT "
+                                "kapatıldı", timeframe, maker=True)
+                    self._short_hull_al_pending = False
+                    return "ALGO-GRAF: HULL AL — SHORT kapatildi (onaylandi)"
+                else:
+                    # HULL artik AL degil -> bekleme iptal
+                    self._short_hull_al_pending = False
+            if self._long_hull_sat_pending and p.side == LONG:
+                if algograf.hull_sat(price, hull_ma):
+                    # HULL hâlâ SAT -> ikinci mum onaylandi, pozisyonu kapat
+                    self._close(price, "ALGO-GRAF: HULL SAT (onaylandi) — LONG "
+                                "kapatıldı", timeframe, maker=True)
+                    self._long_hull_sat_pending = False
+                    return "ALGO-GRAF: HULL SAT — LONG kapatildi (onaylandi)"
+                else:
+                    # HULL artik SAT degil -> bekleme iptal
+                    self._long_hull_sat_pending = False
         if algograf.is_algograf_mode(self.mode):
             return self._algograf(price, timeframe, signal,
                                   bar_low, bar_high, hull_ma)
@@ -2690,25 +2714,49 @@ class PaperTrader:
                 self._algo_stop_kilit = yon
                 return "ALGO-GRAF: koruyucu stop — pozisyon kapandi"
 
-        # ---- 2) HULL TERS DURUMUNDA ANINDA KAPATMA (2026-11-21/23,
-        #         YALNIZ `algograf_short` / `algograf_long`) -----------
-        # Kullanici kurali: HULL satiri LONG'da "SAT" (fiyat HULL9 alti),
-        # SHORT'ta "AL" (fiyat HULL9 ustu) durumuna gectiginde acik
-        # pozisyon MUTLAKA kapanmali. Bar kapanisini beklemek buyuk zarara
-        # yol aciyordu; burada son KAPANMIS barin HULL9 degeri ile canli
-        # fiyat karsilastirilir ve kosul saglandigi ANDA (bar ici) kapanir.
+        # ---- 2) HULL TERS DURUMUNDA KAPATMA (2026-11-21/23/24) -----------
+        # Kural: HULL satiri LONG'da "SAT" (fiyat HULL9 alti), SHORT'ta "AL"
+        # (fiyat HULL9 ustu) oldugunda acik pozisyon KAPATILIR.
+        # YENI KURAL (2026-11-24): HULL ters durumuna gectiginde hemen
+        # kapatmaYIP, o mumun kapanisini bekleriz. Bir sonraki mumda HULL
+        # hâlâ ters durumdaysa (AL/SAT) pozisyon kapatilir. HULL tekrar
+        # NÖTR/TERS degilse bekleme iptal edilir.
         # Kapanis LIMIT (maker) sayilir (2026-11-23 komisyon istegi).
         p = self.position
         if p is not None and self.mode in ("algograf_short",
-                                           "algograf_long"):
-            if p.side == SHORT and algograf.hull_al(price, hull_ma):
-                self._close(price, "ALGO-GRAF: HULL AL (canlı) — SHORT "
-                            "kapatıldı", timeframe, maker=True)
-                return "ALGO-GRAF: HULL AL — SHORT kapatildi (canli)"
-            if p.side == LONG and algograf.hull_sat(price, hull_ma):
-                self._close(price, "ALGO-GRAF: HULL SAT (canlı) — LONG "
-                            "kapatıldı", timeframe, maker=True)
-                return "ALGO-GRAF: HULL SAT — LONG kapatildi (canli)"
+                                           "algograf_long", "algograf"):
+            # 2a) Bekleyen HULL AL/SAT kapanislari — bir sonraki mum onayla
+            if self._short_hull_al_pending and p.side == SHORT:
+                if algograf.hull_al(price, hull_ma):
+                    # HULL hâlâ AL -> ikinci mum onaylandi, pozisyonu kapat
+                    self._close(price, "ALGO-GRAF: HULL AL (onaylandı) — SHORT "
+                                "kapatıldı", timeframe, maker=True)
+                    self._short_hull_al_pending = False
+                    return "ALGO-GRAF: HULL AL — SHORT kapatildi (onaylandı)"
+                else:
+                    # HULL artik AL degil (NÖTR/SAT) -> bekleme iptal
+                    self._short_hull_al_pending = False
+            if self._long_hull_sat_pending and p.side == LONG:
+                if algograf.hull_sat(price, hull_ma):
+                    # HULL hâlâ SAT -> ikinci mum onaylandi, pozisyonu kapat
+                    self._close(price, "ALGO-GRAF: HULL SAT (onaylandı) — LONG "
+                                "kapatıldı", timeframe, maker=True)
+                    self._long_hull_sat_pending = False
+                    return "ALGO-GRAF: HULL SAT — LONG kapatildi (onaylandı)"
+                else:
+                    # HULL artik SAT degil (NÖTR/AL) -> bekleme iptal
+                    self._long_hull_sat_pending = False
+
+            # 2b) HULL ters durumuna GEÇIS tespiti -> bekleme baslat
+            # (sadece bekleme yokken ve pozisyon acikken)
+            if p.side == SHORT and not self._short_hull_al_pending:
+                if algograf.hull_al(price, hull_ma):
+                    # HULL AL durumuna gecti -> bir sonraki mum icin bekle
+                    self._short_hull_al_pending = True
+            if p.side == LONG and not self._long_hull_sat_pending:
+                if algograf.hull_sat(price, hull_ma):
+                    # HULL SAT durumuna gecti -> bir sonraki mum icin bekle
+                    self._long_hull_sat_pending = True
 
         # ---- 3) ZARAR FRENİ (2026-11-21/23, YALNIZ yonlu ALGO-GRAF) ----
         # Acik pozisyonun NET zarari `algo_loss_usd` dolarina ulasinca
@@ -2815,10 +2863,10 @@ class PaperTrader:
                 return None
             if self._algo_stop_kilit == LONG:
                 return None
-            # YALNIZ `algograf_long`: LONG girişi için canlı fiyatın da
-            # HULL "AL" olması şarttır (fiyat HULL9'un üstünde). HULL
-            # "NÖTR" (ölü bant içi) veya "SAT" iken yeni LONG AÇILMAZ.
-            if self.mode == "algograf_long" and hull_ma is not None:
+            # LONG girişi: hem `algograf_long` hem `algograf` (iki yonlu) modunda
+            # icin gecerli. Sart: canli fiyat HULL "AL" (fiyat HULL9 ustunde).
+            # HULL "NÖTR" veya "SAT" iken yeni LONG AÇILMAZ.
+            if self.mode in ("algograf_long", "algograf") and hull_ma is not None:
                 if not algograf.hull_al(price, hull_ma):
                     return None
             if p is not None:
@@ -2837,11 +2885,10 @@ class PaperTrader:
                 return None
             if self._algo_stop_kilit == SHORT:
                 return None
-            # YALNIZ `algograf_short`: SHORT girişi için canlı fiyatın da
-            # HULL "SAT" olması şarttır (fiyat HULL9'un altında). HULL
-            # "NÖTR" (ölü bant içi) veya "AL" iken yeni SHORT AÇILMAZ.
-            # `hull_ma` yalnız bu modda geçirilir; yoksa kapı devre dışıdır.
-            if self.mode == "algograf_short" and hull_ma is not None:
+            # SHORT girişi: hem `algograf_short` hem `algograf` (iki yonlu) modunda
+            # icin gecerli. Sart: canli fiyat HULL "SAT" (fiyat HULL9 altinda).
+            # HULL "NÖTR" veya "AL" iken yeni SHORT AÇILMAZ.
+            if self.mode in ("algograf_short", "algograf") and hull_ma is not None:
                 if not algograf.hull_sat(price, hull_ma):
                     return None
             if algograf.hull_al(price, hull_ma):
