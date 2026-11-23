@@ -18,10 +18,13 @@ Kullanıcı kuralı (5 dk, 4 çizgi — EMA200/SMA200 grafikte yok):
     kapanır (zarar freni).
   * LONG: PEMBE en üstte, MAVİ en altta olduğu aralıkta LONG açık kalır.
   * LONG KAPAT: YEŞİL, PEMBE'nin üstüne çıkınca kapat.
-  * Yalnız LONG (algograf_long, 2026-11-15): PEMBE üst + MAVİ alt dizilimi
-    VEYA HULL & VWMA ikisi de AL -> LONG aç/tut (both-AL, YEŞİL > PEMBE
-    kapatmasını ezer); YEŞİL > PEMBE (both-AL yokken) veya HULL SAT ->
-    kapat; HULL SAT iken yeni LONG açılmaz.
+  * Yalnız LONG (algograf_long, giriş 2026-11-23): PEMBE/HULL9 diğer üç
+    çizginin üstünde VE HULL AL birlikte gerekir (MAVİ'nin en altta
+    olması beklenmez); HULL NÖTR veya SAT iken yeni LONG açılmaz.
+    HULL & VWMA ikisi de AL ise YEŞİL > PEMBE kapatmaz (both-AL).
+    YEŞİL > PEMBE (both-AL yokken) veya HULL SAT -> kapat; HULL SAT bar
+    kapanışı beklenmeden canlı fiyatla yakalanır. Net zarar
+    `PAPER_ALGOGRAF_LOSS_USD` tutarına ulaşınca da kapanır.
   * NÖTR: YEŞİL en üstte, PEMBE en altta -> pozisyon NÖTR.
   * Kararsızlıkta NÖTR.
   * Varyantlar: algograf (iki yön), algograf_long (yalnız LONG),
@@ -239,7 +242,8 @@ m = ma(rows)
 kontrol("8.1 iki yon", algograf.series(m) ==
         ["SAT", "SAT-KAPAT", "AL", "AL-KAPAT", "NÖTR"])
 kontrol("8.2 yalniz LONG: short yok",
-        algograf.series(m, side=1) ==
+        algograf.series(m, side=1,
+                        prices=[97.0, 100.0, 104.5, 104.5, 100.0]) ==
         ["NÖTR", "NÖTR", "AL", "AL-KAPAT", "NÖTR"])
 kontrol("8.3 yalniz SHORT: long yok",
         algograf.series(m, side=-1,
@@ -250,14 +254,19 @@ kontrol("8.4 long-only SHORT diziliminde giris yapmaz",
 kontrol("8.5 short-only LONG diziliminde giris yapmaz",
         algograf.series(ma([R3, R3]), side=-1) == ["NÖTR", "NÖTR"])
 
-# 2026-11-15 YALNIZ-LONG ek kurallar: PEMBE üst + MAVİ alt dizilimi VEYA
-# HULL & VWMA ikisi de AL (giriş ve tutma); HULL SAT kapatır ve girişi
-# engeller; both-AL, YEŞİL > PEMBE kapatmasını ezer.
+# YALNIZ-LONG ek kurallar (2026-11-15, giriş 2026-11-23): PEMBE/HULL9
+# diğer üç çizginin üstünde VE HULL AL birlikte gerekir (MAVİ'nin en altta
+# olması beklenmez); HULL NÖTR/SAT girişi engeller; HULL SAT ayrıca
+# kapatır; both-AL (HULL & VWMA) YEŞİL > PEMBE kapatmasını ezer.
 # Dizilim LONG değil ama both-AL: TURUNCU=100, MAVİ=98, PEMBE=99,
-# YEŞİL=100,5; fiyat 101 (HULL ve VWMA'nın üstünde) -> LONG açılır.
+# YEŞİL=100,5; fiyat 101 (HULL ve VWMA'nın üstünde). 2026-11-23: giriş
+# için DİZİLİM de şart -> LONG açılmaz (NÖTR).
 PB = (100.0, 98.0, 99.0, 100.5)
-kontrol("8.6 both-AL (dizilim yok) -> LONG acar",
-        algograf.series(ma([PB]), side=1, prices=[101.0]) == ["AL"])
+kontrol("8.6 both-AL (dizilim yok) -> LONG acmaz",
+        algograf.series(ma([PB]), side=1, prices=[101.0]) == ["NÖTR"])
+# Dizilim LONG ama HULL NÖTR (fiyat = PEMBE): giriş yok.
+kontrol("8.6b dizilim LONG + HULL NOTR -> giris yok",
+        algograf.series(ma([R3]), side=1, prices=[104.0]) == ["NÖTR"])
 kontrol("8.7 yalniz HULL=AL (VWMA SAT) -> giris yok",
         algograf.series(ma([(100.0, 98.0, 99.0, 101.5)]), side=1,
                         prices=[101.0]) == ["NÖTR"])
@@ -272,9 +281,10 @@ kontrol("8.10 HULL SAT -> AL-KAPAT",
                         prices=[105.0, 100.0]) == ["AL", "AL-KAPAT"])
 kontrol("8.11 HULL SAT iken giris yok",
         algograf.series(ma([R3]), side=1, prices=[100.0]) == ["NÖTR"])
-# Ölü bant: 104 * 0,9998 = 103,98; 103,99 SAT sayılmaz.
-kontrol("8.12 HULL olu bandi SAT sayilmaz",
-        algograf.series(ma([R3]), side=1, prices=[103.99]) == ["AL"])
+kontrol("8.12 HULL olu bandi (NOTR) giris engeller",
+        algograf.series(ma([R3]), side=1, prices=[103.99]) == ["NÖTR"])
+kontrol("8.12b HULL olu bandin ustu (AL) -> AL",
+        algograf.series(ma([R3]), side=1, prices=[104.03]) == ["AL"])
 kontrol("8.13 SHORT dizilimi + both-AL LONG'u kapatmaz",
         algograf.series(ma([R3, R1]), side=1,
                         prices=[105.0, 102.0]) == ["AL", "AL"])
@@ -639,11 +649,11 @@ kontrol("14.19 varsayilan zarar freni 10$",
         abs(p.algo_loss_usd - 10.0) < 1e-9)
 p._algograf(100.0, "5m", "SAT", hull_ma=101.0)
 p._algograf(100.1, "5m", "SAT", hull_ma=101.0)
-kontrol("14.20 esik altinda (net ~8$) kapatmaz",
+kontrol("14.20 esik altinda (net ~2$) kapatmaz",
         p.position is not None)
-# Brut zarar 8$ ama komisyonlarla NET ~12$ -> esik asilir.
-p._algograf(100.2, "5m", "SAT", hull_ma=101.0)
-kontrol("14.21 esikte (net ~12$) kapatir",
+# Maker komisyonla NET ~10,4$ -> esik asilir.
+p._algograf(100.3, "5m", "SAT", hull_ma=101.0)
+kontrol("14.21 esikte (net ~10,4$) kapatir",
         p.position is None and len(p.trades) == 1)
 kontrol("14.22 kapanis nedeni zarar freni",
         "zarar freni" in p.trades[0].exit_reason)
@@ -658,7 +668,7 @@ p._algograf(100.0, "5m", "SAT", hull_ma=101.0)
 p._algograf(100.2, "5m", "SAT", hull_ma=101.0)
 kontrol("14.24 50$ esik altinda kapatmaz", p.position is not None)
 p.configure(algo_loss_usd=10.0)
-p._algograf(100.2, "5m", "SAT", hull_ma=101.0)
+p._algograf(100.3, "5m", "SAT", hull_ma=101.0)
 kontrol("14.25 10$'a inince aninda kapatir", p.position is None)
 
 # 0 = kapali (HULL AL kapanisi da tetiklenmesin diye HULL uzakta).
@@ -690,11 +700,145 @@ olaylar = []
 p._quiet = False
 p._on_event = lambda kind, msg: olaylar.append((kind, msg))
 p._algograf(100.0, "5m", "SAT", hull_ma=101.0)
-p._algograf(100.2, "5m", "SAT", hull_ma=101.0)
+p._algograf(100.3, "5m", "SAT", hull_ma=101.0)
 metin = " | ".join(m for _k, m in olaylar)
 kontrol("14.30 zarar freni logda",
         "zarar freni" in metin and "kapandı" in metin)
 kontrol("14.31 log olayi 'trade' tipinde",
+        any(k == "trade" for k, _m in olaylar))
+
+
+# ==================================================================
+print("15) Yalniz LONG: (dizilim VE HULL AL) girisi, HULL SAT aninda kapanma, zarar freni")
+# 2026-11-23 kullanici kurali (yalniz algograf_long):
+#   * Giris: PEMBE ust + MAVI alt dizilimi VE HULL "AL" birlikte gerekir.
+#   * HULL "NOTR" veya "SAT" iken yeni LONG ACILMAZ.
+#   * Kapat: YESIL>PEMBE (both-AL degilken) VEYA HULL "SAT".
+#   * Acik LONG, canli fiyat HULL9 altina indigi ANDA (bar kapanisi
+#     beklenmeden) kapanir.
+#   * Zarar freni: net zarar `algo_loss_usd` tutarina ulasinca kapanir.
+
+# --- 15A: seri kurallari ------------------------------------------
+kontrol("15.1 dizilim LONG + HULL AL -> AL",
+        algograf.series(ma([R3]), side=1, prices=[105.0]) == ["AL"])
+# PEMBE tum cizgilerin ustunde; MAVI en altta DEGIL -> yine AL.
+kontrol("15.1b PEMBE tum cizgilerin ustunde (MAVI altta degil) -> AL",
+        algograf.series(ma([(101.0, 100.0, 104.0, 99.0)]), side=1,
+                        prices=[105.0]) == ["AL"])
+kontrol("15.2 dizilim LONG + HULL NOTR -> giris yok",
+        algograf.series(ma([R3]), side=1, prices=[104.0]) == ["NÖTR"])
+kontrol("15.3 dizilim LONG + HULL SAT -> giris yok",
+        algograf.series(ma([R3]), side=1, prices=[100.0]) == ["NÖTR"])
+kontrol("15.4 HULL SAT -> AL-KAPAT",
+        algograf.series(ma([R3, R3]), side=1,
+                        prices=[105.0, 100.0]) == ["AL", "AL-KAPAT"])
+kontrol("15.5 YESIL>PEMBE + both-AL -> AL kalir",
+        algograf.series(ma([R3, R3B]), side=1,
+                        prices=[105.0, 106.0]) == ["AL", "AL"])
+kontrol("15.6 YESIL>PEMBE + both-AL yok -> AL-KAPAT",
+        algograf.series(ma([R3, R3B]), side=1,
+                        prices=[105.0, 104.5]) == ["AL", "AL-KAPAT"])
+
+# --- 15B: paper motoru, giris kapisi + HULL SAT aninda kapanma -----
+p = trader("algograf_long")
+p.algo_sl = 0.0
+# Canli fiyat HULL9'un ustunde (AL) -> giris.
+p._algograf(100.0, "5m", "AL", hull_ma=99.0)
+kontrol("15.7 yalniz LONG'ta HULL AL ile LONG acildi",
+        p.position is not None and p.position.side == LONG)
+
+# Canli fiyat HULL9'un olu bandinda (NOTR) -> giris yok.
+p = trader("algograf_long")
+p.algo_sl = 0.0
+p._algograf(100.0, "5m", "AL", hull_ma=100.0)
+kontrol("15.8 HULL NOTR iken LONG acilmaz", p.position is None)
+# Canli fiyat HULL9'un altinda (SAT) -> giris yok.
+p._algograf(100.0, "5m", "AL", hull_ma=101.0)
+kontrol("15.9 HULL SAT iken LONG acilmaz", p.position is None)
+
+# Bar ici HULL SAT -> acik LONG aninda kapanir.
+p = trader("algograf_long")
+p.algo_sl = 0.0
+p._algograf(100.0, "5m", "AL", hull_ma=99.0)
+p._algograf(98.0, "5m", "AL", hull_ma=100.0)
+kontrol("15.10 HULL SAT (bar ici) -> LONG kapandi",
+        p.position is None and len(p.trades) == 1)
+kontrol("15.11 kapanis nedeni HULL SAT",
+        "HULL SAT" in p.trades[0].exit_reason)
+# HULL SAT iken ayni tick'te yeniden giris yok.
+p._algograf(98.0, "5m", "AL", hull_ma=100.0)
+kontrol("15.12 HULL SAT sonrasi ayni yonde giris yok",
+        p.position is None)
+# Fiyat HULL9 ustune donunce yeniden LONG acilir.
+p._algograf(102.0, "5m", "AL", hull_ma=100.0)
+kontrol("15.13 HULL AL'a donunce yeniden LONG",
+        p.position is not None and p.position.side == LONG)
+
+# Iki yonlu modda bu bar ici kapanma UYGULANMAZ.
+p = trader("algograf")
+p.algo_sl = 0.0
+p._algograf(100.0, "5m", "AL")
+p._algograf(98.0, "5m", "AL", hull_ma=100.0)
+kontrol("15.14 iki yonlu modda bar ici HULL kapatmasi yok",
+        p.position is not None)
+
+# --- 15C: zarar freni ---------------------------------------------
+p = trader("algograf_long")
+p.algo_sl = 0.0
+kontrol("15.15 varsayilan zarar freni 10$",
+        abs(p.algo_loss_usd - 10.0) < 1e-9)
+p._algograf(100.0, "5m", "AL", hull_ma=99.0)
+p._algograf(99.8, "5m", "AL", hull_ma=99.0)
+kontrol("15.16 esik altinda (net ~9,6$) kapatmaz",
+        p.position is not None)
+p._algograf(99.7, "5m", "AL", hull_ma=99.0)
+kontrol("15.17 esikte (net ~10,4$) kapatir",
+        p.position is None and len(p.trades) == 1)
+kontrol("15.18 kapanis nedeni zarar freni",
+        "zarar freni" in p.trades[0].exit_reason)
+
+# Tutar degisince ANINDA uygulanir.
+p = trader("algograf_long")
+p.configure(algo_loss_usd=50.0)
+p.algo_sl = 0.0
+kontrol("15.19 configure tutari hemen uygular",
+        abs(p.algo_loss_usd - 50.0) < 1e-9)
+p._algograf(100.0, "5m", "AL", hull_ma=99.0)
+p._algograf(99.8, "5m", "AL", hull_ma=99.0)
+kontrol("15.20 50$ esik altinda kapatmaz", p.position is not None)
+p.configure(algo_loss_usd=10.0)
+p._algograf(99.7, "5m", "AL", hull_ma=99.0)
+kontrol("15.21 10$'a inince aninda kapatir", p.position is None)
+
+# 0 = kapali (HULL SAT kapanisi tetiklenmesin diye HULL uzakta).
+p = trader("algograf_long")
+p.configure(algo_loss_usd=0.0)
+p.algo_sl = 0.0
+p._algograf(100.0, "5m", "AL", hull_ma=90.0)
+kontrol("15.22 HULL AL ile LONG acildi", p.position is not None)
+p._algograf(95.0, "5m", "AL", hull_ma=90.0)
+kontrol("15.23 0 -> zarar freni kapali", p.position is not None)
+
+# Kapsam: iki yonlu modda zarar freni calismaz.
+p = trader("algograf")
+p.configure(algo_loss_usd=10.0)
+p.algo_sl = 0.0
+p._algograf(100.0, "5m", "AL")
+p._algograf(80.0, "5m", "AL")
+kontrol("15.24 iki yonlu modda zarar freni yok", p.position is not None)
+
+# Arayuz logu.
+p = trader("algograf_long")
+p.algo_sl = 0.0
+olaylar = []
+p._quiet = False
+p._on_event = lambda kind, msg: olaylar.append((kind, msg))
+p._algograf(100.0, "5m", "AL", hull_ma=99.0)
+p._algograf(99.7, "5m", "AL", hull_ma=99.0)
+metin = " | ".join(m for _k, m in olaylar)
+kontrol("15.25 zarar freni logda",
+        "zarar freni" in metin and "kapandı" in metin)
+kontrol("15.26 log olayi 'trade' tipinde",
         any(k == "trade" for k, _m in olaylar))
 
 

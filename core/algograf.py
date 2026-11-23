@@ -31,20 +31,26 @@ Kurallar (sıralama = fiyat değeri büyükten küçüğe, üstten alta):
            yakalanır (paper katmanı).
   LONG (iki yön)   : PEMBE en üstte, MAVİ en altta olduğu aralıkta LONG
            açık kalsın; YEŞİL, PEMBE'nin üstüne çıkarsa kapat.
-  LONG (yalnız algograf_long — 2026-11-15 kullanıcı kuralı):
-           AÇ / TUT: PEMBE en üst + MAVİ en alt dizilimi VEYA HULL ve
-           VWMA ikisi de "AL" durumu. İkisi de AL iken YEŞİL > PEMBE olsa
-           bile LONG açık kalır (both-AL üstün).
+  LONG (yalnız algograf_long — giriş 2026-11-23 kullanıcı düzeltmesi):
+           AÇ: PEMBE (HULL9) DİĞER ÜÇ çizginin de üstünde VE HULL "AL"
+           (fiyat HULL9'un üstünde) birlikte gerekir. MAVİ'nin en altta
+           olması BEKLENMEZ. HULL "NÖTR" veya "SAT" iken yeni LONG
+           açılmaz.
+           TUT: HULL ve VWMA ikisi de AL iken YEŞİL > PEMBE olsa bile
+           LONG açık kalır (both-AL üstün).
            KAPAT: YEŞİL, PEMBE'nin üstüne çıkarsa (both-AL değilken)
-           VEYA HULL değeri "SAT" durumuna girerse. HULL SAT iken yeni
-           LONG açılmaz.
+           VEYA HULL "SAT" durumuna girerse. HULL SAT, bar kapanışı
+           BEKLENMEDEN canlı fiyatla yakalanır (paper katmanı).
   NÖTR   : YEŞİL en üstte, PEMBE en altta kaldığında pozisyon NÖTR kalsın.
   Bu üç dizilimin dışında karar verilemeyen her durumda NÖTR.
 
 ÜÇ VARYANT:
     algograf       : iki yön (tüm kurallar)
-    algograf_long  : yalnız LONG (PEMBE üst + MAVİ alt VEYA HULL & VWMA
-                     AL; YEŞİL>PEMBE veya HULL SAT kapatır)
+    algograf_long  : yalnız LONG (giriş: PEMBE/HULL9 diğer üç çizginin
+                     üstünde VE HULL AL — fiyat HULL9 üstünde; MAVİ'nin en
+                     altta olması gerekmez; HULL NÖTR veya SAT iken giriş
+                     yok; both-AL YEŞİL>PEMBE kapatmasını ezer; HULL SAT
+                     bar kapanışını beklemeden canlı fiyatla yakalanır)
     algograf_short : yalnız SHORT (giriş: MAVİ en üst + PEMBE en alt
                      dizilimi VE HULL SAT — fiyat HULL9 altında; HULL NÖTR
                      veya AL iken giriş yok; kapatma: dizilim bozulursa
@@ -226,6 +232,11 @@ def _conditions(t: float, mavi: float, pembe: float, yesil: float,
     # LONG: PEMBE en üstte, MAVİ en altta.
     long_entry = (_above(pembe, t, eps) and _above(pembe, yesil, eps)
                   and _below(mavi, t, eps) and _below(mavi, yesil, eps))
+    # YALNIZ-LONG girişi (2026-11-23 kullanıcı düzeltmesi): PEMBE (HULL9)
+    # DİĞER ÜÇ çizginin de üstünde olması yeterli — MAVİ'nin en altta
+    # olması BEKLENMEZ. İki yönlü `algograf` eski `long_entry`yi kullanır.
+    long_top = (_above(pembe, t, eps) and _above(pembe, mavi, eps)
+                and _above(pembe, yesil, eps))
     # LONG KAPAT: YEŞİL, PEMBE'nin üstüne çıktı.
     long_exit = _above(yesil, pembe, eps)
     # NÖTR: YEŞİL en üstte, PEMBE en altta.
@@ -235,8 +246,8 @@ def _conditions(t: float, mavi: float, pembe: float, yesil: float,
     return {"short_entry": short_entry, "short_exit": short_exit,
             "hull_al": hull_alim, "hull_sat": hull_satim,
             "vwma_al": vwma_al, "both_al": both_al,
-            "long_entry": long_entry, "long_exit": long_exit,
-            "neutral": neutral}
+            "long_entry": long_entry, "long_top": long_top,
+            "long_exit": long_exit, "neutral": neutral}
 
 
 def _arrays(ma_series: dict) -> Optional[tuple]:
@@ -262,10 +273,10 @@ def series(ma_series: dict, *, side: Optional[int] = None,
 
     `prices`: bar kapanış fiyatları (aynı uzunlukta). SHORT kapatmanın
     HULL "AL" durumu (fiyat HULL9'un üstünde), yalnız-SHORT girişinin
-    zorunlu HULL "SAT" koşulu (fiyat HULL9'un altında) ve yalnız-LONG
-    kuralları (HULL/VWMA AL, HULL SAT) için gerekir; verilmezse HULL
-    koşulları sağlanmaz ve yalnız-SHORT girişi yapılmaz (yalnız dizilim
-    kuralları çalışır).
+    zorunlu HULL "SAT" koşulu (fiyat HULL9'un altında), yalnız-LONG
+    girişinin zorunlu HULL "AL" koşulu ve yalnız-LONG kapanışının HULL
+    "SAT" durumu için gerekir; verilmezse HULL koşulları sağlanmaz ve
+    yalnız yönlü girişler yapılmaz (yalnız dizilim kuralları çalışır).
 
     Seri NEDENSELDİR: i. bar yalnızca 0..i barlarına bakar.
     """
@@ -352,10 +363,12 @@ def series(ma_series: dict, *, side: Optional[int] = None,
 
         # ---- DÜZ: giriş / nötr ---------------------------------------
         if yon > 0:
-            # YALNIZ-LONG giriş (2026-11-15 kullanıcı kuralı): PEMBE en üst
-            # + MAVİ en alt dizilimi VEYA HULL & VWMA ikisi de AL.
-            # HULL SAT durumunda yeni LONG açılmaz.
-            if not c["hull_sat"] and (c["long_entry"] or c["both_al"]):
+            # YALNIZ-LONG giriş (2026-11-23 kullanıcı düzeltmesi): PEMBE
+            # (HULL9) DİĞER ÜÇ çizginin de üstünde VE HULL "AL" (fiyat
+            # HULL9 üstü) BİRLİKTE gerekir. MAVİ'nin en altta olması
+            # beklenmez. HULL "NÖTR" (ölü bant) veya "SAT" iken yeni LONG
+            # AÇILMAZ.
+            if c["long_top"] and c["hull_al"]:
                 out.append("AL")
                 state = 1
             else:

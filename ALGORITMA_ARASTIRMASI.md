@@ -2909,3 +2909,67 @@ alanı. Cache `?v=55` / `ta-v55` (SW precache dahil).
 DOGRULAMA: `test_algograf` 138/138, `test_tk2` 138/138, `test_paper`
 90/90, `test_tk_fix` 37/37; py_compile ve `node --check` temiz;
 `logs/islemler.csv` (kullanıcı canlı kaydı) değiştirilmedi.
+
+## OTURUM 36 - ALGO-GRAF yalnız LONG: HULL SAT anında kapanış + zarar freni + LIMIT komisyon (2026-11-23)
+
+KULLANICI GERI BILDIRIMI: "Algograf yalnız long kuralında LONG pozisyon
+açılıyor ama kapatılması gereken noktada çizgi değişimini bekliyor.
+HULL-SAT olduğunda mevcut açık LONG kapatılmalı; kapatmadığında büyük
+zarar oluşuyor. Zarar freni de mevcut açık pozisyonda kullanıcının
+belirleyeceği tutar olsun, varsayılan 10$. LONG açılması için HULL
+değerinin AL, PEMBE/HULL9 çizgisinin en üstte olması gerekliydi. HULL
+NÖTR veya SAT iken LONG açmamalısın. Komisyonu azaltmak için aç/kapa
+işlemlerinde LIMIT emir kullan."
+
+KULLANICI NETLESTIRMESI (aynı gün): "PEMBE diğer çizgilerin de üstüne
+çıktığında en altta MAVİ çizginin geçmesini bekleme, LONG açabilirsin;
+tabii HULL değerinin aynı zamanda AL olması lazım." Yani giriş için
+MAVİ'nin en altta olması GEREKMEZ; PEMBE'nin üç çizginin de üstünde
+olması yeterlidir.
+
+KURAL (yalnız `algograf_long`; iki yönlü `algograf` ve `algograf_short`
+DEĞİŞMEDİ):
+  1) GİRİŞ: PEMBE (HULL9) DİĞER ÜÇ çizginin de üstünde VE HULL "AL"
+     (fiyat HULL9 üstünde) BİRLİKTE gerekir. MAVİ'nin en altta olması
+     beklenmez.
+  2) HULL "NÖTR" (ölü bant içi) ve "SAT" iken yeni LONG AÇILMAZ.
+  3) TUTMA: HULL & VWMA ikisi de AL iken YEŞİL > PEMBE olsa bile LONG
+     açık kalır (2026-11-15 both-AL kuralı korunur).
+  4) KAPATMA: YEŞİL > PEMBE (both-AL değilken) VEYA HULL "SAT".
+  5) HULL SAT, bar kapanışı BEKLENMEDEN canlı fiyatla yakalanır; son
+     kapanmış barın HULL9'u `service._run_paper` -> `paper.on_price(...,
+     hull_ma=...)` ile geçirilir.
+  6) ZARAR FRENİ: açık pozisyonun NET zararı `PAPER_ALGOGRAF_LOSS_USD`
+     (varsayılan 10$, 0 = kapalı) tutarına ulaşınca kapanır. Arayüzden
+     "Uygula" ile anında değişir.
+  7) KOMİSYON: sinyal giriş/çıkışları, HULL ters durum kapanışı ve zarar
+     freni LIMIT (maker) sayılır; yalnızca koruyucu stop market (taker).
+
+`series` girişinde `long_top` koşulu eklendi (`_conditions`); iki yönlü
+mod eski `long_entry`yi kullanmaya devam eder. `paper._algograf` giriş
+kapısı canlı fiyat için de HULL AL arar; HULL NÖTR/SAT ise LONG açmaz.
+`algo_loss_usd` kapsamı `algograf_short` + `algograf_long` oldu; arayüz
+alanı iki modda görünür. HULL kapanışı ve zarar freni `maker=True`.
+
+TESTLER: bölüm 15 eklendi — PEMBE en üstte + HULL AL girişi (MAVİ altta
+değilken de), HULL NÖTR/SAT'te giriş yok, HULL SAT -> AL-KAPAT, both-AL
+tutması, bar içi HULL SAT kapanışı (yalnız LONG), aynı tick'te yeniden
+girişin engellenmesi, HULL AL'a dönünce yeniden giriş, iki yönlü modda
+kapsam, zarar freni eşiği/net-komisyon, tutar değişiminin anında
+uygulanması, 0 = kapalı ve log satırı. Toplam **167/167**.
+
+OLCUM (BTCUSDT 5m 20.000 bar, 10x, stop kapalı, banka açık; AL etiketli
+bar 2.933, AL-KAPAT 1.143, NÖTR 15.924):
+  zarar freni 0$  : -1.002,59$ (701 işlem, komisyon 1.121,62$)
+  zarar freni 10$ : -1.005,29$ (700 işlem, komisyon 1.120,02$)
+  Çıkış dağılımı (10$): HULL SAT 529, kâr bankası 156, AL-KAPAT 10,
+  zarar freni 5.
+
+ARAYUZ/SUNUCU: `algograf_long` seçenek metni, mod notu, başlatma logu
+(2 yer) yeni giriş/kapanış/zarar freni/LIMIT kuralına göre güncellendi.
+`pAlgoLoss` alanı yalnız yönlü modlarda (short + long) görünür. Cache
+`?v=56` / `ta-v56` (SW precache dahil).
+
+DOGRULAMA: `test_algograf` 167/167, `test_tk2` 138/138, `test_paper`
+90/90, `test_tk_fix` 37/37; py_compile ve `node --check` temiz;
+`logs/islemler.csv` (kullanıcı canlı kaydı) değiştirilmedi.

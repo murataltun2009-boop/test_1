@@ -507,8 +507,8 @@ def create_app(service: MarketService, store: SignalStore,
                 "Trade Başla'ya bas"
             _varyant = {
                 "algograf": "iki yön (tüm kurallar)",
-                "algograf_long": "yalnız LONG (PEMBE üst / MAVİ alt "
-                                 "veya HULL & VWMA AL; YEŞİL>PEMBE "
+                "algograf_long": "yalnız LONG (PEMBE en üstte "
+                                 "VE HULL AL şartı; YEŞİL>PEMBE "
                                  "veya HULL SAT kapatır)",
                 "algograf_short": "yalnız SHORT (MAVİ üst / PEMBE alt "
                                   "VE HULL SAT şartı; dizilim bozulur "
@@ -530,10 +530,12 @@ def create_app(service: MarketService, store: SignalStore,
                 f"YALNIZ SHORT: giriş için SHORT dizilimi VE HULL SAT "
                 f"(fiyat HULL9 altı) birlikte gerekir; HULL NÖTR veya AL "
                 f"iken yeni SHORT açılmaz · "
-                f"YALNIZ LONG: PEMBE üst + MAVİ alt VEYA HULL "
-                f"ve VWMA ikisi de AL ise LONG açılır/tutulur; "
-                f"YEŞİL>PEMBE (ikisi de AL değilken) veya HULL SAT olunca "
-                f"kapanır; HULL SAT iken yeni LONG açılmaz · "
+                f"YALNIZ LONG: giriş için PEMBE/HULL9 diğer üç çizginin "
+                f"üstünde VE HULL AL (fiyat HULL9 üstü) birlikte gerekir; "
+                f"MAVİ'nin en altta olması gerekmez; HULL NÖTR veya SAT "
+                f"iken yeni LONG açılmaz; HULL & VWMA ikisi de AL "
+                f"iken YEŞİL>PEMBE kapatmaz; YEŞİL>PEMBE (ikisi de AL "
+                f"değilken) veya HULL SAT olunca kapanır · "
                 f"kararsızlıkta NÖTR · TP/bekleme YOK — pozisyon kural "
                 f"çıkışına kadar tutulur; kâr bankası: açık kâr "
                 f"{paper.algo_bank_usd:.2f}$'a ulaşınca kâr cüzdana yazılır "
@@ -541,12 +543,13 @@ def create_app(service: MarketService, store: SignalStore,
                 f"ile anında yeniden açılır (bileşik büyüme yok, pozisyon "
                 f"kaybolmaz; işlemler logda görünür) "
                 f"· 0 = kapalı · tutar değişince Uygula ile açık pozisyona "
-                f"hemen uygulanır; yalnız-SHORT modunda HULL AL olur "
-                f"olmaz (bar kapanışı beklenmeden) ve net zarar "
+                f"hemen uygulanır; yalnız-LONG/SHORT modunda HULL ters "
+                f"duruma geçince (LONG'da SAT, SHORT'ta AL) bar kapanışı "
+                f"beklenmeden ve net zarar "
                 f"{paper.algo_loss_usd:.2f}$'a ulaşınca pozisyon kapanır "
                 f"(zarar freni; 0 = kapalı) · koruyucu stop "
-                f"%{paper.algo_sl*100:.2f} (acil çıkış) · aç/kapa ve banka "
-                f"LIMIT (maker){dur}")
+                f"%{paper.algo_sl*100:.2f} (acil çıkış) · tüm aç/kapa "
+                f"LIMIT (maker; koruyucu stop hariç){dur}")
         # TIK modu onayi: kullaniciya motorun GERCEKTEN tik ile
         # calistigini (eski surecte sessiz yok-sayma tehlikesi) ve
         # simulasyonun duraklatip duraklatmadigini acikla.
@@ -747,8 +750,8 @@ def create_app(service: MarketService, store: SignalStore,
                 "Trade Başla'ya bas"
             _varyant = {
                 "algograf": "iki yön (tüm kurallar)",
-                "algograf_long": "yalnız LONG (PEMBE üst / MAVİ alt "
-                                 "veya HULL & VWMA AL; YEŞİL>PEMBE "
+                "algograf_long": "yalnız LONG (PEMBE en üstte "
+                                 "VE HULL AL şartı; YEŞİL>PEMBE "
                                  "veya HULL SAT kapatır)",
                 "algograf_short": "yalnız SHORT (MAVİ üst / PEMBE alt "
                                   "VE HULL SAT şartı; dizilim bozulur "
@@ -770,10 +773,12 @@ def create_app(service: MarketService, store: SignalStore,
                 f"YALNIZ SHORT: giriş için SHORT dizilimi VE HULL SAT "
                 f"(fiyat HULL9 altı) birlikte gerekir; HULL NÖTR veya AL "
                 f"iken yeni SHORT açılmaz · "
-                f"YALNIZ LONG: PEMBE üst + MAVİ alt VEYA HULL "
-                f"ve VWMA ikisi de AL ise LONG açılır/tutulur; "
-                f"YEŞİL>PEMBE (ikisi de AL değilken) veya HULL SAT olunca "
-                f"kapanır; HULL SAT iken yeni LONG açılmaz · "
+                f"YALNIZ LONG: giriş için PEMBE/HULL9 diğer üç çizginin "
+                f"üstünde VE HULL AL (fiyat HULL9 üstü) birlikte gerekir; "
+                f"MAVİ'nin en altta olması gerekmez; HULL NÖTR veya SAT "
+                f"iken yeni LONG açılmaz; HULL & VWMA ikisi de AL "
+                f"iken YEŞİL>PEMBE kapatmaz; YEŞİL>PEMBE (ikisi de AL "
+                f"değilken) veya HULL SAT olunca kapanır · "
                 f"kararsızlıkta NÖTR · TP/bekleme YOK — pozisyon kural "
                 f"çıkışına kadar tutulur; kâr bankası: açık kâr "
                 f"{paper.algo_bank_usd:.2f}$'a ulaşınca kâr cüzdana yazılır "
@@ -781,12 +786,13 @@ def create_app(service: MarketService, store: SignalStore,
                 f"ile anında yeniden açılır (bileşik büyüme yok, pozisyon "
                 f"kaybolmaz; işlemler logda görünür) "
                 f"· 0 = kapalı · tutar değişince Uygula ile açık pozisyona "
-                f"hemen uygulanır; yalnız-SHORT modunda HULL AL olur "
-                f"olmaz (bar kapanışı beklenmeden) ve net zarar "
+                f"hemen uygulanır; yalnız-LONG/SHORT modunda HULL ters "
+                f"duruma geçince (LONG'da SAT, SHORT'ta AL) bar kapanışı "
+                f"beklenmeden ve net zarar "
                 f"{paper.algo_loss_usd:.2f}$'a ulaşınca pozisyon kapanır "
                 f"(zarar freni; 0 = kapalı) · koruyucu stop "
-                f"%{paper.algo_sl*100:.2f} (acil çıkış) · aç/kapa ve banka "
-                f"LIMIT (maker){dur}")
+                f"%{paper.algo_sl*100:.2f} (acil çıkış) · tüm aç/kapa "
+                f"LIMIT (maker; koruyucu stop hariç){dur}")
         # TIK modu onayi: kullaniciya motorun GERCEKTEN tik ile
         # calistigini (eski surecte sessiz yok-sayma tehlikesi) ve
         # simulasyonun duraklatip duraklatmadigini acikla.

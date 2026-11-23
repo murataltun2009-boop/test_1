@@ -614,10 +614,10 @@ class PaperTrader:
         # Arayuzden "Uygula" ile acik pozisyona aninda uygulanir; 0 = kapali.
         self.algo_bank_usd = float(
             getattr(config, "PAPER_ALGOGRAF_BANK_USD", 10.0))
-        # ALGO-GRAF ZARAR FRENİ (2026-11-21 kullanici kurali — YALNIZ
-        # `algograf_short`): acik pozisyonun NET zarari bu DOLAR tutarina
-        # ulasinca pozisyon piyasa (taker) cikisiyla kapatilir; kural
-        # sifirlanana kadar ayni yonde yeni giris yapilmaz. Arayuzden
+        # ALGO-GRAF ZARAR FRENİ (2026-11-21/23 kullanici kurali — YALNIZ
+        # `algograf_short` / `algograf_long`): acik pozisyonun NET zarari bu
+        # DOLAR tutarina ulasinca pozisyon LIMIT (maker) cikisiyla kapatilir;
+        # kural sifirlanana kadar ayni yonde yeni giris yapilmaz. Arayuzden
         # degistirilebilir; 0 = kapali.
         self.algo_loss_usd = float(
             getattr(config, "PAPER_ALGOGRAF_LOSS_USD", 10.0))
@@ -2232,11 +2232,12 @@ class PaperTrader:
                 return self.backtest_stats
 
             t0 = time.monotonic()
-            # YALNIZ `algograf_short`: bar kapanisinda HULL9 (PEMBE) serisi
-            # bir kez hesaplanir; geriye donuk testte canli akisin
-            # "HULL AL -> aninda SHORT kapat" kuraliyla ayni sonucu verir.
+            # YALNIZ yonlu ALGO-GRAF modlari (`algograf_short` /
+            # `algograf_long`): bar kapanisinda HULL9 (PEMBE) serisi bir kez
+            # hesaplanir; geriye donuk testte canli akisin "HULL ters
+            # duruma gecince aninda kapat" kuraliyla ayni sonucu verir.
             hull_seri = None
-            if self.mode == "algograf_short":
+            if self.mode in ("algograf_short", "algograf_long"):
                 try:
                     hull_seri = ind.hma([c.close for c in candles], 9)
                 except Exception:      # noqa: BLE001
@@ -2643,12 +2644,14 @@ class PaperTrader:
         ve kâr bankası (`algo_bank_usd`; kâr cüzdana yazılır, pozisyon
         aynı ana para × kaldıraç notional ile yeniden açılır).
 
-        YALNIZ `algograf_short` icin iki ek koruma (2026-11-21):
-          * HULL "AL" ANINDA: son kapanmis barin HULL9'u ile canli fiyat
-            karsilastirilir; HULL AL olusunca acik SHORT bar kapanisini
-            beklemeden kapatilir.
+        YALNIZ yonlu ALGO-GRAF modlarinda (`algograf_short` /
+        `algograf_long`) iki ek koruma (2026-11-21/23):
+          * HULL TERS DURUM ANINDA: son kapanmis barin HULL9'u ile canli
+            fiyat karsilastirilir; LONG'da HULL "SAT" (fiyat HULL9 alti),
+            SHORT'ta HULL "AL" (fiyat HULL9 ustu) olusunca pozisyon bar
+            kapanisini beklemeden kapatilir.
           * ZARAR FRENİ (`algo_loss_usd`, varsayilan 10$): net zarar
-            tutara ulasinca pozisyon market ile kapatilir. 0 = kapali.
+            tutara ulasinca pozisyon kapatilir. 0 = kapali.
 
         KORUYUCU STOP (kullanici onayi 2026-11-13): kural setinde çıkış
         yalnizca çizgi diziliminden geldigi icin 10x boyutlamada tek bir
@@ -2657,11 +2660,11 @@ class PaperTrader:
         eklenir. Stop sonrasi kural sifirlanana (AL/SAT disina cikana)
         kadar ayni yonde yeni giris yapilmaz.
 
-        Aç/kapa maker (LIMIT) sayilir: karar kapanan barin kapanisinda
-        verilir, dolum ayni fiyattan yapilir (geriye donuk testte de
-        ayni semantik -> ileri-bakis yok). Stop cikisi ise market
-        sayilir (taker); bar ici dip/zirve yalnizca geriye donuk testte
-        verilir.
+        Ac/kapa LIMIT (maker) sayilir: sinyal girisleri, kapanislari,
+        HULL ters durum kapanisi ve zarar freni makere; yalnizca
+        koruyucu stop market (taker) sayilir. Boylece komisyon duser
+        (2026-11-23 kullanici istegi). Bar ici dip/zirve yalnizca geriye
+        donuk testte verilir.
         """
         lab = str(signal or "").strip()
         p = self.position
@@ -2687,31 +2690,36 @@ class PaperTrader:
                 self._algo_stop_kilit = yon
                 return "ALGO-GRAF: koruyucu stop — pozisyon kapandi"
 
-        # ---- 2) HULL "AL" ANINDA KAPATMA (2026-11-21, YALNIZ
-        #         `algograf_short`) ---------------------------------
-        # Kullanici kurali: HULL satiri "AL" durumuna gectiginde acik
-        # SHORT MUTLAKA kapanmali. Bar kapanisini beklemek buyuk zarara
+        # ---- 2) HULL TERS DURUMUNDA ANINDA KAPATMA (2026-11-21/23,
+        #         YALNIZ `algograf_short` / `algograf_long`) -----------
+        # Kullanici kurali: HULL satiri LONG'da "SAT" (fiyat HULL9 alti),
+        # SHORT'ta "AL" (fiyat HULL9 ustu) durumuna gectiginde acik
+        # pozisyon MUTLAKA kapanmali. Bar kapanisini beklemek buyuk zarara
         # yol aciyordu; burada son KAPANMIS barin HULL9 degeri ile canli
         # fiyat karsilastirilir ve kosul saglandigi ANDA (bar ici) kapanir.
-        # Kapanis market (taker) sayilir; ayni yonde yeniden giris,
-        # kural sifirlanana kadar `_algo_stop_kilit` ile engellenir.
+        # Kapanis LIMIT (maker) sayilir (2026-11-23 komisyon istegi).
         p = self.position
-        if (p is not None and p.side == SHORT
-                and self.mode == "algograf_short"
-                and algograf.hull_al(price, hull_ma)):
-            self._close(price, "ALGO-GRAF: HULL AL (canlı) — SHORT "
-                        "kapatıldı", timeframe)
-            return "ALGO-GRAF: HULL AL — SHORT kapatildi (canli)"
+        if p is not None and self.mode in ("algograf_short",
+                                           "algograf_long"):
+            if p.side == SHORT and algograf.hull_al(price, hull_ma):
+                self._close(price, "ALGO-GRAF: HULL AL (canlı) — SHORT "
+                            "kapatıldı", timeframe, maker=True)
+                return "ALGO-GRAF: HULL AL — SHORT kapatildi (canli)"
+            if p.side == LONG and algograf.hull_sat(price, hull_ma):
+                self._close(price, "ALGO-GRAF: HULL SAT (canlı) — LONG "
+                            "kapatıldı", timeframe, maker=True)
+                return "ALGO-GRAF: HULL SAT — LONG kapatildi (canli)"
 
-        # ---- 3) ZARAR FRENİ (2026-11-21, YALNIZ `algograf_short`) -----
+        # ---- 3) ZARAR FRENİ (2026-11-21/23, YALNIZ yonlu ALGO-GRAF) ----
         # Acik pozisyonun NET zarari `algo_loss_usd` dolarina ulasinca
-        # pozisyon market (taker) ile kapatilir. Boylece HULL AL'i / cizgi
-        # degisimini beklerken olusan zarar sinirlanir. Tutar arayuzden
-        # degistirilirse bir sonraki tick'te gecerlidir; 0 = kapali.
+        # pozisyon LIMIT (maker) ile kapatilir. Boylece HULL ters durumunu
+        # / cizgi degisimini beklerken olusan zarar sinirlanir. Tutar
+        # arayuzden degistirilirse bir sonraki tick'te gecerlidir;
+        # 0 = kapali.
         p = self.position
         if (p is not None and p.qty > 0 and self.algo_loss_usd > 0
-                and self.mode == "algograf_short"):
-            fee_close = p.qty * price * self.fee_rate
+                and self.mode in ("algograf_short", "algograf_long")):
+            fee_close = p.qty * price * self.maker_rate
             gross = ((price - p.entry) * p.qty if p.side == LONG
                      else (p.entry - price) * p.qty)
             net = gross - p.fee_open - fee_close
@@ -2719,7 +2727,8 @@ class PaperTrader:
                 yon = p.side
                 self._close(price, "ALGO-GRAF: zarar freni "
                             f"({net:+,.2f}$ ≥ "
-                            f"-{self.algo_loss_usd:,.2f}$)", timeframe)
+                            f"-{self.algo_loss_usd:,.2f}$)", timeframe,
+                            maker=True)
                 self._algo_stop_kilit = yon
                 return (f"ALGO-GRAF: zarar freni — pozisyon kapandi "
                         f"({net:+,.2f}$)")
@@ -2806,6 +2815,12 @@ class PaperTrader:
                 return None
             if self._algo_stop_kilit == LONG:
                 return None
+            # YALNIZ `algograf_long`: LONG girişi için canlı fiyatın da
+            # HULL "AL" olması şarttır (fiyat HULL9'un üstünde). HULL
+            # "NÖTR" (ölü bant içi) veya "SAT" iken yeni LONG AÇILMAZ.
+            if self.mode == "algograf_long" and hull_ma is not None:
+                if not algograf.hull_al(price, hull_ma):
+                    return None
             if p is not None:
                 # Seri normalde once AL-KAPAT uretir; yine de guvenlik:
                 # ters yonde acmadan once mevcut pozisyonu kapat.

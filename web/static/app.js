@@ -1244,8 +1244,9 @@ if ("serviceWorker" in navigator) {
         var b = el.pAlgoBank ? parseFloat(el.pAlgoBank.value) : 10;
         return isNaN(b) ? 10 : b;
       })(),
-      // ALGO-GRAF zarar freni (yalnız algograf_short; varsayılan 10$,
-      // 0 = kapalı). Sunucu tutarı anında açık pozisyona uygular.
+      // ALGO-GRAF zarar freni (yalnız yönlü modlar: algograf_short /
+      // algograf_long; varsayılan 10$, 0 = kapalı). Sunucu tutarı anında
+      // açık pozisyona uygular.
       algo_loss_usd: (function () {
         var b = el.pAlgoLoss ? parseFloat(el.pAlgoLoss.value) : 10;
         return isNaN(b) ? 10 : b;
@@ -1313,9 +1314,11 @@ if ("serviceWorker" in navigator) {
     if (el.algoBankWrap) {
       el.algoBankWrap.style.display = algofam ? "" : "none";
     }
-    // Zarar freni YALNIZ yalnız-SHORT (algograf_short) modunda.
+    // Zarar freni yalnız yönlü ALGO-GRAF modlarında (algograf_short /
+    // algograf_long).
     if (el.algoLossWrap) {
-      el.algoLossWrap.style.display = (mode === "algograf_short") ? "" : "none";
+      el.algoLossWrap.style.display =
+        (mode === "algograf_short" || mode === "algograf_long") ? "" : "none";
     }
     if (el.pullWrap) el.pullWrap.style.display = (mode === "trend" || mode === "ppt") ? "" : "none";
     el.pRule.disabled = kilit;
@@ -1383,11 +1386,15 @@ if ("serviceWorker" in navigator) {
           + "TURUNCU=EMA20, PEMBE=HULL9 (EMA200/SMA200 grafikte yok, "
           + "kurallarda kullanılmaz); "
           + (el.pMode.value === "algograf_long"
-              ? "varyant: YALNIZ LONG (PEMBE en üst + MAVİ en alt VEYA "
-                + "HULL ve VWMA ikisi de AL ise LONG açılır ve tutulur); "
-                + "kapatma: YEŞİL PEMBE'nin üstüne çıkınca (ikisi de AL "
-                + "değilken) VEYA HULL değeri SAT olunca; HULL SAT iken "
-                + "yeni LONG açılmaz; "
+              ? "varyant: YALNIZ LONG (giriş: PEMBE/HULL9 diğer üç "
+                + "çizginin üstünde VE HULL AL — fiyat HULL9'un "
+                + "üstünde; ikisi birlikte gerekir, MAVİ'nin en altta "
+                + "olması gerekmez; HULL NÖTR veya SAT iken yeni LONG "
+                + "açılmaz); kapatma: YEŞİL PEMBE'nin üstüne çıkınca "
+                + "(HULL & VWMA ikisi de AL değilken) VEYA HULL SAT olur "
+                + "olmaz (bar kapanışı beklenmeden) VEYA net zarar "
+                + (parseFloat(el.pAlgoLoss.value) || 0)
+                + "$ zarar frenine ulaşınca; "
               : el.pMode.value === "algograf_short"
               ? "varyant: YALNIZ SHORT (giriş: MAVİ en üst + PEMBE en "
                 + "altta, EMA20 VWMA20'nin üstünde VE HULL SAT — fiyat "
@@ -1407,7 +1414,8 @@ if ("serviceWorker" in navigator) {
           + "kaldıraç notional ile anında yeniden açılır (pozisyon "
           + "kaybolmaz, bileşik büyüme yok); "
           + "0 = kapalı; banka işlemleri logda görünür; "
-          + "koruyucu stop %1 (acil çıkış); aç/kapa ve banka LIMIT (maker)"
+          + "koruyucu stop %1 (acil çıkış); tüm aç/kapa LIMIT (maker; "
+          + "koruyucu stop hariç)"
         : "") +
       (tik
         ? " · TİK yıldız kuralı: yeşil yıldız→LONG, kırmızı yıldız→"

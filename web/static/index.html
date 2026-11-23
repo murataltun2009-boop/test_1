@@ -6,7 +6,7 @@
      maximum-scale kilitlenmez: kullanici grafikte yakinlastirabilmeli. -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>BTCUSDT 4 Saat · Canlı Teknik Analiz</title>
-<link rel="stylesheet" href="/static/style.css?v=55">
+<link rel="stylesheet" href="/static/style.css?v=56">
 
 <!-- ---- PWA: "Ana ekrana ekle" icin gerekli etiketler ---------- -->
 <link rel="manifest" href="/static/manifest.webmanifest">
@@ -212,7 +212,7 @@
               </optgroup>
               <optgroup label="— ALGO-GRAF (grafik çizgi sıralaması, 5 dk) —">
                 <option value="algograf">ALGO-GRAF — iki yön (tüm çizgi kuralları)</option>
-                <option value="algograf_long">ALGO-GRAF — yalnız LONG (PEMBE üst / MAVİ alt veya HULL &amp; VWMA AL; YEŞİL&gt;PEMBE ya da HULL SAT kapatır)</option>
+                <option value="algograf_long">ALGO-GRAF — yalnız LONG (giriş: PEMBE/HULL9 diğer üç çizginin üstünde VE HULL AL (fiyat HULL9 üstünde) birlikte; MAVİ'nin en altta olması gerekmez; HULL NÖTR veya SAT iken yeni LONG açılmaz; kapatma: YEŞİL PEMBE'nin üstüne çıkarsa (HULL &amp; VWMA ikisi de AL değilken) veya HULL SAT olur olmaz (bar kapanışı beklenmeden) ya da net zarar zarar freni tutarına ulaşınca)</option>
                 <option value="algograf_short">ALGO-GRAF - yalnız SHORT (giriş: MAVİ en üst / PEMBE en alt, EMA20 VWMA20'nin üstünde VE HULL SAT (fiyat HULL9 altında) birlikte; HULL NÖTR veya AL iken yeni SHORT açılmaz; kapatma: SHORT dizilimi bozulursa veya HULL AL olur olmaz (bar kapanışı beklenmeden) ya da net zarar zarar freni tutarına ulaşınca)</option>
               </optgroup>
             </select>
@@ -372,6 +372,6 @@ window.addEventListener("error", function (e) {
   box.textContent = "JS HATA: " + msg;
 });
 </script>
-<script src="/static/app.js?v=55"></script>
+<script src="/static/app.js?v=56"></script>
 </body>
 </html>

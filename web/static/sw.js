@@ -52,17 +52,18 @@
 //      ac/tut; YESIL>PEMBE (both-AL degilken) veya HULL SAT -> kapat.
 // v25: ALGO-GRAF SHORT cikisi: SHORT dizilimi bozulursa veya HULL AL
 //      durumundaysa kapat; HULL AL iken yeni SHORT acilmaz (NOTR bekle).
-// v26: ALGO-GRAF yalniz SHORT: giris SHORT dizilimi VE HULL SAT
-//      (HULL NOTR/AL iken giris yok); HULL AL olur olmaz (bar kapanisi
-//      beklenmeden) SHORT kapat; net zarar dolar frenine ulasinca kapat
-//      (varsayilan 10$).
-const VERSION = "ta-v55";
+// v27: ALGO-GRAF yalniz LONG: giris PEMBE/HULL9 diger uc cizginin
+//      ustunde VE HULL AL (HULL NOTR/SAT iken giris yok); HULL SAT
+//      olur olmaz (bar kapanisi beklenmeden) LONG kapat; net zarar
+//      dolar frenine ulasinca kapat (varsayilan 10$). Tum ac/kapa
+//      LIMIT (maker; koruyucu stop haric).
+const VERSION = "ta-v56";
 const SHELL = "shell-" + VERSION;
 
 const PRECACHE = [
   "/",
-  "/static/style.css?v=55",
-  "/static/app.js?v=55",
+  "/static/style.css?v=56",
+  "/static/app.js?v=56",
   "/static/vendor/echarts.min.js",
   "/static/icon-192.png",
   "/static/icon-512.png",
