@@ -1244,12 +1244,14 @@ if ("serviceWorker" in navigator) {
         var b = el.pAlgoBank ? parseFloat(el.pAlgoBank.value) : 10;
         return isNaN(b) ? 10 : b;
       })(),
-      // ALGO-GRAF zarar freni (yalnız yönlü modlar: algograf_short /
-      // algograf_long; varsayılan 10$, 0 = kapalı). Sunucu tutarı anında
-      // açık pozisyona uygular.
+      // ALGO-GRAF zarar freni (tüm ALGO-GRAF modları: algograf /
+      // algograf_short / algograf_long; varsayılan 5$ yani -5$, 0 =
+      // kapalı). Sunucu tutarı anında açık pozisyona uygular.
       algo_loss_usd: (function () {
-        var b = el.pAlgoLoss ? parseFloat(el.pAlgoLoss.value) : 10;
-        return isNaN(b) ? 10 : b;
+        var b = el.pAlgoLoss ? parseFloat(el.pAlgoLoss.value) : 5;
+        if (isNaN(b)) b = 5;
+        // Negatif yazim da kabul edilir (-5 == 5$ zarar esigi).
+        return Math.abs(b);
       })(),
       // Dilimi sunucuya ACIKCA bildir: sunucudaki aktif dilim WS mesajiyla
       // guncelleniyor ve iki istek araya girince yanlis dilim test edilebiliyor.
@@ -1314,11 +1316,9 @@ if ("serviceWorker" in navigator) {
     if (el.algoBankWrap) {
       el.algoBankWrap.style.display = algofam ? "" : "none";
     }
-    // Zarar freni yalnız yönlü ALGO-GRAF modlarında (algograf_short /
-    // algograf_long).
+    // Zarar freni tüm ALGO-GRAF modlarında (iki yön dahil) geçerli.
     if (el.algoLossWrap) {
-      el.algoLossWrap.style.display =
-        (mode === "algograf_short" || mode === "algograf_long") ? "" : "none";
+      el.algoLossWrap.style.display = algofam ? "" : "none";
     }
     if (el.pullWrap) el.pullWrap.style.display = (mode === "trend" || mode === "ppt") ? "" : "none";
     el.pRule.disabled = kilit;
@@ -1391,20 +1391,24 @@ if ("serviceWorker" in navigator) {
                 + "üstünde; ikisi birlikte gerekir, MAVİ'nin en altta "
                 + "olması gerekmez; HULL NÖTR veya SAT iken yeni LONG "
                 + "açılmaz); kapatma: YEŞİL PEMBE'nin üstüne çıkınca "
-                + "(HULL & VWMA ikisi de AL değilken) VEYA HULL SAT olur "
-                + "olmaz (bar kapanışı beklenmeden) VEYA net zarar "
+                + "(HULL & VWMA ikisi de AL değilken) VEYA HULL SAT "
+                + "bir sonraki mumda onaylanınca VEYA net zarar "
                 + (parseFloat(el.pAlgoLoss.value) || 0)
-                + "$ zarar frenine ulaşınca; "
+                + "$ zarar frenine ulaşınca (sonrası 1 dk bekleme); "
               : el.pMode.value === "algograf_short"
               ? "varyant: YALNIZ SHORT (giriş: MAVİ en üst + PEMBE en "
                 + "altta, EMA20 VWMA20'nin üstünde VE HULL SAT — fiyat "
                 + "HULL9'un altında; ikisi birlikte gerekir, HULL NÖTR "
                 + "veya AL iken yeni SHORT açılmaz); kapatma: SHORT "
-                + "dizilimi bozulursa VEYA HULL AL olur olmaz (bar "
-                + "kapanışı beklenmeden) VEYA net zarar "
+                + "dizilimi bozulursa VEYA HULL AL bir sonraki mumda "
+                + "onaylanınca VEYA net zarar "
                 + (parseFloat(el.pAlgoLoss.value) || 0)
-                + "$ zarar frenine ulaşınca; "
-              : "varyant: iki yön (tüm kurallar); ")
+                + "$ zarar frenine ulaşınca (sonrası 1 dk bekleme); "
+              : "varyant: iki yön (LONG: PEMBE üst + HULL AL, SHORT: "
+                + "MAVİ üst + PEMBE alt + HULL SAT); kapatma: HULL ters "
+                + "durumu bir sonraki mumda onaylanınca VEYA net zarar "
+                + (parseFloat(el.pAlgoLoss.value) || 0)
+                + "$ zarar frenine ulaşınca (sonrası 1 dk bekleme); ")
           + "AL=LONG açar, SAT=SHORT açar, AL-KAPAT açık LONG'u, "
           + "SAT-KAPAT açık SHORT'u kapatır; kararsızlıkta NÖTR; "
           + "TP/bekleme YOK — pozisyon kural çıkışına kadar tutulur; "
@@ -1485,12 +1489,12 @@ if ("serviceWorker" in navigator) {
   });
 
   // ALGO-GRAF zarar freni: "Uygula" tutarı ANINDA açık pozisyona uygular
-  // (0 = fren tamamen kapanır). Yalnız `algograf_short` için görünür.
+  // (0 = fren tamamen kapanır). Tüm ALGO-GRAF modlarında görünür.
   if (el.pAlgoLossApply) {
     el.pAlgoLossApply.addEventListener("click", function (ev) {
       ev.preventDefault();
-      var tutar = parseFloat(el.pAlgoLoss.value);
-      if (isNaN(tutar) || tutar < 0) {
+      var tutar = Math.abs(parseFloat(el.pAlgoLoss.value));
+      if (isNaN(tutar)) {
         addLog(nowTs(), "error", "Zarar freni tutarı geçersiz");
         return;
       }
@@ -1500,7 +1504,8 @@ if ("serviceWorker" in navigator) {
           addLog(nowTs(), "info",
             "ALGO-GRAF zarar freni güncellendi: " +
             (tutar > 0
-              ? fmtUsd(tutar) + " · açık pozisyona hemen uygulandı"
+              ? fmtUsd(tutar) + " · açık pozisyona hemen uygulandı · " +
+                "tetiklenince 1 dk yeni giriş yok"
               : "kapalı (0$)"));
         }
       });

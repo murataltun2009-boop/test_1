@@ -12,19 +12,19 @@ Kullanıcı kuralı (5 dk, 4 çizgi — EMA200/SMA200 grafikte yok):
     HULL AL iken yeni SHORT açılmaz; NÖTR beklenir.
   * Yalnız SHORT (algograf_short, 2026-11-22): giriş için SHORT çizgi
     dizilimi VE HULL SAT (fiyat HULL9 altında) BİRLİKTE gerekir; HULL
-    NÖTR veya AL iken yeni SHORT açılmaz. Dizilim bozulunca veya HULL AL
-    olunca (bar kapanışı beklenmeden) kapanır. Net zarar
-    `PAPER_ALGOGRAF_LOSS_USD` (varsayılan 10$) tutarına ulaşınca da
-    kapanır (zarar freni).
+    NÖTR veya AL iken yeni SHORT açılmaz. HULL AL olunca (bir sonraki mum
+    onayıyla) kapanır. Net zarar `PAPER_ALGOGRAF_LOSS_USD` (varsayılan 5$,
+    yani -5$) tutarına ulaşınca da kapanır ve 1 dakika yeni giriş yapılmaz
+    (zarar freni).
   * LONG: PEMBE en üstte, MAVİ en altta olduğu aralıkta LONG açık kalır.
   * LONG KAPAT: YEŞİL, PEMBE'nin üstüne çıkınca kapat.
   * Yalnız LONG (algograf_long, giriş 2026-11-23): PEMBE/HULL9 diğer üç
     çizginin üstünde VE HULL AL birlikte gerekir (MAVİ'nin en altta
     olması beklenmez); HULL NÖTR veya SAT iken yeni LONG açılmaz.
     HULL & VWMA ikisi de AL ise YEŞİL > PEMBE kapatmaz (both-AL).
-    YEŞİL > PEMBE (both-AL yokken) veya HULL SAT -> kapat; HULL SAT bar
-    kapanışı beklenmeden canlı fiyatla yakalanır. Net zarar
-    `PAPER_ALGOGRAF_LOSS_USD` tutarına ulaşınca da kapanır.
+    YEŞİL > PEMBE (both-AL yokken) veya HULL SAT (bir sonraki mum onayıyla)
+    -> kapat; net zarar `PAPER_ALGOGRAF_LOSS_USD` tutarına ulaşınca da
+    kapanır ve 1 dakika yeni giriş yapılmaz.
   * NÖTR: YEŞİL en üstte, PEMBE en altta -> pozisyon NÖTR.
   * Kararsızlıkta NÖTR.
   * Varyantlar: algograf (iki yön), algograf_long (yalnız LONG),
@@ -354,6 +354,7 @@ kontrol("11.3 backtest calisti", st.get("mode") == "algograf"
 print("12) Koruyucu stop + ayni yonde yeniden giris kilidi")
 p = trader("algograf")
 p.algo_sl = 0.01
+p.algo_loss_usd = 0.0
 p._algograf(100.0, "5m", "AL")
 kontrol("12.1 LONG stop seviyesi %1 altta",
         p.position is not None and abs(p.position.stop_price - 99.0) < 1e-9)
@@ -375,6 +376,7 @@ kontrol("12.6 kural sifirlaninca yeniden giris var",
 # SHORT stop: giris 100 -> stop 101, anlik fiyat asarsa kapanir.
 p = trader("algograf")
 p.algo_sl = 0.01
+p.algo_loss_usd = 0.0
 p._algograf(100.0, "5m", "SAT")
 kontrol("12.7 SHORT stop seviyesi %1 ustte",
         p.position is not None and abs(p.position.stop_price - 101.0) < 1e-9)
@@ -387,6 +389,7 @@ kontrol("12.9 gap dolumu anlik fiyattan",
 # Stop kapali: kural disi cikis yok.
 p = trader("algograf")
 p.algo_sl = 0.0
+p.algo_loss_usd = 0.0
 p._algograf(100.0, "5m", "AL")
 p._algograf(90.0, "5m", "AL")
 kontrol("12.10 algo_sl=0 -> stop yok", p.position is not None)
@@ -616,12 +619,18 @@ kontrol("14.12 HULL NOTR iken SHORT acilmaz", p.position is None)
 p._algograf(100.0, "5m", "SAT", hull_ma=99.0)
 kontrol("14.13 HULL AL iken SHORT acilmaz", p.position is None)
 
-# Bar ici HULL AL -> acik SHORT aninda kapanir.
+# HULL AL -> acik SHORT hemen degil, BIR SONRAKI mumda onayla kapanir.
 p = trader("algograf_short")
 p.algo_sl = 0.0
+p.algo_loss_usd = 0.0
 p._algograf(100.0, "5m", "SAT", hull_ma=101.0)
 p._algograf(101.0, "5m", "SAT", hull_ma=100.0)
-kontrol("14.14 HULL AL (bar ici) -> SHORT kapandi",
+kontrol("14.14 HULL AL (ayni mum) -> SHORT henuz kapanmadi",
+        p.position is not None and p._short_hull_al_pending)
+# Yeni mum: HULL hâlâ AL -> onaylandi, kapat.
+p._last_bar_time = 1
+p._algograf(101.0, "5m", "SAT", hull_ma=100.0)
+kontrol("14.14b HULL AL bir sonraki mumda onaylandi -> SHORT kapandi",
         p.position is None and len(p.trades) == 1)
 kontrol("14.15 kapanis nedeni HULL AL",
         "HULL AL" in p.trades[0].exit_reason)
@@ -634,19 +643,21 @@ p._algograf(99.0, "5m", "SAT", hull_ma=100.0)
 kontrol("14.17 HULL SAT'a donunce yeniden SHORT",
         p.position is not None and p.position.side == SHORT)
 
-# Iki yonlu modda bu bar ici kapanma UYGULANMAZ.
+# Iki yonlu modda da HULL kapanmasi bir sonraki mumu bekler.
 p = trader("algograf")
 p.algo_sl = 0.0
+p.algo_loss_usd = 0.0
 p._algograf(100.0, "5m", "SAT")
 p._algograf(101.0, "5m", "SAT", hull_ma=100.0)
 kontrol("14.18 iki yonlu modda bar ici HULL kapatmasi yok",
-        p.position is not None)
+        p.position is not None and p._short_hull_al_pending)
 
 # --- 14C: zarar freni ---------------------------------------------
 p = trader("algograf_short")
 p.algo_sl = 0.0
-kontrol("14.19 varsayilan zarar freni 10$",
-        abs(p.algo_loss_usd - 10.0) < 1e-9)
+kontrol("14.19 varsayilan zarar freni 5$",
+        abs(p.algo_loss_usd - 5.0) < 1e-9)
+p.configure(algo_loss_usd=10.0)
 p._algograf(100.0, "5m", "SAT", hull_ma=101.0)
 p._algograf(100.1, "5m", "SAT", hull_ma=101.0)
 kontrol("14.20 esik altinda (net ~2$) kapatmaz",
@@ -680,18 +691,27 @@ kontrol("14.26 HULL SAT ile SHORT acildi", p.position is not None)
 p._algograf(120.0, "5m", "SAT", hull_ma=130.0)
 kontrol("14.27 0 -> zarar freni kapali", p.position is not None)
 
-# Kapsam: iki yonlu modda zarar freni calismaz.
+# Kapsam: iki yonlu modda da zarar freni calisir + 1 dk bekleme.
 p = trader("algograf")
-p.configure(algo_loss_usd=10.0)
+p.configure(algo_loss_usd=5.0)
 p.algo_sl = 0.0
 p._algograf(100.0, "5m", "SAT")
+kontrol("14.28 iki yonlu modda SHORT acildi", p.position is not None)
 p._algograf(120.0, "5m", "SAT")
-kontrol("14.28 iki yonlu modda zarar freni yok", p.position is not None)
+kontrol("14.28b iki yonlu modda zarar freni kapatti",
+        p.position is None and "zarar freni" in p.trades[-1].exit_reason)
+kontrol("14.28c zarar freni sonrasi 1 dk bekleme aktif",
+        p._algo_loss_pause_until > p._algo_simdi_ms())
+p._algograf(100.0, "5m", "SAT")
+kontrol("14.28d bekleme sirasinda yeni giris yok", p.position is None)
+p._algo_loss_pause_until = 0.0
+p._algograf(100.0, "5m", "SAT")
+kontrol("14.28e bekleme bitince giris serbest", p.position is not None)
 
 # Durum ozeti tutari tasir.
 p = trader("algograf_short")
 kontrol("14.29 state algo_loss_usd tasir",
-        abs(p.state(100.0)["algo_loss_usd"] - 10.0) < 1e-9)
+        abs(p.state(100.0)["algo_loss_usd"] - 5.0) < 1e-9)
 
 # Arayuz logu.
 p = trader("algograf_short")
@@ -756,12 +776,18 @@ kontrol("15.8 HULL NOTR iken LONG acilmaz", p.position is None)
 p._algograf(100.0, "5m", "AL", hull_ma=101.0)
 kontrol("15.9 HULL SAT iken LONG acilmaz", p.position is None)
 
-# Bar ici HULL SAT -> acik LONG aninda kapanir.
+# HULL SAT -> acik LONG hemen degil, BIR SONRAKI mumda onayla kapanir.
 p = trader("algograf_long")
 p.algo_sl = 0.0
+p.algo_loss_usd = 0.0
 p._algograf(100.0, "5m", "AL", hull_ma=99.0)
 p._algograf(98.0, "5m", "AL", hull_ma=100.0)
-kontrol("15.10 HULL SAT (bar ici) -> LONG kapandi",
+kontrol("15.10 HULL SAT (ayni mum) -> LONG henuz kapanmadi",
+        p.position is not None and p._long_hull_sat_pending)
+# Yeni mum: HULL hâlâ SAT -> onaylandi, kapat.
+p._last_bar_time = 1
+p._algograf(98.0, "5m", "AL", hull_ma=100.0)
+kontrol("15.10b HULL SAT bir sonraki mumda onaylandi -> LONG kapandi",
         p.position is None and len(p.trades) == 1)
 kontrol("15.11 kapanis nedeni HULL SAT",
         "HULL SAT" in p.trades[0].exit_reason)
@@ -774,19 +800,21 @@ p._algograf(102.0, "5m", "AL", hull_ma=100.0)
 kontrol("15.13 HULL AL'a donunce yeniden LONG",
         p.position is not None and p.position.side == LONG)
 
-# Iki yonlu modda bu bar ici kapanma UYGULANMAZ.
+# Iki yonlu modda da HULL kapanmasi bir sonraki mumu bekler.
 p = trader("algograf")
 p.algo_sl = 0.0
+p.algo_loss_usd = 0.0
 p._algograf(100.0, "5m", "AL")
 p._algograf(98.0, "5m", "AL", hull_ma=100.0)
 kontrol("15.14 iki yonlu modda bar ici HULL kapatmasi yok",
-        p.position is not None)
+        p.position is not None and p._long_hull_sat_pending)
 
 # --- 15C: zarar freni ---------------------------------------------
 p = trader("algograf_long")
 p.algo_sl = 0.0
-kontrol("15.15 varsayilan zarar freni 10$",
-        abs(p.algo_loss_usd - 10.0) < 1e-9)
+kontrol("15.15 varsayilan zarar freni 5$",
+        abs(p.algo_loss_usd - 5.0) < 1e-9)
+p.configure(algo_loss_usd=10.0)
 p._algograf(100.0, "5m", "AL", hull_ma=99.0)
 p._algograf(99.8, "5m", "AL", hull_ma=99.0)
 kontrol("15.16 esik altinda (net ~9,6$) kapatmaz",
@@ -819,13 +847,22 @@ kontrol("15.22 HULL AL ile LONG acildi", p.position is not None)
 p._algograf(95.0, "5m", "AL", hull_ma=90.0)
 kontrol("15.23 0 -> zarar freni kapali", p.position is not None)
 
-# Kapsam: iki yonlu modda zarar freni calismaz.
+# Kapsam: iki yonlu modda da zarar freni calisir + 1 dk bekleme.
 p = trader("algograf")
-p.configure(algo_loss_usd=10.0)
+p.configure(algo_loss_usd=5.0)
 p.algo_sl = 0.0
 p._algograf(100.0, "5m", "AL")
+kontrol("15.24 iki yonlu modda LONG acildi", p.position is not None)
 p._algograf(80.0, "5m", "AL")
-kontrol("15.24 iki yonlu modda zarar freni yok", p.position is not None)
+kontrol("15.24b iki yonlu modda zarar freni kapatti",
+        p.position is None and "zarar freni" in p.trades[-1].exit_reason)
+kontrol("15.24c zarar freni sonrasi 1 dk bekleme aktif",
+        p._algo_loss_pause_until > p._algo_simdi_ms())
+p._algograf(100.0, "5m", "AL")
+kontrol("15.24d bekleme sirasinda yeni giris yok", p.position is None)
+p._algo_loss_pause_until = 0.0
+p._algograf(100.0, "5m", "AL")
+kontrol("15.24e bekleme bitince giris serbest", p.position is not None)
 
 # Arayuz logu.
 p = trader("algograf_long")

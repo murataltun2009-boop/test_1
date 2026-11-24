@@ -457,13 +457,16 @@ PAPER_ALGOGRAF_SL = 0.01
 # Arayuzden degistirilebilir + "Uygula" acik pozisyona aninda uygular;
 # varsayilan 10$. 0 = kapali.
 PAPER_ALGOGRAF_BANK_USD = 10.0
-# ALGO-GRAF ZARAR FRENİ (2026-11-21/23 kullanici kurali — YALNIZ
-# `algograf_short` / `algograf_long`): acik pozisyonun NET zarari bu DOLAR
-# tutarina ulasinca pozisyon LIMIT (maker) cikisiyla kapatilir ve kural
-# sifirlanana kadar ayni yonde yeni giris yapilmaz. Boylece HULL ters
-# durumunu bar kapanisinda beklerken olusan buyuk zarar sinirlanir.
-# Arayuzden degistirilebilir; varsayilan 10$. 0 = kapali.
-PAPER_ALGOGRAF_LOSS_USD = 10.0
+# ALGO-GRAF ZARAR FRENİ (2026-11-21/24 kullanici kurali — TÜM ALGO-GRAF
+# modlari: `algograf` / `algograf_short` / `algograf_long`): acik pozisyonun
+# NET zarari bu DOLAR tutarina ulasinca pozisyon LIMIT (maker) cikisiyla
+# kapatilir ve 1 DAKIKA yeni giris yapilmaz. Boylece HULL ters durumunu /
+# kurallarin kapanisini beklerken olusan buyuk zarar sinirlanir.
+# Arayuzden degistirilebilir ("Uygula" acik pozisyona aninda uygular);
+# varsayilan 5$ (yani -5$). 0 = kapali.
+PAPER_ALGOGRAF_LOSS_USD = 5.0
+# Zarar freni tetiklendikten sonra yeni giris icin beklenecek sure (ms).
+PAPER_ALGOGRAF_LOSS_PAUSE_MS = 60_000
 # TIK2 STABILIZASYON (2026-11-07): kural serisi ~2 barda bir donuyordu.
 # HULL giris kapisi ile 1m'de 4 sembolun 4'unde de hamdan iyi; ayrinti
 # ALGORITMA_ARASTIRMASI.md OTURUM 17. (Beklemeler 2026-11-07'de

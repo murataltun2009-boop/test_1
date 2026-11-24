@@ -185,9 +185,9 @@
             <span class="hint">açık kâr bu tutara ulaşınca kâr cüzdana yazılır ve pozisyon aynı yönde, aynı ana para × kaldıraç notional ile anında yeniden açılır (pozisyon kaybolmaz) · 0 = kapalı · Uygula açık pozisyona hemen uygular</span>
           </label>
           <label class="wfull" id="algoLossWrap" style="display:none">ALGO-GRAF zarar freni ($)
-            <input id="pAlgoLoss" type="number" step="1" min="0" max="100000" value="10">
+            <input id="pAlgoLoss" type="number" step="1" min="0" max="100000" value="5">
             <button id="pAlgoLossApply" class="btn small" type="button">Uygula</button>
-            <span class="hint">yalnız-SHORT: açık pozisyonun net zararı bu tutara ulaşınca anında kapanır · 0 = kapalı · Uygula açık pozisyona hemen uygular</span>
+            <span class="hint">tüm ALGO-GRAF modları (iki yön dahil): açık pozisyonun net zararı bu tutara ulaşınca anında kapanır ve 1 dakika yeni giriş yapılmaz · varsayılan -5$ · 0 = kapalı · Uygula açık pozisyona hemen uygular</span>
           </label>
           <label class="wfull">Karar mekanizması
             <select id="pMode">
@@ -372,6 +372,6 @@ window.addEventListener("error", function (e) {
   box.textContent = "JS HATA: " + msg;
 });
 </script>
-<script src="/static/app.js?v=56"></script>
+<script src="/static/app.js?v=57"></script>
 </body>
 </html>

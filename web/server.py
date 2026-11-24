@@ -543,11 +543,12 @@ def create_app(service: MarketService, store: SignalStore,
                 f"ile anında yeniden açılır (bileşik büyüme yok, pozisyon "
                 f"kaybolmaz; işlemler logda görünür) "
                 f"· 0 = kapalı · tutar değişince Uygula ile açık pozisyona "
-                f"hemen uygulanır; yalnız-LONG/SHORT modunda HULL ters "
-                f"duruma geçince (LONG'da SAT, SHORT'ta AL) bar kapanışı "
-                f"beklenmeden ve net zarar "
+                f"hemen uygulanır; tüm ALGO-GRAF modlarında HULL ters "
+                f"duruma geçince (LONG'da SAT, SHORT'ta AL) bir sonraki "
+                f"mumun onayıyla ve net zarar "
                 f"{paper.algo_loss_usd:.2f}$'a ulaşınca pozisyon kapanır "
-                f"(zarar freni; 0 = kapalı) · koruyucu stop "
+                f"(zarar freni; sonrası 1 dk yeni giriş yok; 0 = kapalı) "
+                f"· koruyucu stop "
                 f"%{paper.algo_sl*100:.2f} (acil çıkış) · tüm aç/kapa "
                 f"LIMIT (maker; koruyucu stop hariç){dur}")
         # TIK modu onayi: kullaniciya motorun GERCEKTEN tik ile
@@ -786,11 +787,12 @@ def create_app(service: MarketService, store: SignalStore,
                 f"ile anında yeniden açılır (bileşik büyüme yok, pozisyon "
                 f"kaybolmaz; işlemler logda görünür) "
                 f"· 0 = kapalı · tutar değişince Uygula ile açık pozisyona "
-                f"hemen uygulanır; yalnız-LONG/SHORT modunda HULL ters "
-                f"duruma geçince (LONG'da SAT, SHORT'ta AL) bar kapanışı "
-                f"beklenmeden ve net zarar "
+                f"hemen uygulanır; tüm ALGO-GRAF modlarında HULL ters "
+                f"duruma geçince (LONG'da SAT, SHORT'ta AL) bir sonraki "
+                f"mumun onayıyla ve net zarar "
                 f"{paper.algo_loss_usd:.2f}$'a ulaşınca pozisyon kapanır "
-                f"(zarar freni; 0 = kapalı) · koruyucu stop "
+                f"(zarar freni; sonrası 1 dk yeni giriş yok; 0 = kapalı) "
+                f"· koruyucu stop "
                 f"%{paper.algo_sl*100:.2f} (acil çıkış) · tüm aç/kapa "
                 f"LIMIT (maker; koruyucu stop hariç){dur}")
         # TIK modu onayi: kullaniciya motorun GERCEKTEN tik ile

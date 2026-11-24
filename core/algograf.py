@@ -385,10 +385,10 @@ def series(ma_series: dict, *, side: Optional[int] = None,
                 state = -1
             else:
                 out.append("NÖTR")
-        elif c["short_entry"] and c["hull_sat"]:
+        elif c["short_entry"] and not c["hull_al"]:
             out.append("SAT")
             state = -1
-        elif c["long_top"] and c["hull_al"]:
+        elif c["long_entry"]:
             out.append("AL")
             state = 1
         else:

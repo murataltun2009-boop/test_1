@@ -634,13 +634,14 @@ class MarketService:
         if price != price or price <= 0:      # NaN veya gecersiz
             price = candles[-1].close
         signal = self._signal_for_mode(res, candles, tf)
-        # YALNIZ yönlü ALGO-GRAF (`algograf_short` / `algograf_long`): HULL
-        # ters duruma geçince (SHORT'ta AL, LONG'da SAT) bar kapanışını
-        # beklemeden pozisyon kapsin diye son KAPANMIS barin HULL9 degeri
-        # gecirilir. Deger analizden okunur (yeniden hesaplanmaz).
+        # TÜM ALGO-GRAF modlari (`algograf` / `algograf_short` /
+        # `algograf_long`): HULL ters duruma geçince (SHORT'ta AL, LONG'da
+        # SAT) bir sonraki mumun onayiyla pozisyon kapsin diye son
+        # KAPANMIS barin HULL9 degeri gecirilir. Deger analizden okunur
+        # (yeniden hesaplanmaz).
         hull_ma = None
-        if self.paper.mode in ("algograf_short", "algograf_long") \
-                and res is not None:
+        if self.paper is not None and \
+                algograf.is_algograf_mode(self.paper.mode) and res is not None:
             try:
                 cs = _kapali_mumlar(candles)
                 hu = res.ma_series.get("hma")
