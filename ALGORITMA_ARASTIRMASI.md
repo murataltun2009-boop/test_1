@@ -2973,3 +2973,50 @@ ARAYUZ/SUNUCU: `algograf_long` seçenek metni, mod notu, başlatma logu
 DOGRULAMA: `test_algograf` 167/167, `test_tk2` 138/138, `test_paper`
 90/90, `test_tk_fix` 37/37; py_compile ve `node --check` temiz;
 `logs/islemler.csv` (kullanıcı canlı kaydı) değiştirilmedi.
+
+---
+
+## OTURUM 24 — TAKİPÇİ (PEMBE/HULL9 çizgi sıralaması, 5 dk, 2026-11-25)
+
+Kullanıcı kuralı: PEMBE (HULL 9) üç çizginin (EMA50 + VWMA20 + EMA20)
+tamamının altında iken SHORT, tamamının üstünde iken LONG açılır ve
+pozisyonda kalınır. PEMBE geri dönüp EMA20 / VWMA20 çizgilerinden YAKIN
+olanına değdiğinde pozisyon kapanır. Çizgiler aynı seviyedeyken (PEMBE
+üçlünün dışında değilken) NÖTR beklenir.
+
+Çizgi eşlemesi ALGO-GRAF ile aynıdır: TURUNCU=EMA20, MAVİ=EMA50,
+PEMBE=HULL9, YEŞİL=VWMA20. EMA200/SMA200 kullanılmaz.
+
+ÜÇ VARYANT: `takipci` (iki yön — LONG + SHORT), `takipci_long`,
+`takipci_short`. Kural `core/takipci.py` içindedir; canlı, geriye dönük
+test ve grafik yıldızları AYNI `series()` fonksiyonunu kullanır.
+
+ÇIKIŞ EŞİĞİ:
+  * LONG  : PEMBE <= max(EMA20, VWMA20)  (tepeden dönüşte ilk temas)
+  * SHORT : PEMBE >= min(EMA20, VWMA20)  (dipten dönüşte ilk temas)
+`PAPER_TAKIPCI_TOUCH` (varsayılan 0) fiyat oranı kadar ölü bant ekler;
+0 iken değme/eşitlik kapanış sayılır.
+
+YÜRÜTME (`paper._algograf` yeniden kullanılır):
+  * ZARAR FRENİ: net zarar `PAPER_ALGOGRAF_LOSS_USD` (varsayılan 5$)
+    olunca pozisyon kapanır. Sonrası bekleme arayüzdeki "Min. bekleme"
+    (bar) ayarından gelir: 0 = bekleme yok, N = N bar yeni giriş yok.
+  * KÂR BANKASI: açık kâr `PAPER_ALGOGRAF_BANK_USD` (varsayılan 10$)
+    olunca pozisyon kapanır, net kâr cüzdana yazılır ve YENİ pozisyon
+    beklenir. Kural sıfırlanana (AL/SAT dışına çıkana) kadar aynı yönde
+    yeniden girilmez — ALGO-GRAF'ın "aynı notional ile anında yeniden
+    gir" davranışından bilinçli fark.
+  * KORUYUCU STOP bu modlarda KAPALIDIR; çıkış kuraldan veya zarar
+    freninden gelir.
+  * Aç/kapa LIMIT (maker) sayılır.
+
+ARAYÜZ/SUNUCU: TAKİPÇİ seçenek grubu (3 varyant), mod notu, başlatma
+logu (2 yer), kâr bankası ve zarar freni panelleri TAKİPÇİ modlarında da
+görünür. Cache `?v=58` / `ta-v58` (SW precache dahil).
+
+TESTLER: yeni `test_takipci.py` — 44/44 (mod ailesi, SHORT/LONG giriş,
+min/max temas çıkışı, NÖTR, varyant yön kilidi, iki yön geçişi, HULL
+fiyat onayı gerekmemesi, zarar freni + Min. bekleme 0/N, kâr bankası +
+yeni pozisyon bekleme, kural kapanışı). Mevcut paketler:
+`test_algograf` 177/177, `test_paper` 90/90, `test_tk2` 138/138,
+`test_tk_fix` 37/37.

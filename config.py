@@ -467,6 +467,14 @@ PAPER_ALGOGRAF_BANK_USD = 10.0
 PAPER_ALGOGRAF_LOSS_USD = 5.0
 # Zarar freni tetiklendikten sonra yeni giris icin beklenecek sure (ms).
 PAPER_ALGOGRAF_LOSS_PAUSE_MS = 60_000
+# TAKIPCI (2026-11-25 kullanici kurali): 5 dk grafikte PEMBE (HULL9) uc
+# cizginin (EMA50 + VWMA20 + EMA20) tamaminin ALTINDA iken SHORT, USTUNDE
+# iken LONG acilir; PEMBE geri donup EMA20/VWMA20'ye degdiginde kapanir.
+# Uc varyant: takipci (iki yon), takipci_long (yalniz LONG),
+# takipci_short (yalniz SHORT). Zarar freni ve kar bankasi icin
+# PAPER_ALGOGRAF_LOSS_USD / PAPER_ALGOGRAF_BANK_USD degerleri kullanilir.
+# Deger 0 = siki karsilastirma (degme/cakisma siralamaya sayilmaz).
+PAPER_TAKIPCI_TOUCH = 0.0
 # TIK2 STABILIZASYON (2026-11-07): kural serisi ~2 barda bir donuyordu.
 # HULL giris kapisi ile 1m'de 4 sembolun 4'unde de hamdan iyi; ayrinti
 # ALGORITMA_ARASTIRMASI.md OTURUM 17. (Beklemeler 2026-11-07'de

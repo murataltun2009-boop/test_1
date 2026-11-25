@@ -57,13 +57,13 @@
 //      olur olmaz (bar kapanisi beklenmeden) LONG kapat; net zarar
 //      dolar frenine ulasinca kapat (varsayilan 10$). Tum ac/kapa
 //      LIMIT (maker; koruyucu stop haric).
-const VERSION = "ta-v57";
+const VERSION = "ta-v58";
 const SHELL = "shell-" + VERSION;
 
 const PRECACHE = [
   "/",
   "/static/style.css?v=56",
-  "/static/app.js?v=57",
+  "/static/app.js?v=58",
   "/static/vendor/echarts.min.js",
   "/static/icon-192.png",
   "/static/icon-512.png",

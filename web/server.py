@@ -35,6 +35,7 @@ import config
 import core.analysis as analysis_mod
 from core import tk2_rules
 from core import algograf
+from core import takipci
 from core.analysis import Signal
 from core.service import MarketService
 from core.store import SignalStore
@@ -551,6 +552,34 @@ def create_app(service: MarketService, store: SignalStore,
                 f"· koruyucu stop "
                 f"%{paper.algo_sl*100:.2f} (acil çıkış) · tüm aç/kapa "
                 f"LIMIT (maker; koruyucu stop hariç){dur}")
+        # TAKİPÇİ (2026-11-25): PEMBE/HULL9 çizgi sıralaması kuralı.
+        if takipci.is_takipci_mode(data.get("mode")) and \
+                takipci.is_takipci_mode(paper.mode):
+            dur = "" if paper.running else \
+                " · SIMULASYON DURAKLATILMIS — islem acilmasi icin " \
+                "Trade Başla'ya bas"
+            _varyant = {
+                "takipci": "iki yön (LONG + SHORT)",
+                "takipci_long": "yalnız LONG",
+                "takipci_short": "yalnız SHORT",
+            }.get(paper.mode, paper.mode)
+            service._emit_log(
+                "info", "simulator",
+                f"TAKİPÇİ aktif — sembol {paper.symbol} · varyant: "
+                f"{_varyant} · çizgiler: PEMBE=HULL9, MAVİ=EMA50, "
+                f"YEŞİL=VWMA20, TURUNCU=EMA20 · LONG girişi: PEMBE üç "
+                f"çizginin de üstünde; SHORT girişi: PEMBE üçünün de "
+                f"altında; kapatma: PEMBE geri dönüp EMA20/VWMA20'den "
+                f"yakın olanına değince · çizgiler aynı seviyedeyken NÖTR "
+                f"(bekle) · TP yok — pozisyon kural çıkışına kadar "
+                f"tutulur · kâr bankası: açık kâr "
+                f"{paper.algo_bank_usd:.2f}$'a ulaşınca kâr cüzdana "
+                f"yazılır, pozisyon kapanır ve YENİ pozisyon beklenir "
+                f"(0 = kapalı) · zarar freni: net zarar "
+                f"{paper.algo_loss_usd:.2f}$'a ulaşınca kapanır; sonrası "
+                f"'Min. bekleme' kadar yeni giriş yok "
+                f"(0 = bekleme yok) · koruyucu stop KAPALI · tüm aç/kapa "
+                f"LIMIT (maker){dur}")
         # TIK modu onayi: kullaniciya motorun GERCEKTEN tik ile
         # calistigini (eski surecte sessiz yok-sayma tehlikesi) ve
         # simulasyonun duraklatip duraklatmadigini acikla.
@@ -795,6 +824,34 @@ def create_app(service: MarketService, store: SignalStore,
                 f"· koruyucu stop "
                 f"%{paper.algo_sl*100:.2f} (acil çıkış) · tüm aç/kapa "
                 f"LIMIT (maker; koruyucu stop hariç){dur}")
+        # TAKİPÇİ (2026-11-25): PEMBE/HULL9 çizgi sıralaması kuralı.
+        if takipci.is_takipci_mode(data.get("mode")) and \
+                takipci.is_takipci_mode(paper.mode):
+            dur = "" if paper.running else \
+                " · SIMULASYON DURAKLATILMIS — islem acilmasi icin " \
+                "Trade Başla'ya bas"
+            _varyant = {
+                "takipci": "iki yön (LONG + SHORT)",
+                "takipci_long": "yalnız LONG",
+                "takipci_short": "yalnız SHORT",
+            }.get(paper.mode, paper.mode)
+            service._emit_log(
+                "info", "simulator",
+                f"TAKİPÇİ aktif — sembol {paper.symbol} · varyant: "
+                f"{_varyant} · çizgiler: PEMBE=HULL9, MAVİ=EMA50, "
+                f"YEŞİL=VWMA20, TURUNCU=EMA20 · LONG girişi: PEMBE üç "
+                f"çizginin de üstünde; SHORT girişi: PEMBE üçünün de "
+                f"altında; kapatma: PEMBE geri dönüp EMA20/VWMA20'den "
+                f"yakın olanına değince · çizgiler aynı seviyedeyken NÖTR "
+                f"(bekle) · TP yok — pozisyon kural çıkışına kadar "
+                f"tutulur · kâr bankası: açık kâr "
+                f"{paper.algo_bank_usd:.2f}$'a ulaşınca kâr cüzdana "
+                f"yazılır, pozisyon kapanır ve YENİ pozisyon beklenir "
+                f"(0 = kapalı) · zarar freni: net zarar "
+                f"{paper.algo_loss_usd:.2f}$'a ulaşınca kapanır; sonrası "
+                f"'Min. bekleme' kadar yeni giriş yok "
+                f"(0 = bekleme yok) · koruyucu stop KAPALI · tüm aç/kapa "
+                f"LIMIT (maker){dur}")
         # TIK modu onayi: kullaniciya motorun GERCEKTEN tik ile
         # calistigini (eski surecte sessiz yok-sayma tehlikesi) ve
         # simulasyonun duraklatip duraklatmadigini acikla.

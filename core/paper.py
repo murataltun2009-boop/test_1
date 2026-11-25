@@ -33,6 +33,7 @@ from core import ppst
 from core import fib as fib_mod
 from core import tk2_rules
 from core import algograf
+from core import takipci
 
 logger = logging.getLogger("ta.paper")
 
@@ -739,12 +740,16 @@ class PaperTrader:
         if mode in ("range", "signal", "signal_long", "signal_exit",
                     "ma_only", "osc_only", "trend", "muro", "1m", "ppt",
                     "tk", "tk2", "tk2_long", "tk2_short") \
-                or algograf.is_algograf_mode(mode):
+                or algograf.is_algograf_mode(mode) \
+                or takipci.is_takipci_mode(mode):
             if mode != self.mode:
                 # Mod degisti: onceki sinyal gecersiz.
                 self.last_signal = None
                 # Stop sonrasi yeniden giris kilidi de moda baglidir.
                 self._algo_stop_kilit = ""
+                # Onceki modun zarar freni / Min. bekleme suresi yeni
+                # moda tasinmaz (TAKIPCI'de bar bazli uzun olabilir).
+                self._algo_loss_pause_until = 0.0
             self.mode = mode
         if algograf.is_algograf_mode(self.mode):
             # Koruyucu stop orani config'ten taze okunur (restart ile
@@ -1199,6 +1204,7 @@ class PaperTrader:
         if self.corr_on and self.mode != "tk" and \
                 not tk2_rules.is_tk2_mode(self.mode) and \
                 not algograf.is_algograf_mode(self.mode) and \
+                not takipci.is_takipci_mode(self.mode) and \
                 self.position is None:
             if self._bars_held < self._corr_until:
                 return None
@@ -1229,7 +1235,8 @@ class PaperTrader:
         # `PAPER_ALGOGRAF_SL` kadar koruyucu stop (acil çıkış).
         # HULL ters durum kapanisi `_algograf` icinde, bir SONRAKI mumun
         # onayiyla yapilir (bekleyen bayraklar orada yonetilir).
-        if algograf.is_algograf_mode(self.mode):
+        if algograf.is_algograf_mode(self.mode) \
+                or takipci.is_takipci_mode(self.mode):
             return self._algograf(price, timeframe, signal,
                                   bar_low, bar_high, hull_ma)
 
@@ -2013,6 +2020,8 @@ class PaperTrader:
           ma_only     : 15 hareketli ortalamanin skoru
           osc_only    : 11 osilatorun skoru
           tk2         : kullanici kural listesi (core/tk2_rules.py)
+          algograf    : grafik cizgi siralama kurali (core/algograf.py)
+          takipci     : PEMBE/HULL9 cizgi siralama kurali (core/takipci.py)
 
         Osilator modunda daha kucuk esikler kullanilir; bilesik esikler
         11 osilatorun ortalamasi icin neredeyse hic asilmaz.
@@ -2159,6 +2168,13 @@ class PaperTrader:
                 side=algograf.side_for_mode(self.mode),
                 prices=res.c)
 
+        # TAKIPCI (2026-11-25): PEMBE/HULL9 uc cizginin tamaminin altinda
+        # ise SHORT, ustunde ise LONG; EMA20/VWMA20'ye donuste kapanir.
+        if takipci.is_takipci_mode(self.mode):
+            return takipci.series(
+                res.ma_series,
+                side=takipci.side_for_mode(self.mode))
+
         if self.mode == "ma_only":
             seriler = res.ma_scores
         elif self.mode == "osc_only":
@@ -2279,7 +2295,10 @@ class PaperTrader:
                                                      "tk2_long", "tk2_short",
                                                      "algograf",
                                                      "algograf_long",
-                                                     "algograf_short"):
+                                                     "algograf_short",
+                                                     "takipci",
+                                                     "takipci_long",
+                                                     "takipci_short"):
                     # Sinyal listesi YOKSA ve karar modu sinyal tabanliysa
                     # burada analiz yapip signal listesini kendimiz uretiriz.
                     #
@@ -2363,7 +2382,8 @@ class PaperTrader:
         notional = margin * self.leverage
         eff_lev = self.leverage
         if self.mode == "tk" or tk2_rules.is_tk2_mode(self.mode) \
-                or algograf.is_algograf_mode(self.mode):
+                or algograf.is_algograf_mode(self.mode) \
+                or takipci.is_takipci_mode(self.mode):
             # TK POZISYON KISITI (canli teshis 2026-10-31): 10x + %80
             # teminatla stop kaybi bakiyenin ~%2,4'u oluyordu; banka
             # hedefi ~%2,5 -> komisyonla negatif beklenti. TK pozisyonu
@@ -2579,8 +2599,10 @@ class PaperTrader:
             eff_leverage=eff_lev, trail_frac=trail_frac, locked=locked,
             entry_bar=(int(candles_for_target[-1].open_time)
                        if candles_for_target else 0))
-        # ALGO-GRAF kâr bankası: ilk esik giris aninda kurulur.
-        if algograf.is_algograf_mode(self.mode) and self.algo_bank_usd > 0:
+        # ALGO-GRAF / TAKIPCI kâr bankası: ilk eşik giriş anında kurulur.
+        if (algograf.is_algograf_mode(self.mode)
+                or takipci.is_takipci_mode(self.mode)) \
+                and self.algo_bank_usd > 0:
             self.position.bank_next_usd = float(self.algo_bank_usd)
         self._bars_held = 0        # yeni pozisyon: bekleme sayaci sifirlanir
         if side == LONG:
@@ -2658,15 +2680,40 @@ class PaperTrader:
             return -self.tk_hedef if self.tk_hedef != 0 else 0
         return None
 
+    def _takipci_bekleme_ms(self, timeframe: str) -> float:
+        """TAKİPÇİ kapanış sonrası bekleme (ms).
+
+        Arayüzdeki "Min. bekleme" (bar) ayarı kullanılır: 0 = bekleme yok,
+        N > 0 = N bar süre kadar yeni giriş yapılmaz. Zaman tabanı aktif
+        dilimin saniyesidir (5 dk varsayılan).
+        """
+        n = int(getattr(self, "min_hold_bars", 0) or 0)
+        if n <= 0:
+            return 0.0
+        try:
+            sec = float(config.TF_SECONDS.get(str(timeframe), 300))
+        except Exception:      # noqa: BLE001
+            sec = 300.0
+        return float(n) * sec * 1000.0
+
+    def _takipci_kapanis_bekle(self, timeframe: str) -> None:
+        """TAKİPÇİ kural kapanışından sonra yeni girişi beklet."""
+        if not takipci.is_takipci_mode(self.mode):
+            return
+        ms = self._takipci_bekleme_ms(timeframe)
+        if ms > 0:
+            self._algo_loss_pause_until = self._algo_simdi_ms() + ms
+
     def _algograf(self, price: float, timeframe: str,
                   signal: Optional[str],
                   bar_low: Optional[float] = None,
                   bar_high: Optional[float] = None,
                   hull_ma: Optional[float] = None) -> Optional[str]:
-        """ALGO-GRAF yürütücüsü (2026-11-13, kullanici kurali).
+        """ALGO-GRAF / TAKİPÇİ yürütücüsü (2026-11-13, kullanici kurali).
 
-        Karar `core/algograf.py` serisinden gelir (AL / SAT / AL-KAPAT /
-        SAT-KAPAT / NÖTR). Kural SADEDIR: TP, bekleme ve ribbon filtresi
+        Karar `core/algograf.py` (ALGO-GRAF) veya `core/takipci.py`
+        (TAKİPÇİ) serisinden gelir (AL / SAT / AL-KAPAT / SAT-KAPAT /
+        NÖTR). Kural SADEDIR: TP, bekleme ve ribbon filtresi
         YOKTUR — kullanici kurali "pozisyonda kal" der. Pozisyon kuralin
         çıkış etiketiyle kapanır. Iki ek vardir: koruyucu stop (`algo_sl`)
         ve kâr bankası (`algo_bank_usd`; kâr cüzdana yazılır, pozisyon
@@ -2698,6 +2745,8 @@ class PaperTrader:
         """
         lab = str(signal or "").strip()
         p = self.position
+        # Gunluk/islem nedeni etiketi: mod ailesine gore.
+        ad = "TAKİPÇİ" if takipci.is_takipci_mode(self.mode) else "ALGO-GRAF"
 
         # ---- 0) ZARAR FRENI SONRASI BEKLEME (varsayilan 1 dk) ----
         # Fren bir pozisyonu kapattiysa `_algo_loss_pause_until` ileri
@@ -2707,7 +2756,10 @@ class PaperTrader:
             return None
 
         # ---- 1) KORUYUCU STOP ------------------------------------
-        if p is not None and p.stop_price > 0 and self.algo_sl > 0:
+        # TAKIPCI'de koruyucu stop YOKTUR: cikis kuraldan (PEMBE'nin
+        # EMA20/VWMA20'ye degmesi) veya zarar freninden gelir.
+        if p is not None and p.stop_price > 0 and self.algo_sl > 0 \
+                and not takipci.is_takipci_mode(self.mode):
             if p.side == LONG:
                 vurdu = price <= p.stop_price or (
                     bar_low is not None and bar_low <= p.stop_price)
@@ -2784,27 +2836,32 @@ class PaperTrader:
         # gecerlidir; 0 = kapali.
         p = self.position
         if (p is not None and p.qty > 0 and self.algo_loss_usd > 0
-                and algograf.is_algograf_mode(self.mode)):
+                and (algograf.is_algograf_mode(self.mode)
+                     or takipci.is_takipci_mode(self.mode))):
             fee_close = p.qty * price * self.maker_rate
             gross = ((price - p.entry) * p.qty if p.side == LONG
                      else (p.entry - price) * p.qty)
             net = gross - p.fee_open - fee_close
             if net <= -float(self.algo_loss_usd):
-                self._close(price, "ALGO-GRAF: zarar freni "
+                self._close(price, f"{ad}: zarar freni "
                             f"({net:+,.2f}$ ≥ "
                             f"-{self.algo_loss_usd:,.2f}$)", timeframe,
                             maker=True)
-                # 1 dakika (varsayilan) yeni giris yok; kilit mekanizmasi
-                # yerine yalnizca sure bazli bekleme kullanilir ki sure
-                # dolunca ayni yonde giris serbest kalsin.
+                # TAKIPCI: bekleme arayuzdeki "Min. bekleme" ayarindan
+                # gelir (0 = bekleme yok). ALGO-GRAF: 1 dakika (varsayilan).
+                bekleme = (self._takipci_bekleme_ms(timeframe)
+                           if takipci.is_takipci_mode(self.mode)
+                           else max(0.0, self.algo_loss_pause_ms))
                 self._algo_loss_pause_until = (self._algo_simdi_ms()
-                                               + max(0.0, self.
-                                                     algo_loss_pause_ms))
+                                               + bekleme)
                 self._short_hull_al_pending = False
                 self._long_hull_sat_pending = False
-                return (f"ALGO-GRAF: zarar freni — pozisyon kapandi "
-                        f"({net:+,.2f}$) · "
-                        f"{self.algo_loss_pause_ms / 1000.0:.0f} sn bekleme")
+                if bekleme > 0:
+                    return (f"{ad}: zarar freni — pozisyon kapandi "
+                            f"({net:+,.2f}$) · "
+                            f"{bekleme / 1000.0:.0f} sn bekleme")
+                return (f"{ad}: zarar freni — pozisyon kapandi "
+                        f"({net:+,.2f}$)")
 
         # ---- 4) KÂR BANKASI (2026-11-14 kullanıcı kuralı) ------------
         # Açık pozisyonun kârı `algo_bank_usd` dolarına ulaşınca:
@@ -2821,6 +2878,11 @@ class PaperTrader:
         p = self.position
         if p is not None and self.algo_bank_usd > 0 and p.qty > 0:
             adim = float(self.algo_bank_usd)
+            # TAKIPCI (2026-11-25 kullanici kurali): kâr bankalaninca
+            # pozisyon KAPANIR ve YENI pozisyon beklenir — ayni yonde
+            # aninda yeniden girilmez. Kural sifirlanana (AL/SAT disina
+            # cikana) kadar ayni yonde giris `_algo_stop_kilit` ile kapali.
+            takipci_modu = takipci.is_takipci_mode(self.mode)
             if p.bank_next_usd <= 0:
                 p.bank_next_usd = adim
             for _ in range(100):
@@ -2848,9 +2910,17 @@ class PaperTrader:
                 gross = ((fiyat - p.entry) * p.qty if yon == LONG
                          else (p.entry - fiyat) * p.qty)
                 net = gross - p.fee_open - fee_close
-                self._close(fiyat, f"ALGO-GRAF: kâr bankası "
+                self._close(fiyat, f"{ad}: kâr bankası "
                             f"({net:+,.2f}$ cüzdana)", timeframe, maker=True)
                 self.banked_profit += max(0.0, net)
+                if takipci_modu:
+                    # Yeni pozisyon bekle: ayni yonde devam girisini kilitle.
+                    self._algo_stop_kilit = yon
+                    self._emit("trade",
+                               f"TAKİPÇİ: kâr bankalandı {net:+,.2f}$ · "
+                               f"yeni pozisyon bekleniyor (kural "
+                               f"sıfırlanınca giriş)")
+                    break
                 if notional_once <= 0:
                     break
                 # Aynı yönde, AYNI ana para × kaldıraç notional ile dön.
@@ -2884,6 +2954,10 @@ class PaperTrader:
             self._algo_stop_kilit = ""
 
         if lab in ("AL", "GÜÇLÜ AL"):
+            # TAKİPÇİ yalnız-SHORT varyantı LONG açmaz (savunma hattı).
+            if takipci.is_takipci_mode(self.mode) \
+                    and takipci.side_for_mode(self.mode) == -1:
+                return None
             if p is not None and p.side == LONG:
                 return None
             if self._algo_stop_kilit == LONG:
@@ -2897,15 +2971,20 @@ class PaperTrader:
             if p is not None:
                 # Seri normalde once AL-KAPAT uretir; yine de guvenlik:
                 # ters yonde acmadan once mevcut pozisyonu kapat.
-                self._close(price, "ALGO-GRAF: yon degisimi (maker)",
+                self._close(price, f"{ad}: yon degisimi (maker)",
                             timeframe, maker=True)
-            self._open(LONG, price, "ALGO-GRAF: cizgi dizilimi LONG",
+            self._open(LONG, price, f"{ad}: cizgi dizilimi LONG",
                        timeframe, maker=True)
-            if self.position is not None and self.algo_sl > 0:
+            if self.position is not None and self.algo_sl > 0 \
+                    and not takipci.is_takipci_mode(self.mode):
                 self.position.stop_price = price * (1.0 - self.algo_sl)
-            return "ALGO-GRAF: LONG acildi (maker)"
+            return f"{ad}: LONG acildi (maker)"
 
         if lab in ("SAT", "GÜÇLÜ SAT"):
+            # TAKİPÇİ yalnız-LONG varyantı SHORT açmaz (savunma hattı).
+            if takipci.is_takipci_mode(self.mode) \
+                    and takipci.side_for_mode(self.mode) == 1:
+                return None
             if p is not None and p.side == SHORT:
                 return None
             if self._algo_stop_kilit == SHORT:
@@ -2916,16 +2995,18 @@ class PaperTrader:
             if self.mode in ("algograf_short", "algograf") and hull_ma is not None:
                 if not algograf.hull_sat(price, hull_ma):
                     return None
-            if algograf.hull_al(price, hull_ma):
+            if algograf.is_algograf_mode(self.mode) \
+                    and algograf.hull_al(price, hull_ma):
                 return None
             if p is not None:
-                self._close(price, "ALGO-GRAF: yon degisimi (maker)",
+                self._close(price, f"{ad}: yon degisimi (maker)",
                             timeframe, maker=True)
-            self._open(SHORT, price, "ALGO-GRAF: cizgi dizilimi SHORT",
+            self._open(SHORT, price, f"{ad}: cizgi dizilimi SHORT",
                        timeframe, maker=True)
-            if self.position is not None and self.algo_sl > 0:
+            if self.position is not None and self.algo_sl > 0 \
+                    and not takipci.is_takipci_mode(self.mode):
                 self.position.stop_price = price * (1.0 + self.algo_sl)
-            return "ALGO-GRAF: SHORT acildi (maker)"
+            return f"{ad}: SHORT acildi (maker)"
 
         if lab in ("AL-KAPAT", "SAT-KAPAT", "NÖTR"):
             if p is None:
@@ -2934,9 +3015,12 @@ class PaperTrader:
                 return None
             if lab == "SAT-KAPAT" and p.side != SHORT:
                 return None
-            self._close(price, f"ALGO-GRAF: {lab} (maker)", timeframe,
+            self._close(price, f"{ad}: {lab} (maker)", timeframe,
                         maker=True)
-            return f"ALGO-GRAF: {lab} — pozisyon kapandi (maker)"
+            # TAKIPCI: kapanistan sonra arayuzdeki "Min. bekleme" kadar
+            # yeni giris yok (0 = bekleme yok).
+            self._takipci_kapanis_bekle(timeframe)
+            return f"{ad}: {lab} — pozisyon kapandi (maker)"
 
         return None
 

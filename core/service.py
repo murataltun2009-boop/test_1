@@ -28,6 +28,7 @@ from core.binance_client import BinanceFuturesClient, Candle, Trade
 from core.paper import _kapali_mumlar
 from core import tk2_rules
 from core import algograf
+from core import takipci
 
 logger = logging.getLogger("ta.service")
 
@@ -141,6 +142,8 @@ class MarketService:
         self._tk2_label_cache: dict[str, tuple] = {}
         # ALGO-GRAF ham karar etiketleri (ayni gerekce: KAPAT ayrimi).
         self._algograf_label_cache: dict[str, tuple] = {}
+        # TAKİPÇİ ham karar etiketleri (ayni gerekce: KAPAT ayrimi).
+        self._takipci_label_cache: dict[str, tuple] = {}
         # AUTO FIB retracement serisi cache'i: (versiyon, leg, hi, lo, theta)
         self._fib_cache: dict[str, tuple] = {}
 
@@ -173,6 +176,7 @@ class MarketService:
         self._mode_series_cache.clear()
         self._tk2_label_cache.clear()
         self._algograf_label_cache.clear()
+        self._takipci_label_cache.clear()
         self._fib_cache.clear()
         with self._lock:
             for tf in list(self._versions):
@@ -831,6 +835,18 @@ class MarketService:
             except Exception:      # noqa: BLE001
                 return None
             return seri[idx] if 0 <= idx < len(seri) else None
+        if takipci.is_takipci_mode(mode):
+            # TAKİPÇİ (2026-11-25): PEMBE (HULL9) uc cizginin altinda/ustunde
+            # iken giris; EMA20/VWMA20'ye donuste kapanis. KAPANMIS son bar.
+            cs = _kapali_mumlar(candles or [])
+            if not cs or not tf:
+                return None
+            idx = len(cs) - 1
+            try:
+                seri = self.takipci_labels(tf)
+            except Exception:      # noqa: BLE001
+                return None
+            return seri[idx] if 0 <= idx < len(seri) else None
         if mode == "tk":
             # YILDIZ SETTLE (2026-10-28 kullanici kurali): yildiz OLUSAN
             # bar icinde belirip kaybolabilir (tik ruzgarlari); pozisyon
@@ -928,6 +944,32 @@ class MarketService:
         return seri
 
     # ------------------------------------------------------------------
+    def takipci_labels(self, tf: str) -> list[str]:
+        """TAKİPÇİ ham karar serisi (AL/SAT/AL-KAPAT/SAT-KAPAT/NÖTR).
+
+        Grafik `mode_signal_series` ile Signal'e çevrilir; paper motoru
+        kapatma etiketlerini ayırt edebilmek için bu ham seriyi kullanır.
+        Aktif varyant (takipci / takipci_long / takipci_short) uygulanır.
+        Aynı analiz versiyonu için cache'lenir.
+        """
+        with self._lock:
+            res = self._analyses.get(tf)
+            version = self._versions.get(tf, 0)
+        if res is None:
+            return []
+        mode = self.paper.mode if self.paper is not None else "takipci"
+        if not takipci.is_takipci_mode(mode):
+            mode = "takipci"
+        key = self._mode_cache_key(mode, version)
+        cached = self._takipci_label_cache.get(tf)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        seri = takipci.series(
+            res.ma_series, side=takipci.side_for_mode(mode))
+        self._takipci_label_cache[tf] = (key, seri)
+        return seri
+
+    # ------------------------------------------------------------------
     def mode_signal_series(self, tf: str) -> list[Signal]:
         """
         Grafik yildizlarina temel olacak MOD BAZLI sinyal serisi.
@@ -985,6 +1027,11 @@ class MarketService:
             # KAPAT etiketleri kapanis yonunde yildiz gosterir; paper
             # katmani ham etiketi ayri okur.
             karar = self.algograf_labels(tf)
+            series = [_LABEL_TO_SIGNAL.get(k, Signal.NEUTRAL)
+                      for k in karar]
+        elif takipci.is_takipci_mode(mode):
+            # TAKİPÇİ (2026-11-25): PEMBE/HULL9 cizgi sirasi kurali.
+            karar = self.takipci_labels(tf)
             series = [_LABEL_TO_SIGNAL.get(k, Signal.NEUTRAL)
                       for k in karar]
         else:
@@ -1157,6 +1204,8 @@ class MarketService:
                           p.mode_ppt_pull_atr, p.mode_ppt_pull_bars]
         if algograf.is_algograf_mode(mode):
             parts += [algograf.touch_ratio()]
+        if takipci.is_takipci_mode(mode):
+            parts += [takipci.touch_ratio()]
         return tuple(parts)
 
     def _decision_series_for_mode(self, mode: str, res: TimeframeAnalysis,

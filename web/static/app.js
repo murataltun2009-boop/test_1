@@ -1298,7 +1298,8 @@ if ("serviceWorker" in navigator) {
     var tik2fam = (mode === "tk2" || mode === "tk2_long" ||
                    mode === "tk2_short");
     var algofam = (mode === "algograf" || mode === "algograf_long" ||
-                   mode === "algograf_short");
+                   mode === "algograf_short" || mode === "takipci" ||
+                   mode === "takipci_long" || mode === "takipci_short");
     var trend = (mode === "trend" || mode === "muro" || mode === "ppt" ||
                  mode === "tk" || tik2fam);
     var muro = (mode === "muro");
@@ -1348,6 +1349,9 @@ if ("serviceWorker" in navigator) {
     var algo = (el.pMode.value === "algograf" ||
                 el.pMode.value === "algograf_long" ||
                 el.pMode.value === "algograf_short");
+    var takipci = (el.pMode.value === "takipci" ||
+                   el.pMode.value === "takipci_long" ||
+                   el.pMode.value === "takipci_short");
     // Secilen algoritma ANINDA uygulanir: /api/paper/config sunucuda
     // configure + force_mode_refresh calistirir -> grafik AL/SAT yildizlari
     // secilen modun karar serisine gecer (pozisyon BASLATILMAZ, running
@@ -1420,6 +1424,28 @@ if ("serviceWorker" in navigator) {
           + "0 = kapalı; banka işlemleri logda görünür; "
           + "koruyucu stop %1 (acil çıkış); tüm aç/kapa LIMIT (maker; "
           + "koruyucu stop hariç)"
+        : "") +
+      (takipci
+        ? " · TAKİPÇİ: PEMBE=HULL9, MAVİ=EMA50, YEŞİL=VWMA20, "
+          + "TURUNCU=EMA20; "
+          + (el.pMode.value === "takipci_long"
+              ? "varyant: YALNIZ LONG; "
+              : el.pMode.value === "takipci_short"
+              ? "varyant: YALNIZ SHORT; "
+              : "varyant: iki yön (LONG + SHORT); ")
+          + "LONG girişi: PEMBE EMA50 + VWMA20 + EMA20'nin ÜÇÜNÜN DE "
+          + "üstünde; SHORT girişi: PEMBE üçünün de altında; "
+          + "LONG kapatma: PEMBE tepeden dönüp EMA20/VWMA20'den yakın "
+          + "olanına değince; SHORT kapatma: PEMBE dipten dönüp "
+          + "EMA20/VWMA20'den yakın olanına değince; çizgiler aynı "
+          + "seviyedeyken NÖTR (bekle); TP yok — pozisyon kural "
+          + "çıkışına kadar tutulur; kâr bankası: açık kâr "
+          + (parseFloat(el.pAlgoBank.value) || 10) + "$'a ulaşınca kâr "
+          + "cüzdana yazılır, pozisyon kapanır ve YENİ pozisyon beklenir; "
+          + "zarar freni: net zarar "
+          + (parseFloat(el.pAlgoLoss.value) || 0) + "$'a ulaşınca kapanır, "
+          + "sonrası 'Min. bekleme' kadar yeni giriş yok (0 = bekleme yok); "
+          + "koruyucu stop KAPALI; tüm aç/kapa LIMIT (maker)"
         : "") +
       (tik
         ? " · TİK yıldız kuralı: yeşil yıldız→LONG, kırmızı yıldız→"

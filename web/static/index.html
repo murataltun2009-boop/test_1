@@ -179,15 +179,15 @@
             <input id="pBank" type="number" step="1" min="0" max="100000" value="10">
             <span class="hint">açık pozisyon kârı bu tutara ulaşınca kapanır, kazanç cüzdana yazılır · 0 = kapalı</span>
           </label>
-          <label class="wfull" id="algoBankWrap" style="display:none">ALGO-GRAF kâr bankası eşiği ($)
+          <label class="wfull" id="algoBankWrap" style="display:none">ALGO-GRAF / TAKİPÇİ kâr bankası eşiği ($)
             <input id="pAlgoBank" type="number" step="1" min="0" max="100000" value="10">
             <button id="pAlgoBankApply" class="btn small" type="button">Uygula</button>
-            <span class="hint">açık kâr bu tutara ulaşınca kâr cüzdana yazılır ve pozisyon aynı yönde, aynı ana para × kaldıraç notional ile anında yeniden açılır (pozisyon kaybolmaz) · 0 = kapalı · Uygula açık pozisyona hemen uygular</span>
+            <span class="hint">açık kâr bu tutara ulaşınca kâr cüzdana yazılır · ALGO-GRAF: pozisyon aynı yönde, aynı ana para × kaldıraç notional ile anında yeniden açılır (pozisyon kaybolmaz) · TAKİPÇİ: pozisyon kapanır ve YENİ pozisyon beklenir · 0 = kapalı · Uygula açık pozisyona hemen uygular</span>
           </label>
-          <label class="wfull" id="algoLossWrap" style="display:none">ALGO-GRAF zarar freni ($)
+          <label class="wfull" id="algoLossWrap" style="display:none">ALGO-GRAF / TAKİPÇİ zarar freni ($)
             <input id="pAlgoLoss" type="number" step="1" min="0" max="100000" value="5">
             <button id="pAlgoLossApply" class="btn small" type="button">Uygula</button>
-            <span class="hint">tüm ALGO-GRAF modları (iki yön dahil): açık pozisyonun net zararı bu tutara ulaşınca anında kapanır ve 1 dakika yeni giriş yapılmaz · varsayılan -5$ · 0 = kapalı · Uygula açık pozisyona hemen uygular</span>
+            <span class="hint">açık pozisyonun net zararı bu tutara ulaşınca anında kapanır · ALGO-GRAF: sonrası 1 dakika yeni giriş yok · TAKİPÇİ: sonrası "Min. bekleme" kadar yeni giriş yok (0 = bekleme yok) · varsayılan -5$ · 0 = kapalı · Uygula açık pozisyona hemen uygular</span>
           </label>
           <label class="wfull">Karar mekanizması
             <select id="pMode">
@@ -214,6 +214,11 @@
                 <option value="algograf">ALGO-GRAF — iki yön (tüm çizgi kuralları)</option>
                 <option value="algograf_long">ALGO-GRAF — yalnız LONG (giriş: PEMBE/HULL9 diğer üç çizginin üstünde VE HULL AL (fiyat HULL9 üstünde) birlikte; MAVİ'nin en altta olması gerekmez; HULL NÖTR veya SAT iken yeni LONG açılmaz; kapatma: YEŞİL PEMBE'nin üstüne çıkarsa (HULL &amp; VWMA ikisi de AL değilken) veya HULL SAT olur olmaz (bar kapanışı beklenmeden) ya da net zarar zarar freni tutarına ulaşınca)</option>
                 <option value="algograf_short">ALGO-GRAF - yalnız SHORT (giriş: MAVİ en üst / PEMBE en alt, EMA20 VWMA20'nin üstünde VE HULL SAT (fiyat HULL9 altında) birlikte; HULL NÖTR veya AL iken yeni SHORT açılmaz; kapatma: SHORT dizilimi bozulursa veya HULL AL olur olmaz (bar kapanışı beklenmeden) ya da net zarar zarar freni tutarına ulaşınca)</option>
+              </optgroup>
+              <optgroup label="— TAKİPÇİ (PEMBE/HULL9 çizgi sıralaması, 5 dk) —">
+                <option value="takipci">TAKİPÇİ — iki yön (LONG + SHORT)</option>
+                <option value="takipci_long">TAKİPÇİ — yalnız LONG (PEMBE EMA50 + VWMA20 + EMA20'nin üstünde iken LONG aç/koru; PEMBE geri dönüp EMA20/VWMA20'ye değince kapat)</option>
+                <option value="takipci_short">TAKİPÇİ — yalnız SHORT (PEMBE EMA50 + VWMA20 + EMA20'nin altında iken SHORT aç/koru; PEMBE geri dönüp EMA20/VWMA20'ye değince kapat)</option>
               </optgroup>
             </select>
           </label>
@@ -372,6 +377,6 @@ window.addEventListener("error", function (e) {
   box.textContent = "JS HATA: " + msg;
 });
 </script>
-<script src="/static/app.js?v=57"></script>
+<script src="/static/app.js?v=58"></script>
 </body>
 </html>
