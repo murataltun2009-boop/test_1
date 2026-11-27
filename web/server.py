@@ -580,6 +580,41 @@ def create_app(service: MarketService, store: SignalStore,
                 f"'Min. bekleme' kadar yeni giriş yok "
                 f"(0 = bekleme yok) · koruyucu stop KAPALI · tüm aç/kapa "
                 f"LIMIT (maker){dur}")
+        # HAREKETLİ_YENİ (2026-11-28): 15 MA AL/SAT/NÖTR sayımı kuralı.
+        # hareketli_yeni = iki yon, hareketli_yeni_long = yalniz LONG,
+        # hareketli_yeni_short = yalniz SHORT.
+        # LONG: AL>SAT&NÖTR açar; AL≤NÖTR|SAT kapatır; HULL SAT çıkış.
+        # SHORT: SAT>AL&NÖTR açar; SAT≤NÖTR|AL kapatır; HULL AL çıkış.
+        # Kâr bankası, zarar freni, Min. bekleme (TAKİPÇİ ile aynı).
+        # Koruyucu stop KAPALI.
+        from core import hareketli_yeni
+        if hareketli_yeni.is_mode(data.get("mode")) and \
+                hareketli_yeni.is_mode(paper.mode):
+            dur = "" if paper.running else \
+                " · SIMULASYON DURAKLATILMIS — islem acilmasi icin " \
+                "Trade Başla'ya bas"
+            _varyant = {
+                "hareketli_yeni": "iki yön (LONG + SHORT)",
+                "hareketli_yeni_long": "yalnız LONG",
+                "hareketli_yeni_short": "yalnız SHORT",
+            }.get(paper.mode, paper.mode)
+            service._emit_log(
+                "info", "simulator",
+                f"HAREKETLİ_YENİ aktif — sembol {paper.symbol} · varyant: "
+                f"{_varyant} · 15 hareketli ortalama (EMA/SMA 10-200, "
+                f"İchimoku, VWMA, HULL) AL/SAT/NÖTR sayımı · "
+                f"LONG: AL>SAT&NÖTR açar, AL≤NÖTR|SAT kapatır; "
+                f"SHORT: SAT>AL&NÖTR açar, SAT≤NÖTR|AL kapatır; "
+                f"HULL çıkış (LONG:HULL SAT, SHORT:HULL AL) · "
+                f"Kâr bankası: açık kâr "
+                f"{paper.algo_bank_usd:.2f}$'a ulaşınca kâr cüzdana "
+                f"yazılır, pozisyon AYNI yönde AYNI notional ile "
+                f"anında yeniden açılır (0 = kapalı) · "
+                f"Zarar freni: net zarar "
+                f"{paper.algo_loss_usd:.2f}$'a ulaşınca kapanır; sonrası "
+                f"'Min. bekleme' kadar yeni giriş yok "
+                f"(0 = bekleme yok) · Koruyucu stop KAPALI · "
+                f"tüm aç/kapa LIMIT (maker){dur}")
         # TIK modu onayi: kullaniciya motorun GERCEKTEN tik ile
         # calistigini (eski surecte sessiz yok-sayma tehlikesi) ve
         # simulasyonun duraklatip duraklatmadigini acikla.
@@ -852,6 +887,41 @@ def create_app(service: MarketService, store: SignalStore,
                 f"'Min. bekleme' kadar yeni giriş yok "
                 f"(0 = bekleme yok) · koruyucu stop KAPALI · tüm aç/kapa "
                 f"LIMIT (maker){dur}")
+        # HAREKETLİ_YENİ (2026-11-28): 15 MA AL/SAT/NÖTR sayımı kuralı.
+        # hareketli_yeni = iki yon, hareketli_yeni_long = yalniz LONG,
+        # hareketli_yeni_short = yalniz SHORT.
+        # LONG: AL>SAT&NÖTR açar; AL≤NÖTR|SAT kapatır; HULL SAT çıkış.
+        # SHORT: SAT>AL&NÖTR açar; SAT≤NÖTR|AL kapatır; HULL AL çıkış.
+        # Kâr bankası, zarar freni, Min. bekleme (TAKİPÇİ ile aynı).
+        # Koruyucu stop KAPALI.
+        from core import hareketli_yeni
+        if hareketli_yeni.is_mode(data.get("mode")) and \
+                hareketli_yeni.is_mode(paper.mode):
+            dur = "" if paper.running else \
+                " · SIMULASYON DURAKLATILMIS — islem acilmasi icin " \
+                "Trade Başla'ya bas"
+            _varyant = {
+                "hareketli_yeni": "iki yön (LONG + SHORT)",
+                "hareketli_yeni_long": "yalnız LONG",
+                "hareketli_yeni_short": "yalnız SHORT",
+            }.get(paper.mode, paper.mode)
+            service._emit_log(
+                "info", "simulator",
+                f"HAREKETLİ_YENİ aktif — sembol {paper.symbol} · varyant: "
+                f"{_varyant} · 15 hareketli ortalama (EMA/SMA 10-200, "
+                f"İchimoku, VWMA, HULL) AL/SAT/NÖTR sayımı · "
+                f"LONG: AL>SAT&NÖTR açar, AL≤NÖTR|SAT kapatır; "
+                f"SHORT: SAT>AL&NÖTR açar, SAT≤NÖTR|AL kapatır; "
+                f"HULL çıkış (LONG:HULL SAT, SHORT:HULL AL) · "
+                f"Kâr bankası: açık kâr "
+                f"{paper.algo_bank_usd:.2f}$'a ulaşınca kâr cüzdana "
+                f"yazılır, pozisyon AYNI yönde AYNI notional ile "
+                f"anında yeniden açılır (0 = kapalı) · "
+                f"Zarar freni: net zarar "
+                f"{paper.algo_loss_usd:.2f}$'a ulaşınca kapanır; sonrası "
+                f"'Min. bekleme' kadar yeni giriş yok "
+                f"(0 = bekleme yok) · Koruyucu stop KAPALI · "
+                f"tüm aç/kapa LIMIT (maker){dur}")
         # TIK modu onayi: kullaniciya motorun GERCEKTEN tik ile
         # calistigini (eski surecte sessiz yok-sayma tehlikesi) ve
         # simulasyonun duraklatip duraklatmadigini acikla.

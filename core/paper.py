@@ -34,6 +34,7 @@ from core import fib as fib_mod
 from core import tk2_rules
 from core import algograf
 from core import takipci
+from core import hareketli_yeni
 
 logger = logging.getLogger("ta.paper")
 
@@ -739,9 +740,11 @@ class PaperTrader:
             self.short_rule = short_rule
         if mode in ("range", "signal", "signal_long", "signal_exit",
                     "ma_only", "osc_only", "trend", "muro", "1m", "ppt",
-                    "tk", "tk2", "tk2_long", "tk2_short") \
+                    "tk", "tk2", "tk2_long", "tk2_short",
+                    "hareketli_yeni", "hareketli_yeni_long", "hareketli_yeni_short") \
                 or algograf.is_algograf_mode(mode) \
-                or takipci.is_takipci_mode(mode):
+                or takipci.is_takipci_mode(mode) \
+                or hareketli_yeni.is_mode(mode):
             if mode != self.mode:
                 # Mod degisti: onceki sinyal gecersiz.
                 self.last_signal = None
@@ -756,6 +759,11 @@ class PaperTrader:
             # degisir; arayuzden mod secimi stopu kapatmaz).
             self.algo_sl = float(getattr(config, "PAPER_ALGOGRAF_SL",
                                          self.algo_sl))
+        if hareketli_yeni.is_mode(self.mode):
+            # HAREKETLİ_YENİ ayarları: TAKİPÇİ ile aynı davranış
+            # Kâr bankası, zarar freni, Min. bekleme
+            # Koruyucu stop KAPALI
+            pass
         if mode == "tk" or tk2_rules.is_tk2_mode(mode):
             # YILDIZ KURALI (2026-10-28, kullanici istegi): pozisyon
             # yildiz DEGISIMINE kadar tutulur — bu yuzden TP ve BE
@@ -1205,6 +1213,7 @@ class PaperTrader:
                 not tk2_rules.is_tk2_mode(self.mode) and \
                 not algograf.is_algograf_mode(self.mode) and \
                 not takipci.is_takipci_mode(self.mode) and \
+                not hareketli_yeni.is_mode(self.mode) and \
                 self.position is None:
             if self._bars_held < self._corr_until:
                 return None
@@ -1236,7 +1245,8 @@ class PaperTrader:
         # HULL ters durum kapanisi `_algograf` icinde, bir SONRAKI mumun
         # onayiyla yapilir (bekleyen bayraklar orada yonetilir).
         if algograf.is_algograf_mode(self.mode) \
-                or takipci.is_takipci_mode(self.mode):
+                or takipci.is_takipci_mode(self.mode) \
+                or hareketli_yeni.is_mode(self.mode):
             return self._algograf(price, timeframe, signal,
                                   bar_low, bar_high, hull_ma)
 
@@ -2174,6 +2184,14 @@ class PaperTrader:
             return takipci.series(
                 res.ma_series,
                 side=takipci.side_for_mode(self.mode))
+
+        # HAREKETLİ_YENİ (2026-11-28): 15 MA AL/SAT/NÖTR sayımı kuralı.
+        # LONG: AL>SAT&NÖTR açar; AL≤NÖTR|SAT kapatır; HULL SAT çıkış.
+        # SHORT: SAT>AL&NÖTR açar; SAT≤NÖTR|AL kapatır; HULL AL çıkış.
+        if hareketli_yeni.is_mode(self.mode):
+            return hareketli_yeni.series(
+                res.ma_codes,
+                side=hareketli_yeni.side_for_mode(self.mode))
 
         if self.mode == "ma_only":
             seriler = res.ma_scores

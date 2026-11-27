@@ -220,6 +220,11 @@
                 <option value="takipci_long">TAKİPÇİ — yalnız LONG (PEMBE EMA50 + VWMA20 + EMA20'nin üstünde iken LONG aç/koru; PEMBE geri dönüp EMA20/VWMA20'ye değince kapat)</option>
                 <option value="takipci_short">TAKİPÇİ — yalnız SHORT (PEMBE EMA50 + VWMA20 + EMA20'nin altında iken SHORT aç/koru; PEMBE geri dönüp EMA20/VWMA20'ye değince kapat)</option>
               </optgroup>
+              <optgroup label="— Hareketli_Yeni (MA AL/SAT/NÖTR sayımı, 5 dk) —">
+                <option value="hareketli_yeni">Hareketli_Yeni — iki yön (15 MA AL/SAT/NÖTR sayımı; AL>SAT&NÖTR → LONG; SAT>AL&NÖTR → SHORT; kapatma: AL≤NÖTR|SAT veya SAT≤NÖTR|AL; HULL çıkış)</option>
+                <option value="hareketli_yeni_long">Hareketli_Yeni — yalnız LONG (AL>SAT&NÖTR açar; AL≤NÖTR|SAT kapatır; HULL SAT çıkış)</option>
+                <option value="hareketli_yeni_short">Hareketli_Yeni — yalnız SHORT (SAT>AL&NÖTR açar; SAT≤NÖTR|AL kapatır; HULL AL çıkış)</option>
+              </optgroup>
             </select>
           </label>
           <label class="wfull" id="ruleWrap">SHORT kuralı
