@@ -34,6 +34,7 @@ FAPI_REST = "https://fapi.binance.com"
 FAPI_WS = "wss://fstream.binance.com/stream?streams="
 
 SYMBOL = "BTCUSDT"
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "DOTUSDT", "MATICUSDT"]
 
 # Kullanilan zaman dilimleri.
 #
@@ -199,8 +200,17 @@ INDICATOR_CONFIG = IndicatorConfig()
 # --------------------------------------------------------------------------
 # Paper Trading / Core Trading Config
 # --------------------------------------------------------------------------
-# Candle limit for fetching
-CANDLE_LIMIT = 5000
+# Candle limit for fetching (Binance max 1500 per request)
+CANDLE_LIMIT = 1500
+
+# Lookback candles for backtest/initial load (fetcher handles pagination for >1500)
+LOOKBACK_CANDLES = 5000
+
+# Service/Service config
+BACKGROUND_REFRESH_FACTOR = 5
+RESYNC_SECONDS = 300
+WS_RECONNECT_SECONDS = 10
+TRADE_PRICE_SANITY = 0.25  # %25 sapma toleransi
 
 # Paper trading config
 PAPER_INITIAL_BALANCE = 100.0
@@ -262,9 +272,26 @@ PAPER_PPT_MAX_LEV = 5.0
 
 # Muro config
 PAPER_MURO_MODE = "trend"
-PAPER_MURO_RISK_PCT = 0.01
+PAPER_MURO_K = 8
+PAPER_MURO_STOP_PCT = 0.008
+PAPER_MURO_MAX_STOP_PCT = 0.03
+PAPER_MURO_MIN_STOP_PCT = 0.002
 PAPER_MURO_LOCK_PCT = 0.01
-PAPER_MURO_TRAIL_PCT = 0.01
+PAPER_MURO_TRAIL_PCT = 0.008
+PAPER_MURO_RETEST_ATR = 0.3
+PAPER_MURO_MAX_RETEST = 2
+PAPER_MURO_TREND_EMA = 200
+PAPER_MURO_ST_PERIOD = 10
+PAPER_MURO_ST_MULT = 3.0
+PAPER_MURO_PULL_EMA = 9
+PAPER_MURO_PULL_ATR = 1.0
+PAPER_MURO_COOLDOWN = 10
+PAPER_MURO_TRAIL_ALWAYS = True
+PAPER_MURO_MAX_LOSSES = 2
+PAPER_MURO_FIB_ON = True
+PAPER_MURO_FIB_WINDOW = 160
+PAPER_MURO_FIB_GATE = 0.15
+PAPER_MURO_RISK_PCT = 0.01
 
 # TK config
 PAPER_TK_FRACTION = 0.50
