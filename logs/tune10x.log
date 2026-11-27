@@ -1,0 +1,62 @@
+﻿====================================================================================================
+10x KALDIRAC - PARAMETRE ARAMA (timeframe 4h)
+====================================================================================================
+  1000 mum | 2026-04-24 -> 2026-10-07 (167 gun)
+  IS : 2026-06-05 -> 2026-07-16 (250 mum)
+  OOS: 2026-07-16 -> 2026-10-07 (500 mum)
+
+  192 kombinasyon IS uzerinde taraniyor...
+    48/192
+    96/192
+    144/192
+    192/192
+
+====================================================================================================
+IS UCERINDE TARAMA SONUCU
+====================================================================================================
+  En iyi ROI    : -5.27%
+  Medyan ROI    : -36.99%
+  En kotu ROI   : -77.21%
+  Karli kombinasyon: 0 / 192
+
+====================================================================================================
+KRITIK: BU PARAMETRELER GELECEKTE CALISIR MI?
+====================================================================================================
+                  IS (secildi)    OOS (test)
+En iyi param            -5.27%        -6.99%
+
+  IS  : 0.55 esik, SL 0.8%, TP 1.6%, poz 10%
+  IS  : n=28 net -5.27 wr 25.0% pf 0.66 dd 6.64%
+  OOS : n=34 net -6.99 wr 20.6% pf 0.53 dd 8.05%
+
+  IS -> OOS kaybi: 1.72 puan
+  YORUM: IS'de en iyi olan parametre OOS'te ZARAR ETTI.
+        Bu tam anlamiyla overfit: gecmis gurultusu.
+
+====================================================================================================
+10x LIKIDASYON RISKI
+====================================================================================================
+  Bakim marjini (BTCUSDT ~%0.4) dikkate alinmazsa likidasyon ~%10 fiyat hareketinde
+  Ilk SL seviyesi: %0.8 -> likidasyona 12.5x pay
+
+  Pozisyon buyuklugune gore en kotu senaryo (SL dogrudan vurulursa):
+    marjin %10 (notional cuzdanin %100) -> SL cuzdanin %0.80zi
+    marjin %20 (notional cuzdanin %200) -> SL cuzdanin %1.60zi
+    marjin %35 (notional cuzdanin %350) -> SL cuzdanin %2.80zi
+
+python : Traceback (most recent call last):
+At line:1 char:32
++ ... NIOENCODING="utf-8"; python -X utf8 backtest/tune_10x.py 2>&1 | Out-F ...
++                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "C:\Users\PC-ITENG\Documents\Default Project\backtest\tune_10x.py", line 179, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\PC-ITENG\Documents\Default Project\backtest\tune_10x.py", line 174, in main
+    print("  10x ile ardisik 3 SL: cuzdanin %%.0f'i gider" % (
+          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~
+        3 * GRID["max_position_pct"][0] * LEVERAGE * best["stop_loss_pct"] * 100))
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+TypeError: not all arguments converted during string formatting

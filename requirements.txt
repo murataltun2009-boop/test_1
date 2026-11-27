@@ -1,0 +1,25 @@
+# BTCUSDT Futures Trading Bot - bagimliliklar
+#
+# Kurulum:
+#   pip install -r requirements.txt
+#
+# Not: pywebview zorunlu DEGILDIR. Kuruluysa Lightweight Charts grafik
+# ayri bir pencerede acilir; kurulu degilse (veya WebView2 yoksa)
+# matplotlib yedek grafigi devreye girer. Tum ozellikler her iki durumda
+# da calisir.
+#
+# Windows'ta Lightweight Charts icin Microsoft Edge WebView2 Runtime
+# gerekir: https://developer.microsoft.com/microsoft-edge/webview2/
+
+ccxt>=4.2.0
+pandas>=2.0.0
+numpy>=1.24.0
+
+# GUI
+customtkinter>=5.2.0
+
+# Grafik
+matplotlib>=3.7.0
+
+# Lightweight Charts (opsiyonel - pywebview uzerinden ayri pencere)
+pywebview>=4.4.0

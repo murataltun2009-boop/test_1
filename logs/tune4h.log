@@ -1,0 +1,107 @@
+﻿4h VERI CEKILIYOR...
+  1000 mum | 2026-04-24 -> 2026-10-07 | 167 gun
+
+SKOR DAGILIMI (4h)
+  min -0.591 | p10 -0.456 | medyan +0.071 | p90 +0.584 | max +0.727 | std 0.408
+  esik 0.30: yukari  395 | asagi  299
+  esik 0.40: yukari  319 | asagi  178
+  esik 0.50: yukari  203 | asagi   70
+  esik 0.60: yukari   77 | asagi    0
+
+SL / TP SECIMI ICIN ATR
+  4h mum ATR : %1.135
+  4h bar std: %0.781
+  gunluk std : %1.91
+
+IZGARA TARAMASI
+--------------------------------------------------------------------------------------------
+  [ 1/72] thr0.30 SL1.5% TP3.0% poz30% -> n=101 net    -50.18 roi  -50.18% wr  14.9% pf  0.49 dd  51.0%
+  [ 2/72] thr0.30 SL1.5% TP3.0% poz60% -> n= 96 net    -75.72 roi  -75.72% wr  15.6% pf  0.41 dd  76.5%
+  [ 3/72] thr0.30 SL1.5% TP4.6% poz30% -> n= 88 net    -49.75 roi  -49.75% wr   8.0% pf  0.38 dd  51.2%
+  [ 4/72] thr0.30 SL1.5% TP4.6% poz60% -> n= 87 net    -75.59 roi  -75.59% wr   8.0% pf  0.31 dd  78.2%
+  [ 5/72] thr0.30 SL1.5% TP6.0% poz30% -> n= 85 net    -50.14 roi  -50.14% wr   5.9% pf  0.36 dd  52.7%
+  [ 6/72] thr0.30 SL1.5% TP6.0% poz60% -> n= 70 net    -79.75 roi  -79.75% wr   4.3% pf  0.23 dd  80.4%
+  [ 7/72] thr0.30 SL2.3% TP3.0% poz30% -> n= 82 net    -50.32 roi  -50.32% wr  18.3% pf   0.5 dd  54.4%
+  [ 8/72] thr0.30 SL2.3% TP3.0% poz60% -> n= 68 net    -80.25 roi  -80.25% wr  16.2% pf   0.4 dd  80.9%
+  [ 9/72] thr0.30 SL2.3% TP4.6% poz30% -> n= 60 net    -59.81 roi  -59.81% wr   6.7% pf  0.24 dd  60.5%
+  [10/72] thr0.30 SL2.3% TP4.6% poz60% -> n= 56 net    -79.58 roi  -79.58% wr   7.1% pf  0.25 dd  80.2%
+  [11/72] thr0.30 SL2.3% TP6.0% poz30% -> n= 62 net    -57.30 roi  -57.30% wr   4.8% pf  0.26 dd  58.4%
+  [12/72] thr0.30 SL2.3% TP6.0% poz60% -> n= 57 net    -79.39 roi  -79.39% wr   5.3% pf  0.24 dd  80.0%
+  [13/72] thr0.30 SL3.0% TP3.0% poz30% -> n= 60 net    -59.11 roi  -59.11% wr  16.7% pf  0.33 dd  59.8%
+  [14/72] thr0.30 SL3.0% TP3.0% poz60% -> n= 59 net    -80.12 roi  -80.12% wr  16.9% pf  0.36 dd  80.7%
+  [15/72] thr0.30 SL3.0% TP4.6% poz30% -> n= 54 net    -58.69 roi  -58.69% wr   7.4% pf  0.19 dd  59.4%
+  [16/72] thr0.30 SL3.0% TP4.6% poz60% -> n= 51 net    -79.31 roi  -79.31% wr   7.8% pf  0.24 dd  80.0%
+  [17/72] thr0.30 SL3.0% TP6.0% poz30% -> n= 54 net    -58.48 roi  -58.48% wr   5.6% pf   0.2 dd  59.1%
+  [18/72] thr0.30 SL3.0% TP6.0% poz60% -> n= 49 net    -80.21 roi  -80.21% wr   6.1% pf  0.23 dd  80.8%
+  [19/72] thr0.40 SL1.5% TP3.0% poz30% -> n= 86 net    -49.64 roi  -49.64% wr  14.0% pf  0.43 dd  49.9%
+  [20/72] thr0.40 SL1.5% TP3.0% poz60% -> n= 87 net    -75.20 roi  -75.20% wr  13.8% pf  0.38 dd  75.4%
+  [21/72] thr0.40 SL1.5% TP4.6% poz30% -> n= 85 net    -44.75 roi  -44.75% wr  10.6% pf   0.5 dd  50.2%
+  [22/72] thr0.40 SL1.5% TP4.6% poz60% -> n= 88 net    -68.44 roi  -68.44% wr  10.2% pf  0.54 dd  73.4%
+  [23/72] thr0.40 SL1.5% TP6.0% poz30% -> n= 80 net    -47.88 roi  -47.88% wr   6.2% pf  0.42 dd  51.0%
+  [24/72] thr0.40 SL1.5% TP6.0% poz60% -> n= 78 net    -75.07 roi  -75.07% wr   6.4% pf   0.4 dd  77.4%
+  [25/72] thr0.40 SL2.3% TP3.0% poz30% -> n= 73 net    -49.68 roi  -49.68% wr  17.8% pf  0.46 dd  50.6%
+  [26/72] thr0.40 SL2.3% TP3.0% poz60% -> n= 72 net    -76.08 roi  -76.08% wr  18.1% pf  0.41 dd  77.1%
+  [27/72] thr0.40 SL2.3% TP4.6% poz30% -> n= 67 net    -50.58 roi  -50.58% wr  11.9% pf  0.45 dd  55.0%
+  [28/72] thr0.40 SL2.3% TP4.6% poz60% -> n= 66 net    -76.23 roi  -76.23% wr  12.1% pf  0.47 dd  80.1%
+  [29/72] thr0.40 SL2.3% TP6.0% poz30% -> n= 64 net    -49.59 roi  -49.59% wr   7.8% pf  0.41 dd  53.8%
+  [30/72] thr0.40 SL2.3% TP6.0% poz60% -> n= 62 net    -76.01 roi  -76.01% wr   8.1% pf   0.4 dd  79.2%
+  [31/72] thr0.40 SL3.0% TP3.0% poz30% -> n= 64 net    -49.71 roi  -49.71% wr  18.8% pf  0.44 dd  51.7%
+  [32/72] thr0.40 SL3.0% TP3.0% poz60% -> n= 51 net    -79.66 roi  -79.66% wr  15.7% pf  0.31 dd  79.8%
+  [33/72] thr0.40 SL3.0% TP4.6% poz30% -> n= 61 net    -49.37 roi  -49.37% wr  13.1% pf  0.46 dd  52.5%
+  [34/72] thr0.40 SL3.0% TP4.6% poz60% -> n= 60 net    -75.22 roi  -75.22% wr  13.3% pf  0.43 dd  76.3%
+  [35/72] thr0.40 SL3.0% TP6.0% poz30% -> n= 57 net    -49.77 roi  -49.77% wr   8.8% pf  0.41 dd  52.6%
+  [36/72] thr0.40 SL3.0% TP6.0% poz60% -> n= 57 net    -75.90 roi  -75.90% wr   8.8% pf  0.38 dd  77.3%
+  [37/72] thr0.50 SL1.5% TP3.0% poz30% -> n= 59 net    -44.45 roi  -44.45% wr  13.6% pf  0.36 dd  45.7%
+  [38/72] thr0.50 SL1.5% TP3.0% poz60% -> n= 59 net    -73.08 roi  -73.08% wr  13.6% pf  0.27 dd  73.3%
+  [39/72] thr0.50 SL1.5% TP4.6% poz30% -> n= 58 net    -44.20 roi  -44.20% wr   8.6% pf  0.35 dd  44.5%
+  [40/72] thr0.50 SL1.5% TP4.6% poz60% -> n= 57 net    -72.06 roi  -72.06% wr   8.8% pf  0.27 dd  73.3%
+  [41/72] thr0.50 SL1.5% TP6.0% poz30% -> n= 61 net    -41.47 roi  -41.47% wr   8.2% pf  0.43 dd  41.9%
+  [42/72] thr0.50 SL1.5% TP6.0% poz60% -> n= 61 net    -65.78 roi  -65.78% wr   8.2% pf   0.4 dd  67.3%
+  [43/72] thr0.50 SL2.3% TP3.0% poz30% -> n= 49 net    -45.19 roi  -45.19% wr  18.4% pf  0.39 dd  45.8%
+  [44/72] thr0.50 SL2.3% TP3.0% poz60% -> n= 50 net    -73.24 roi  -73.24% wr  18.0% pf  0.36 dd  73.5%
+  [45/72] thr0.50 SL2.3% TP4.6% poz30% -> n= 44 net    -48.53 roi  -48.53% wr   9.1% pf  0.25 dd  48.8%
+  [46/72] thr0.50 SL2.3% TP4.6% poz60% -> n= 44 net    -74.11 roi  -74.11% wr   9.1% pf  0.24 dd  74.3%
+  [47/72] thr0.50 SL2.3% TP6.0% poz30% -> n= 48 net    -44.36 roi  -44.36% wr  10.4% pf  0.37 dd  45.4%
+  [48/72] thr0.50 SL2.3% TP6.0% poz60% -> n= 50 net    -70.89 roi  -70.89% wr  10.0% pf  0.33 dd  71.8%
+  [49/72] thr0.50 SL3.0% TP3.0% poz30% -> n= 43 net    -43.88 roi  -43.88% wr  18.6% pf  0.37 dd  44.1%
+  [50/72] thr0.50 SL3.0% TP3.0% poz60% -> n= 43 net    -67.05 roi  -67.05% wr  18.6% pf  0.36 dd  67.3%
+  [51/72] thr0.50 SL3.0% TP4.6% poz30% -> n= 42 net    -42.98 roi  -42.98% wr  11.9% pf  0.32 dd  44.9%
+  [52/72] thr0.50 SL3.0% TP4.6% poz60% -> n= 42 net    -71.46 roi  -71.46% wr  11.9% pf  0.27 dd  71.7%
+  [53/72] thr0.50 SL3.0% TP6.0% poz30% -> n= 42 net    -41.48 roi  -41.48% wr  11.9% pf  0.39 dd  41.8%
+  [54/72] thr0.50 SL3.0% TP6.0% poz60% -> n= 42 net    -64.65 roi  -64.65% wr  11.9% pf   0.4 dd  65.6%
+  [55/72] thr0.60 SL1.5% TP3.0% poz30% -> n= 30 net    -29.56 roi  -29.56% wr  10.0% pf  0.25 dd  30.1%
+  [56/72] thr0.60 SL1.5% TP3.0% poz60% -> n= 30 net    -51.14 roi  -51.14% wr  10.0% pf  0.24 dd  51.9%
+  [57/72] thr0.60 SL1.5% TP4.6% poz30% -> n= 29 net    -27.92 roi  -27.92% wr   6.9% pf  0.25 dd  28.4%
+  [58/72] thr0.60 SL1.5% TP4.6% poz60% -> n= 29 net    -48.04 roi  -48.04% wr   6.9% pf  0.25 dd  48.8%
+  [59/72] thr0.60 SL1.5% TP6.0% poz30% -> n= 29 net    -26.25 roi  -26.25% wr   6.9% pf  0.32 dd  27.5%
+  [60/72] thr0.60 SL1.5% TP6.0% poz60% -> n= 29 net    -44.38 roi  -44.38% wr   6.9% pf  0.32 dd  46.6%
+  [61/72] thr0.60 SL2.3% TP3.0% poz30% -> n= 26 net    -33.71 roi  -33.71% wr  11.5% pf  0.24 dd  34.2%
+  [62/72] thr0.60 SL2.3% TP3.0% poz60% -> n= 26 net    -61.21 roi  -61.21% wr  11.5% pf  0.22 dd  61.8%
+  [63/72] thr0.60 SL2.3% TP4.6% poz30% -> n= 25 net    -31.16 roi  -31.16% wr   8.0% pf  0.23 dd  32.3%
+  [64/72] thr0.60 SL2.3% TP4.6% poz60% -> n= 25 net    -56.84 roi  -56.84% wr   8.0% pf  0.22 dd  57.5%
+  [65/72] thr0.60 SL2.3% TP6.0% poz30% -> n= 25 net    -30.14 roi  -30.14% wr   8.0% pf  0.29 dd  31.3%
+  [66/72] thr0.60 SL2.3% TP6.0% poz60% -> n= 25 net    -51.94 roi  -51.94% wr   8.0% pf  0.29 dd  52.6%
+  [67/72] thr0.60 SL3.0% TP3.0% poz30% -> n= 22 net    -29.79 roi  -29.79% wr  13.6% pf  0.26 dd  30.3%
+  [68/72] thr0.60 SL3.0% TP3.0% poz60% -> n= 22 net    -51.99 roi  -51.99% wr  13.6% pf  0.25 dd  52.7%
+  [69/72] thr0.60 SL3.0% TP4.6% poz30% -> n= 21 net    -26.07 roi  -26.07% wr   9.5% pf  0.27 dd  26.6%
+  [70/72] thr0.60 SL3.0% TP4.6% poz60% -> n= 21 net    -45.79 roi  -45.79% wr   9.5% pf  0.26 dd  46.6%
+  [71/72] thr0.60 SL3.0% TP6.0% poz30% -> n= 21 net    -23.13 roi  -23.13% wr   9.5% pf  0.35 dd  23.7%
+  [72/72] thr0.60 SL3.0% TP6.0% poz60% -> n= 21 net    -40.82 roi  -40.82% wr   9.5% pf  0.34 dd  41.7%
+
+============================================================================================
+EN IYI 10
+============================================================================================
+python : Traceback (most recent call last):
+At line:1 char:32
++ ... ONIOENCODING="utf-8"; python -X utf8 backtest/tune_4h.py 2>&1 | Out-F ...
++                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "C:\Users\PC-ITENG\Documents\Default Project\backtest\tune_4h.py", line 149, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\PC-ITENG\Documents\Default Project\backtest\tune_4h.py", line 128, in main
+    f"net {r['net']:+.2f} roi {r['roi']:+.2f}% wr={r['win_rate']}% "
+                                                   ~^^^^^^^^^^^^
+KeyError: 'win_rate'

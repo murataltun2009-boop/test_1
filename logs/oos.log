@@ -1,0 +1,41 @@
+﻿==================================================================
+OUT-OF-SAMPLE DOGRULAMASI
+==================================================================
+Veri cekiliyor...
+Indikatorler hesaplaniyor...
+
+Toplam : 94,928 bar (2026-08-01 -> 2026-10-05)
+IS    : 47,214 bar (2026-08-01 -> 2026-09-02)
+OOS   : 47,214 bar (2026-09-03 -> 2026-10-05)
+
+[1] In-Sample parametre secimi...
+  IS: 40/160 tarandi
+  IS: 80/160 tarandi
+  IS: 120/160 tarandi
+  IS: 160/160 tarandi
+  Secilen: thr=0.65 SL=1.3% TP=2.0% pos=35%
+  IS sonucu: net +2119.81 | roi +21.20% | n=20 | wr=60.0% | pf=2.11 | dd=5.8%
+
+[2] Out-of-Sample dogrulamasi (ayarlanmadan)...
+  OOS sonucu: net +457.45 | roi +4.57% | n=23 | wr=47.8% | pf=1.22 | dd=15.75%
+
+==================================================================
+SONUC
+==================================================================
+                                IS         OOS
+Net PnL                    2119.81      457.45
+ROI %                        21.20        4.57
+Islem sayisi                    20          23
+Kazanc orani %                60.0        47.8
+Profit factor                 2.11        1.22
+Max drawdown %                5.80       15.75
+
+OOS - IS ROI farki: -16.63 puan
+YORUM: OOS belirgin sekilde kotu ama pozitif -> zayif kanit.
+       Yalnizca kucuk pozisyonla ve izleme amacli kullanilabilir.
+
+Varsayilanlari bu parametrelerle guncellemek icin:
+  strong_buy_threshold = 0.65
+  stop_loss_pct        = 0.013
+  take_profit_pct      = 0.02
+  max_position_pct     = 0.35

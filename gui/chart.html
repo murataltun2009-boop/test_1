@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<title>BTCUSDT Grafik</title>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  html, body { margin:0; padding:0; background:#0b1220; color:#e6edf7;
+               font-family:Segoe UI, Arial, sans-serif; height:100%; }
+  #chart { width:100vw; height:78vh; }
+  #legend { position:absolute; top:10px; left:12px; z-index:5;
+            background:rgba(13,22,40,.82); border:1px solid #1f2d44;
+            border-radius:8px; padding:10px 12px; font-size:12px; line-height:1.6; }
+  #legend .b { color:#26a69a; } #legend .s { color:#ef5350; } #legend .n { color:#9aa7bd; }
+  .tag { font-weight:600; letter-spacing:.4px; }
+</style>
+</head>
+<body>
+<div id="legend">
+  <div><b id="lg-sym">BTCUSDT</b> · <span id="lg-tf">1m</span> · <span id="lg-price">—</span></div>
+  <div>Osilatörler: <span class="b" id="lg-osc">—</span> (skor <span id="lg-osc-s">0.00</span>)</div>
+  <div>Hareketli Ort.: <span class="b" id="lg-ma">—</span> (skor <span id="lg-ma-s">0.00</span>)</div>
+  <div>Pivotlar: <span class="b" id="lg-pv">—</span> (skor <span id="lg-pv-s">0.00</span>)</div>
+  <div class="tag">BİLEŞİK SKOR: <span id="lg-score">0.000</span> → <span id="lg-signal">NÖTR</span></div>
+  <div>Cüzdan: <span id="lg-equity">—</span></div>
+</div>
+<div id="chart"></div>
+
+<script>
+let chart, candleSeries, markerData = {entry:[], exit:[]}, volSeries, rsiSeries, eqSeries;
+let lastEquity = null;
+
+function colorFor(v){ return v >= 0 ? '#26a69a' : '#ef5350'; }
+
+function fmt(n, d=2){ return n==null ? '—' : Number(n).toLocaleString('tr-TR',
+  {minimumFractionDigits:d, maximumFractionDigits:d}); }
+
+function initChart(){
+  const el = document.getElementById('chart');
+  chart = LightweightCharts.createChart(el, {
+    layout: { background:{type:'solid', color:'#0b1220'}, textColor:'#c9d4e4',
+              fontSize:11 },
+    grid: { vertLines:{color:'#141f33'}, horzLines:{color:'#141f33'} },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    rightPriceScale:{ borderColor:'#1f2d44', scaleMargins:{top:0.08, bottom:0.26} },
+    timeScale:{ borderColor:'#1f2d44', timeVisible:true, secondsVisible:false },
+    localization:{ locale:'tr-TR', priceFormatter: p => fmt(p,2) }
+  });
+
+  candleSeries = chart.addCandlestickSeries({
+    upColor:'#26a69a', downColor:'#ef5350',
+    borderUpColor:'#26a69a', borderDownColor:'#ef5350',
+    wickUpColor:'#26a69a', wickDownColor:'#ef5350'
+  });
+
+  volSeries = chart.addHistogramSeries({
+    priceFormat:{type:'volume'}, priceScaleId:'vol', color:'#2a3b57'
+  });
+  chart.priceScale('vol').applyOptions({ scaleMargins:{top:0.82, bottom:0} });
+
+  rsiSeries = chart.addLineSeries({
+    color:'#f0b90b', lineWidth:1, priceScaleId:'rsi',
+    priceFormat:{type:'price', precision:1, minMove:0.1}
+  });
+  chart.priceScale('rsi').applyOptions({ scaleMargins:{top:0.76, bottom:0.72} });
+
+  eqSeries = chart.addLineSeries({
+    color:'#7c8cff', lineWidth:2, priceScaleId:'eq',
+    priceFormat:{type:'price', precision:2, minMove:0.01}, lineStyle:2
+  });
+  chart.priceScale('eq').applyOptions({ scaleMargins:{top:0.05, bottom:0.55} });
+
+  window.addEventListener('resize', () =>
+    chart.applyOptions({ width: el.clientWidth, height: el.clientHeight }));
+}
+
+function markersToMarkers(){
+  const out = [];
+  markerData.entry.forEach((m,i) => {
+    out.push({ time:m.time, position: m.side==='LONG' ? 'belowBar' : 'aboveBar',
+      color: m.side==='LONG' ? '#26a69a' : '#ef5350',
+      shape: m.side==='LONG' ? 'arrowUp' : 'arrowDown',
+      text:`${m.side==='LONG'?'LONG':'SHORT'} ${fmt(m.price)}` + (m.score!=null?` (${m.score>0?'+':''}${m.score})`:'') });
+  });
+  markerData.exit.forEach((m,i) => {
+    out.push({ time:m.time, position: m.side==='LONG' ? 'aboveBar' : 'belowBar',
+      color:'#9aa7bd', shape:'circle',
+      text:`${m.kind==='exit'?'ÇIKIŞ':'—'} ${fmt(m.pnl)}` });
+  });
+  return out;
+}
+
+function apply(){
+  if(!candleSeries) return;
+  candleSeries.setData(window.__candles || []);
+  volSeries.setData((window.__candles||[]).map(c => ({
+    time:c.time, value:c.volume, color: c.close>=c.open ? '#26a69a55' : '#ef535055' })));
+  rsiSeries.setData(window.__rsi || []);
+  eqSeries.setData(window.__equity || []);
+  candleSeries.setMarkers(markersToMarkers());
+
+  const s = window.__signal;
+  if(s){
+    document.getElementById('lg-score').textContent = Number(s.composite).toFixed(3);
+    document.getElementById('lg-signal').textContent = s.signal;
+    document.getElementById('lg-signal').style.color = colorFor(s.composite);
+    document.getElementById('lg-osc-s').textContent = Number(s.oscillator_score).toFixed(2);
+    document.getElementById('lg-ma-s').textContent  = Number(s.ma_score).toFixed(2);
+    document.getElementById('lg-pv-s').textContent  = Number(s.pivot_score).toFixed(2);
+    document.getElementById('lg-osc').textContent = s.osc_counts || '—';
+    document.getElementById('lg-ma').textContent  = s.ma_counts || '—';
+    document.getElementById('lg-pv').textContent  = s.pivot_counts || '—';
+    if(s.price) document.getElementById('lg-price').textContent = fmt(s.price);
+  }
+  if(window.__equity && window.__equity.length){
+    lastEquity = window.__equity[window.__equity.length-1].value;
+    document.getElementById('lg-equity').textContent = fmt(lastEquity) + ' USDT';
+  }
+}
+
+window.addEventListener('load', () => { initChart(); apply(); });
+</script>
+</body>
+</html>
